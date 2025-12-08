@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, Suspense, useRef } from 'react' // ★ useRef 追加
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../../lib/supabaseClient'
@@ -8,16 +8,39 @@ import { supabase } from '../../../lib/supabaseClient'
 type Customer = {
   id: string
   name: string
+  furigana?: string | null
+  postal_code?: string | null
+  address1?: string | null
+  address2?: string | null
+  tel?: string | null
+  fax?: string | null
+  email?: string | null
+  note?: string | null
+}
+
+const emptyForm: Customer = {
+  id: '',
+  name: '',
+  furigana: '',
+  postal_code: '',
+  address1: '',
+  address2: '',
+  tel: '',
+  fax: '',
+  email: '',
+  note: '',
 }
 
 function CustomerSelectContent() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [keyword, setKeyword] = useState('')
-  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
-  const [newCustomerName, setNewCustomerName] = useState('')
+  const [formData, setFormData] = useState<Customer>(emptyForm)
+  const [isEdit, setIsEdit] = useState(false)
+  const [showForm, setShowForm] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('returnTo')
+  const formRef = useRef<HTMLDivElement | null>(null) // ★ 追加
 
   useEffect(() => {
     fetchCustomers()
@@ -36,40 +59,117 @@ function CustomerSelectContent() {
     }
   }
 
-  const handleCreateCustomer = async () => {
-    if (!newCustomerName.trim()) {
+  const handleSubmit = async () => {
+    if (!formData.name.trim()) {
       alert('顧客名を入力してください')
       return
     }
 
-    const newId = crypto.randomUUID()
+    if (isEdit && formData.id) {
+      // 更新
+      const { error } = await supabase
+        .from('customers')
+        .update({
+          name: formData.name.trim(),
+          furigana: formData.furigana || null,
+          postal_code: formData.postal_code || null,
+          address1: formData.address1 || null,
+          address2: formData.address2 || null,
+          tel: formData.tel || null,
+          fax: formData.fax || null,
+          email: formData.email || null,
+          note: formData.note || null,
+        })
+        .eq('id', formData.id)
 
-    const { data, error } = await supabase
-      .from('customers')
-      .insert([{ 
-        id: newId,
-        name: newCustomerName.trim() 
-      }])
-      .select()
-      .single()
+      if (error) {
+        console.error('顧客更新エラー:', error)
+        alert('顧客の更新に失敗しました')
+        return
+      }
 
-    if (error) {
-      console.error('顧客登録エラー:', error)
-      alert('顧客の登録に失敗しました')
+      alert('顧客を更新しました')
     } else {
-      alert('顧客を登録しました')
-      setNewCustomerName('')
-      setShowNewCustomerForm(false)
-      fetchCustomers()
-      
+      // 新規登録
+      const newId = crypto.randomUUID()
+      const { data, error } = await supabase
+        .from('customers')
+        .insert([{
+          id: newId,
+          name: formData.name.trim(),
+          furigana: formData.furigana || null,
+          postal_code: formData.postal_code || null,
+          address1: formData.address1 || null,
+          address2: formData.address2 || null,
+          tel: formData.tel || null,
+          fax: formData.fax || null,
+          email: formData.email || null,
+          note: formData.note || null,
+        }])
+        .select()
+        .single()
+
+      if (error) {
+        console.error('顧客登録エラー:', error)
+        alert('顧客の登録に失敗しました')
+        return
+      }
+
+      // returnTo がある場合は案件画面へ戻る
       if (returnTo && data) {
         router.push(`${returnTo}?customerId=${data.id}&customerName=${encodeURIComponent(data.name)}`)
+        return
       }
+
+      alert('顧客を登録しました')
+    }
+
+    // リセット
+    setFormData(emptyForm)
+    setIsEdit(false)
+    setShowForm(false)
+    fetchCustomers()
+  }
+
+  const startNew = () => {
+    setFormData(emptyForm)
+    setIsEdit(false)
+    setShowForm(true)
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 0) // ★ 追加
+  }
+
+  const startEdit = (c: Customer) => {
+    setFormData({
+      id: c.id,
+      name: c.name || '',
+      furigana: c.furigana || '',
+      postal_code: c.postal_code || '',
+      address1: c.address1 || '',
+      address2: c.address2 || '',
+      tel: c.tel || '',
+      fax: c.fax || '',
+      email: c.email || '',
+      note: c.note || '',
+    })
+    setIsEdit(true)
+    setShowForm(true)
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 0) // ★ 追加
+  }
+
+  const handleDelete = async (c: Customer) => {
+    if (!confirm(`「${c.name}」を削除しますか？`)) return
+    const { error } = await supabase.from('customers').delete().eq('id', c.id)
+    if (error) {
+      console.error('顧客削除エラー:', error)
+      alert('顧客の削除に失敗しました')
+    } else {
+      alert('顧客を削除しました')
+      fetchCustomers()
     }
   }
 
   const filteredCustomers = customers.filter((c) =>
-    c.name.toLowerCase().includes(keyword.toLowerCase())
+    (c.name || '').toLowerCase().includes(keyword.toLowerCase()) // ★ null セーフ
   )
 
   const handleSelect = (c: Customer) => {
@@ -86,11 +186,11 @@ function CustomerSelectContent() {
         <h1 style={{ marginTop: 0 }}>顧客マスタ検索</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
-            onClick={() => setShowNewCustomerForm(!showNewCustomerForm)}
+            onClick={startNew}
             className="btn-3d"
             style={{ backgroundColor: '#28a745', color: '#fff', padding: '8px 16px' }}
           >
-            + 新規登録
+            + 新規登録 / 編集
           </button>
           <Link href={returnTo || "/selectors"}>
             <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
@@ -100,31 +200,99 @@ function CustomerSelectContent() {
         </div>
       </div>
 
-      {showNewCustomerForm && (
-        <div style={{ marginBottom: 16, padding: 16, border: '2px solid #28a745', borderRadius: 8, backgroundColor: '#f0f9f4' }}>
-          <h3 style={{ marginTop: 0 }}>新規顧客登録</h3>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              type="text"
-              placeholder="顧客名を入力"
-              value={newCustomerName}
-              onChange={(e) => setNewCustomerName(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleCreateCustomer()}
-              className="input-inset"
-              style={{ flex: 1 }}
-            />
+      {/* フォーム（新規/編集兼用） */}
+      {showForm && (
+        <div
+          ref={formRef} // ★ 追加
+          style={{ marginBottom: 16, padding: 16, border: '2px solid #28a745', borderRadius: 8, backgroundColor: '#f0f9f4' }}
+        >
+          <h3 style={{ marginTop: 0 }}>{isEdit ? '顧客編集' : '新規顧客登録'}</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <label>顧客名
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label>フリガナ
+              <input
+                type="text"
+                value={formData.furigana || ''}
+                onChange={(e) => setFormData({ ...formData, furigana: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label>郵便番号
+              <input
+                type="text"
+                value={formData.postal_code || ''}
+                onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label>住所1
+              <input
+                type="text"
+                value={formData.address1 || ''}
+                onChange={(e) => setFormData({ ...formData, address1: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label>住所2
+              <input
+                type="text"
+                value={formData.address2 || ''}
+                onChange={(e) => setFormData({ ...formData, address2: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label>電話
+              <input
+                type="text"
+                value={formData.tel || ''}
+                onChange={(e) => setFormData({ ...formData, tel: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label>FAX
+              <input
+                type="text"
+                value={formData.fax || ''}
+                onChange={(e) => setFormData({ ...formData, fax: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label>メール
+              <input
+                type="email"
+                value={formData.email || ''}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label style={{ gridColumn: '1 / -1' }}>備考
+              <textarea
+                value={formData.note || ''}
+                onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                className="input-inset"
+                rows={2}
+              />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button
-              onClick={handleCreateCustomer}
+              type="button" // ★ 追加
+              onClick={handleSubmit}
               className="btn-3d"
               style={{ backgroundColor: '#28a745', color: '#fff' }}
             >
-              登録
+              {isEdit ? '更新' : '登録'}
             </button>
             <button
-              onClick={() => {
-                setShowNewCustomerForm(false)
-                setNewCustomerName('')
-              }}
+              type="button" // ★ 追加
+              onClick={() => { setShowForm(false); setIsEdit(false); setFormData(emptyForm); }}
               className="btn-3d btn-reset"
             >
               キャンセル
@@ -158,13 +326,32 @@ function CustomerSelectContent() {
               <td style={tdStyle}>{c.id}</td>
               <td style={tdStyle}>{c.name}</td>
               <td style={tdStyle}>
-                <button
-                  onClick={() => handleSelect(c)}
-                  className="btn-3d btn-search"
-                  style={{ fontSize: 11, padding: '4px 12px' }}
-                >
-                  選択
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button" // ★ 追加
+                    onClick={() => handleSelect(c)}
+                    className="btn-3d btn-search"
+                    style={{ fontSize: 11, padding: '4px 10px' }}
+                  >
+                    選択
+                  </button>
+                  <button
+                    type="button" // ★ 追加
+                    onClick={() => startEdit(c)}
+                    className="btn-3d"
+                    style={{ fontSize: 11, padding: '4px 10px' }}
+                  >
+                    編集
+                  </button>
+                  <button
+                    type="button" // ★ 追加
+                    onClick={() => handleDelete(c)}
+                    className="btn-3d"
+                    style={{ fontSize: 11, padding: '4px 10px', backgroundColor: '#dc3545', color: '#fff' }}
+                  >
+                    削除
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -175,7 +362,7 @@ function CustomerSelectContent() {
         <div style={{ textAlign: 'center', marginTop: 24 }}>
           <p style={{ color: '#999' }}>該当する顧客がいません</p>
           <button
-            onClick={() => setShowNewCustomerForm(true)}
+            onClick={startNew}
             className="btn-3d"
             style={{ backgroundColor: '#28a745', color: '#fff' }}
           >
@@ -187,7 +374,7 @@ function CustomerSelectContent() {
   )
 }
 
-// ★ Suspense でラップ
+// Suspense でラップ
 export default function CustomerSelectPage() {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>読み込み中...</div>}>

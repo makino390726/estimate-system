@@ -363,13 +363,13 @@ export default function CaseApprovalPage() {
 
     switch (role) {
       case 'manager':
-        updateData = { approve_staff: null }
+        updateData = { approve_staff: null, approve_manager: null }   // ★ 自身の承認もクリア
         break
       case 'director':
-        updateData = { approve_manager: null }
+        updateData = { approve_manager: null, approve_director: null } // ★ 自身の承認もクリア
         break
       case 'president':
-        updateData = { approve_director: null }
+        updateData = { approve_director: null, approve_president: null } // ★ 社長印をクリア
         break
       default:
         return
