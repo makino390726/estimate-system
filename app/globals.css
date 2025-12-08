@@ -1,0 +1,262 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+/* くぼみ（インセット）スタイルの入力欄 */
+.input-inset {
+  width: 250px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: #e9e9e9;
+  box-shadow: inset 2px 2px 4px #c5c5c5,
+              inset -2px -2px 4px #ffffff;
+  outline: none;
+}
+.input-inset:focus {
+  box-shadow: inset 1px 1px 2px #bdbdbd,
+              inset -1px -1px 2px #ffffff;
+  background: #f5f5f5;
+}
+/* ボタン風デザイン（立体・影付き） */
+.btn {
+  background: #e0e0e0;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  box-shadow: 2px 2px 4px #c2c2c2, -2px -2px 4px #ffffff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+
+.btn:hover {
+  background: #f0f0f0;
+}
+
+.btn:active {
+  box-shadow: inset 2px 2px 4px #c2c2c2,
+              inset -2px -2px 4px #ffffff;
+  background: #dcdcdc;
+}
+
+/* 共通 3D ボタン */
+.btn-3d{
+  display:inline-block;
+  padding:8px 12px;
+  border-radius:6px;
+  border: none;
+  cursor:pointer;
+  font-weight:600;
+  box-shadow: 0 6px 0 rgba(0,0,0,0.15);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transform: translateY(0);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 押された見た目（擬似的に押し込む） */
+.btn-3d:active{
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.12);
+}
+
+/* フォーカス時の外枠 */
+.btn-3d:focus{
+  outline: none;
+  box-shadow: 0 6px 0 rgba(0,0,0,0.15), 0 0 0 3px rgba(0,0,0,0.06);
+}
+
+/* 無効化 */
+.btn-3d:disabled{
+  opacity:0.6;
+  cursor:not-allowed;
+  transform:none;
+  box-shadow:none;
+}
+
+/* バリエーション */
+.btn-search{
+  background: linear-gradient(180deg,#4fc3ff,#1e88e5);
+  color:#fff;
+  box-shadow: 0 6px 0 rgba(30, 136, 229, 0.28);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.btn-reset{
+  background: linear-gradient(180deg,#ffffff,#f5f5f5);
+  color:#333;
+  box-shadow: 0 6px 0 rgba(0,0,0,0.12);
+  border: 1px solid #e6e6e6;
+}
+
+.btn-edit{
+  background: linear-gradient(180deg,#e8f5e9,#c8e6c9);
+  color:#145214;
+  box-shadow: 0 6px 0 rgba(46,125,50,0.22);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.btn-delete{
+  background: linear-gradient(180deg,#ffcdd2,#ff8a80);
+  color:#5b0000;
+  box-shadow: 0 6px 0 rgba(255,59,59,0.22);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+/* 小さめ調整（必要なら） */
+.btn-3d.btn-search, .btn-3d.btn-reset, .btn-3d.btn-edit, .btn-3d.btn-delete{
+  font-size:14px;
+  line-height:1;
+}
+
+/* input-inset の簡易スタイル（無ければ） */
+.input-inset{
+  padding:6px 8px;
+  border:1px solid #dcdcdc;
+  border-radius:4px;
+  background:#fff;
+}
+
+/* 商品一覧セルにくぼみを付ける（行ごとに丸角・インセット） */
+.inset-table {
+  border-collapse: separate; /* 角丸を効かせるため separate に */
+  border-spacing: 0 10px; /* 行間（縦の余白） */
+  width: 100%;
+  table-layout: fixed; /* 列幅を安定させる */
+}
+
+/* ヘッダ */
+.inset-table thead th {
+  background: linear-gradient(180deg,#eef6fb,#e6f0f8);
+  padding: 10px 12px;
+  font-weight: 600;
+  color: #1f475f;
+  border: none;
+  box-shadow: none;
+}
+
+/* セル共通（tbody 向け） */
+.inset-table tbody td {
+  background: linear-gradient(180deg,#f7f7f8,#efefef);
+  padding: 10px 12px;
+  vertical-align: middle;
+  border: none;
+  box-shadow: inset 2px 2px 6px rgba(0,0,0,0.06),
+              inset -2px -2px 6px rgba(255,255,255,0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 強制的に inset-cell を適用（優先度高め） */
+.inset-table tbody td {
+  padding: 6px 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+/* 個々のセル内ブロックに確実にインセット効果を付与 */
+.inset-table .inset-cell {
+  display: block !important;
+  padding: 10px 12px !important;
+  background: linear-gradient(180deg,#f7f7f8,#efefef) !important;
+  box-shadow: inset 3px 3px 8px rgba(0,0,0,0.07), inset -2px -2px 6px rgba(255,255,255,0.85) !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: inherit !important;
+}
+
+/* 左右角の丸め（ID列と4列目＝仕入原価等） */
+.inset-table tbody tr td:nth-child(1) .inset-cell {
+  border-top-left-radius: 10px !important;
+  border-bottom-left-radius: 10px !important;
+}
+.inset-table tbody tr td:nth-child(4) .inset-cell {
+  border-top-right-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
+}
+
+/* 操作列のセルは内側を崩さない */
+.inset-table tbody tr td:last-child {
+  padding: 6px 8px !important;
+  background: transparent !important;
+}
+  
+/* ヘッダの角（テーブル最上部）を丸くする（任意） */
+.inset-table thead th:first-child {
+  border-top-left-radius: 10px;
+}
+.inset-table thead th:last-child {
+  border-top-right-radius: 10px;
+}
+
+/* 小画面向け調整 */
+@media (max-width: 720px) {
+  .inset-table thead th, .inset-table tbody td {
+    padding: 8px;
+    font-size: 14px;
+  }
+}
+
+/* マスタ選択メニューのカードレイアウト */
+.selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.selector-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: linear-gradient(180deg,#fbfbfd,#f3f6fb);
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.04);
+  box-shadow: 0 6px 0 rgba(0,0,0,0.03);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  user-select: none;
+}
+.selector-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.06);
+}
+.selector-card h2 {
+  margin: 0 0 6px 0;
+  font-size: 18px;
+}
+.selector-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+}
+
+/* ボタン周りの微調整（必要なら） */
+.selector-card .btn-3d {
+  font-size: 14px;
+}
