@@ -1324,6 +1324,7 @@ export default function CaseNewPage() {
                   placeholder="顧客名で検索"
                   value={customerSearchName}
                   onChange={(e) => setCustomerSearchName(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleCustomerSearch()}
                   className="input-inset"
                   style={{ flex: 1, fontSize: 16 }}
                 />
@@ -1332,6 +1333,16 @@ export default function CaseNewPage() {
                   className="btn-3d btn-search"
                 >
                   検索
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCustomerModal(false)
+                    router.push('/customers/select')
+                  }}
+                  className="btn-3d"
+                  style={{ backgroundColor: '#28a745', color: '#fff' }}
+                >
+                  + 新規登録
                 </button>
               </div>
 
@@ -1344,20 +1355,39 @@ export default function CaseNewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {customers.map((customer) => (
-                      <tr key={customer.id}>
-                        <td style={tdStyle}>{customer.name}</td>
-                        <td style={tdStyle}>
+                    {customers.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} style={{ ...tdStyle, textAlign: 'center', color: '#999' }}>
+                          該当する顧客が見つかりません
+                          <br />
                           <button
-                            onClick={() => handleSelectCustomer(customer)}
-                            className="btn-3d btn-primary"
-                            style={{ fontSize: 16 }}
+                            onClick={() => {
+                              setShowCustomerModal(false)
+                              router.push('/customers/select')
+                            }}
+                            className="btn-3d"
+                            style={{ backgroundColor: '#28a745', color: '#fff', marginTop: 8 }}
                           >
-                            選択
+                            新規顧客を登録
                           </button>
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      customers.map((customer) => (
+                        <tr key={customer.id}>
+                          <td style={tdStyle}>{customer.name}</td>
+                          <td style={tdStyle}>
+                            <button
+                              onClick={() => handleSelectCustomer(customer)}
+                              className="btn-3d btn-primary"
+                              style={{ fontSize: 16 }}
+                            >
+                              選択
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

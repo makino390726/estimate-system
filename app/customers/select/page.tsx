@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../../lib/supabaseClient'
 
@@ -10,10 +10,14 @@ type Customer = {
   name: string
 }
 
-export default function CustomerSelectPage() {
+function CustomerSelectContent() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [keyword, setKeyword] = useState('')
+  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
+  const [newCustomerName, setNewCustomerName] = useState('')
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const returnTo = searchParams.get('returnTo')
 
   useEffect(() => {
     fetchCustomers()
@@ -32,24 +36,102 @@ export default function CustomerSelectPage() {
     }
   }
 
+  const handleCreateCustomer = async () => {
+    if (!newCustomerName.trim()) {
+      alert('顧客名を入力してください')
+      return
+    }
+
+    const newId = crypto.randomUUID()
+
+    const { data, error } = await supabase
+      .from('customers')
+      .insert([{ 
+        id: newId,
+        name: newCustomerName.trim() 
+      }])
+      .select()
+      .single()
+
+    if (error) {
+      console.error('顧客登録エラー:', error)
+      alert('顧客の登録に失敗しました')
+    } else {
+      alert('顧客を登録しました')
+      setNewCustomerName('')
+      setShowNewCustomerForm(false)
+      fetchCustomers()
+      
+      if (returnTo && data) {
+        router.push(`${returnTo}?customerId=${data.id}&customerName=${encodeURIComponent(data.name)}`)
+      }
+    }
+  }
+
   const filteredCustomers = customers.filter((c) =>
     c.name.toLowerCase().includes(keyword.toLowerCase())
   )
 
   const handleSelect = (c: Customer) => {
-    router.push(`/customers/${c.id}`)
+    if (returnTo) {
+      router.push(`${returnTo}?customerId=${c.id}&customerName=${encodeURIComponent(c.name)}`)
+    } else {
+      router.push(`/customers/${c.id}`)
+    }
   }
 
   return (
     <div style={{ padding: 24, maxWidth: 980, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1 style={{ marginTop: 0 }}>顧客マスタ検索</h1>
-        <Link href="/selectors">
-          <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
-            ← メニューに戻る
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => setShowNewCustomerForm(!showNewCustomerForm)}
+            className="btn-3d"
+            style={{ backgroundColor: '#28a745', color: '#fff', padding: '8px 16px' }}
+          >
+            + 新規登録
           </button>
-        </Link>
+          <Link href={returnTo || "/selectors"}>
+            <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
+              ← {returnTo ? '戻る' : 'メニューに戻る'}
+            </button>
+          </Link>
+        </div>
       </div>
+
+      {showNewCustomerForm && (
+        <div style={{ marginBottom: 16, padding: 16, border: '2px solid #28a745', borderRadius: 8, backgroundColor: '#f0f9f4' }}>
+          <h3 style={{ marginTop: 0 }}>新規顧客登録</h3>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="顧客名を入力"
+              value={newCustomerName}
+              onChange={(e) => setNewCustomerName(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleCreateCustomer()}
+              className="input-inset"
+              style={{ flex: 1 }}
+            />
+            <button
+              onClick={handleCreateCustomer}
+              className="btn-3d"
+              style={{ backgroundColor: '#28a745', color: '#fff' }}
+            >
+              登録
+            </button>
+            <button
+              onClick={() => {
+                setShowNewCustomerForm(false)
+                setNewCustomerName('')
+              }}
+              className="btn-3d btn-reset"
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
 
       <div style={{ marginBottom: 16 }}>
         <input
@@ -90,11 +172,27 @@ export default function CustomerSelectPage() {
       </table>
 
       {filteredCustomers.length === 0 && (
-        <p style={{ textAlign: 'center', color: '#999', marginTop: 24 }}>
-          該当する顧客がいません
-        </p>
+        <div style={{ textAlign: 'center', marginTop: 24 }}>
+          <p style={{ color: '#999' }}>該当する顧客がいません</p>
+          <button
+            onClick={() => setShowNewCustomerForm(true)}
+            className="btn-3d"
+            style={{ backgroundColor: '#28a745', color: '#fff' }}
+          >
+            新規顧客を登録
+          </button>
+        </div>
       )}
     </div>
+  )
+}
+
+// ★ Suspense でラップ
+export default function CustomerSelectPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>読み込み中...</div>}>
+      <CustomerSelectContent />
+    </Suspense>
   )
 }
 
