@@ -17,9 +17,10 @@ type Product = {
   name: string
   spec: string
   unit: string
-  quantity?: number | null  // ★ 追加
+  quantity?: number | null
   unit_price: number
   cost_price: number
+  retail_price?: number | null  // ★ 定価
 }
 type Customer = { id: string; name: string }
 type Staff = { id: number; name: string }
@@ -105,6 +106,7 @@ export default function CaseNewPage() {
   const [priceModalRate, setPriceModalRate] = useState<number | null>(null)
   const [priceModalCalculatedPrice, setPriceModalCalculatedPrice] = useState<number | null>(null)
   const [priceModalMode, setPriceModalMode] = useState<'direct' | 'calculate'>('calculate')
+  const [priceModalShowRemarksCheckbox, setPriceModalShowRemarksCheckbox] = useState(false)  // ★ 定価備考表示チェック
 
   // ★ テーブル・モーダル用スタイル定義（未定義エラー対策）
   const thStyle: React.CSSProperties = {
@@ -226,6 +228,7 @@ export default function CaseNewPage() {
         unit: product.unit || '',
         unit_price: product.unit_price || 0,
         cost_price: product.cost_price || 0,
+        retail_price: product.retail_price || null,  // ★ 定価を取得
       }))
 
       setProducts(normalizedData)
@@ -498,10 +501,17 @@ export default function CaseNewPage() {
   // ★ 単価計算モーダルを開く
   const handleOpenPriceModal = (index: number) => {
     setPriceModalRowIndex(index)
-    setPriceModalListPrice(null)
+    
+    // ★ 商品にretail_priceを初期値として設定（nullまたは0の場合はnullに）
+    const row = rows[index]
+    const product = products.find(p => p.id === row.product_id)
+    const retailPrice = (product?.retail_price && product.retail_price > 0) ? product.retail_price : null
+    
+    setPriceModalListPrice(retailPrice)
     setPriceModalRate(null)
     setPriceModalCalculatedPrice(null)
     setPriceModalMode('calculate')
+    setPriceModalShowRemarksCheckbox(true)  // ★ チェックボックスをリセット
     setShowPriceModal(true)
   }
 
@@ -516,7 +526,7 @@ export default function CaseNewPage() {
   }
 
   // ★ 単価を反映して閉じる
-  const handleApplyPrice = () => {
+  const handleApplyPrice = async () => {
     if (priceModalRowIndex === null) return
 
     let finalPrice: number | null = null
@@ -528,8 +538,10 @@ export default function CaseNewPage() {
         return
       }
       finalPrice = priceModalCalculatedPrice
-      // ★ 掛率計算の場合、定価のみを備考に保存
-      remarks = `定価：${priceModalListPrice?.toLocaleString()}円`
+      // ★ チェックボックスがオンの場合のみ定価を備考に保存
+      if (priceModalShowRemarksCheckbox && priceModalListPrice) {
+        remarks = `定価：${priceModalListPrice.toLocaleString()}円`
+      }
     } else {
       if (priceModalListPrice === null) {
         alert('単価を入力してください')
@@ -537,6 +549,29 @@ export default function CaseNewPage() {
       }
       finalPrice = priceModalListPrice
       remarks = ''
+    }
+
+    // ★ 入力値をretail_priceに更新（nullまたは0の場合のみ）
+    const row = rows[priceModalRowIndex]
+    if (row.product_id && priceModalListPrice && priceModalListPrice > 0) {
+      const product = products.find(p => p.id === row.product_id)
+      // 元の値がnullまたは0の場合のみ更新
+      if (!product?.retail_price || product.retail_price === 0) {
+        const { error } = await supabase
+          .from('products')
+          .update({ retail_price: priceModalListPrice })
+          .eq('id', row.product_id)
+        
+        if (error) {
+          console.error('retail_price更新エラー:', error)
+        } else {
+          // 商品リストを更新（ローカル）
+          const updatedProducts = products.map(p => 
+            p.id === row.product_id ? { ...p, retail_price: priceModalListPrice } : p
+          )
+          setProducts(updatedProducts)
+        }
+      }
     }
 
     // 備考を含めて行を更新
@@ -742,6 +777,7 @@ export default function CaseNewPage() {
         cost_unit_price: row.cost_price,
         section_id: row.section_id,
         unregistered_product: row.unregistered_product || null,
+        remarks: row.remarks || null,
       }))
 
       const { error: detailsError } = await supabase
@@ -2008,6 +2044,23 @@ export default function CaseNewPage() {
                     </div>
                   </div>
                 )}
+
+                {/* 備考に定価を表示するチェックボックス */}
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    id="showRemarksCheckbox"
+                    checked={priceModalShowRemarksCheckbox}
+                    onChange={(e) => setPriceModalShowRemarksCheckbox(e.target.checked)}
+                    style={{ width: 18, height: 18, cursor: 'pointer' }}
+                  />
+                  <label
+                    htmlFor="showRemarksCheckbox"
+                    style={{ fontSize: 14, cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    備考に定価を表示
+                  </label>
+                </div>
               </div>
                 </>
               )}
