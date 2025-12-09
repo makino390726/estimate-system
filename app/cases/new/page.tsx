@@ -17,6 +17,7 @@ type Product = {
   name: string
   spec: string
   unit: string
+  quantity?: number | null  // ★ 追加
   unit_price: number
   cost_price: number
 }
@@ -142,10 +143,15 @@ export default function CaseNewPage() {
     fontSize: 16,  // 12 → 16
   }
 
+  // ★ ページネーション用の state を追加
+  const [productPage, setProductPage] = useState(0)
+  const [productTotalCount, setProductTotalCount] = useState(0)
+  const productPageSize = 100  // 1ページあたり100件
+
   useEffect(() => {
     fetchCustomers()
     fetchStaffs()
-    fetchProducts()
+    fetchProducts(0)  // ★ 初回は0ページ目を取得
   }, [])
 
   const fetchCustomers = async () => {
@@ -166,53 +172,41 @@ export default function CaseNewPage() {
     if (!error) setStaffs(data || [])
   }
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (page: number = 0) => {
     try {
-      let allProducts: any[] = []
-      let page = 0
-      const pageSize = 1000
+      const start = page * productPageSize
+      const end = start + productPageSize - 1
 
-      console.log('商品取得開始...')
+      let query = supabase
+        .from('products')
+        .select('*', { count: 'exact' })
+        .order('name')
+        .range(start, end)
 
-      while (true) {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .order('name')
-          .range(page * pageSize, (page + 1) * pageSize - 1)
-
-        if (error) {
-          throw error
-        }
-
-        if (!data || data.length === 0) {
-          console.log('データ取得終了')
-          break
-        }
-
-        console.log(`ページ${page}: ${data.length}件取得、累計: ${allProducts.length + data.length}件`)
-        
-        // ★ データを正規化（不足フィールドを補完）
-        const normalizedData = data.map(product => ({
-          id: product.id || '',
-          name: product.name || '',
-          spec: product.spec || '',
-          unit: product.unit || '',
-          unit_price: product.unit_price || 0,
-          cost_price: product.cost_price || 0,
-        }))
-        
-        allProducts.push(...normalizedData)
-
-        if (data.length < pageSize) {
-          break
-        }
-
-        page++
+      // 検索条件を追加
+      if (productSearchName) {
+        query = query.ilike('name', `%${productSearchName}%`)
+      }
+      if (productSearchSpec) {
+        query = query.ilike('spec', `%${productSearchSpec}%`)
       }
 
-      console.log(`商品取得完了: 全${allProducts.length}件`)
-      setProducts(allProducts)
+      const { data, error, count } = await query
+
+      if (error) throw error
+
+      const normalizedData = (data || []).map(product => ({
+        id: product.id || '',
+        name: product.name || '',
+        spec: product.spec || '',
+        unit: product.unit || '',
+        unit_price: product.unit_price || 0,
+        cost_price: product.cost_price || 0,
+      }))
+
+      setProducts(normalizedData)
+      setProductTotalCount(count || 0)
+      setProductPage(page)
     } catch (error) {
       console.error('商品取得エラー:', error)
       alert('商品取得エラーが発生しました')
@@ -270,19 +264,8 @@ export default function CaseNewPage() {
   }
 
   const handleProductSearch = async () => {
-    let query = supabase.from('products').select('*')
-
-    if (productSearchName) {
-      query = query.ilike('name', `%${productSearchName}%`)
-    }
-
-    if (productSearchSpec) {
-      query = query.ilike('spec', `%${productSearchSpec}%`)
-    }
-
-    const { data, error } = await query.order('name')
-
-    if (!error) setProducts(data || [])
+    setProductPage(0)
+    await fetchProducts(0)
   }
 
   const handleSelectCustomer = (customer: Customer) => {
@@ -298,15 +281,23 @@ export default function CaseNewPage() {
   }
 
   const handleSelectProduct = (product: Product) => {
+    if (!product || !product.id) {
+      console.error('商品情報が不正です:', product)
+      alert('商品情報が不正です')
+      return
+    }
+
+    console.log('選択された商品:', product) // ★ デバッグ用
+
     const newRow: Row = {
-      product_id: product.id,
-      item_name: product.name,
-      spec: product.spec,
-      unit: product.unit,
-      quantity: 1,
-      unit_price: product.unit_price,
-      amount: product.unit_price,
-      cost_price: product.cost_price,
+      product_id: product.id || '',
+      item_name: product.name || '',
+      spec: product.spec || '',
+      unit: product.unit || '',
+      quantity: product.quantity || 1,  // ★ undefined の場合は 1
+      unit_price: product.unit_price || 0,  // ★ undefined の場合は 0
+      amount: (product.unit_price || 0) * (product.quantity || 1),  // ★ 両方チェック
+      cost_price: product.cost_price || 0,
       section_id: null,
     }
 
@@ -649,6 +640,8 @@ export default function CaseNewPage() {
     director: false,
     president: false,
   })
+
+  const productTotalPages = Math.ceil(productTotalCount / productPageSize)
 
   return (
     <>
@@ -1461,6 +1454,7 @@ export default function CaseNewPage() {
                   placeholder="商品名で検索"
                   value={productSearchName}
                   onChange={(e) => setProductSearchName(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
                   className="input-inset"
                   style={{ flex: 1, fontSize: 16 }}
                 />
@@ -1469,6 +1463,7 @@ export default function CaseNewPage() {
                   placeholder="規格で検索"
                   value={productSearchSpec}
                   onChange={(e) => setProductSearchSpec(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
                   className="input-inset"
                   style={{ flex: 1, fontSize: 16 }}
                 />
@@ -1478,6 +1473,11 @@ export default function CaseNewPage() {
                 >
                   検索
                 </button>
+              </div>
+
+              {/* ★ ページネーション情報 */}
+              <div style={{ marginBottom: 8, fontSize: 14, color: '#666' }}>
+                全 {productTotalCount} 件中 {productPage * productPageSize + 1} 〜 {Math.min((productPage + 1) * productPageSize, productTotalCount)} 件を表示
               </div>
 
               <div style={{ maxHeight: 400, overflow: 'auto' }}>
@@ -1514,6 +1514,47 @@ export default function CaseNewPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* ★ ページネーションボタン */}
+              {productTotalPages > 1 && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center', alignItems: 'center' }}>
+                  <button
+                    disabled={productPage === 0}
+                    onClick={() => fetchProducts(0)}
+                    className="btn-3d"
+                    style={{ fontSize: 14, padding: '4px 8px' }}
+                  >
+                    最初
+                  </button>
+                  <button
+                    disabled={productPage === 0}
+                    onClick={() => fetchProducts(productPage - 1)}
+                    className="btn-3d"
+                    style={{ fontSize: 14, padding: '4px 8px' }}
+                  >
+                    ← 前へ
+                  </button>
+                  <span style={{ fontSize: 16, fontWeight: 'bold' }}>
+                    {productPage + 1} / {productTotalPages}
+                  </span>
+                  <button
+                    disabled={productPage === productTotalPages - 1}
+                    onClick={() => fetchProducts(productPage + 1)}
+                    className="btn-3d"
+                    style={{ fontSize: 14, padding: '4px 8px' }}
+                  >
+                    次へ →
+                  </button>
+                  <button
+                    disabled={productPage === productTotalPages - 1}
+                    onClick={() => fetchProducts(productTotalPages - 1)}
+                    className="btn-3d"
+                    style={{ fontSize: 14, padding: '4px 8px' }}
+                  >
+                    最後
+                  </button>
+                </div>
+              )}
 
               <div style={{ marginTop: 16, textAlign: 'right' }}>
                 <button
