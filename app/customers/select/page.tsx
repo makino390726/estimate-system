@@ -136,7 +136,7 @@ function CustomerSelectContent() {
     setFormData(emptyForm)
     setIsEdit(false)
     setShowForm(false)
-    fetchCustomers()
+    fetchCustomers(currentPage)  // ★ 現在のページを再取得
   }
 
   const startNew = () => {
@@ -172,7 +172,7 @@ function CustomerSelectContent() {
       alert('顧客の削除に失敗しました')
     } else {
       alert('顧客を削除しました')
-      fetchCustomers()
+      fetchCustomers(currentPage)  // ★ 現在のページを再取得
     }
   }
 
