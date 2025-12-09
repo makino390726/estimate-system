@@ -1637,6 +1637,19 @@ export default function CaseNewPage() {
 
               <div style={{ marginTop: 16, textAlign: 'right' }}>
                 <button
+                  onClick={() => {
+                    setProductSearchName('')
+                    setProductSearchSpec('')
+                    setProducts([])
+                    setProductPage(0)
+                    setProductTotalCount(0)
+                  }}
+                  className="btn-3d btn-reset"
+                  style={{ marginRight: 8 }}
+                >
+                  リセット
+                </button>
+                <button
                   onClick={() => setShowProductModal(false)}
                   className="btn-3d btn-reset"
                 >
@@ -1734,17 +1747,10 @@ export default function CaseNewPage() {
 
               <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button
-                  onClick={() => {
-                    setManualProductName('')
-                    setManualProductSpec('')
-                    setManualProductUnit('')
-                    setManualProductUnitPrice(0)
-                    setManualProductCostPrice(0)
-                    setManualProductQuantity(1)
-                  }}
+                  onClick={() => setShowProductModal(false)}
                   className="btn-3d btn-reset"
                 >
-                  リセット
+                  キャンセル
                 </button>
                 <button
                   onClick={handleAddManualProduct}
