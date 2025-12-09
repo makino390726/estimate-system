@@ -30,10 +30,12 @@ type Row = {
   spec: string
   unit: string
   quantity: number
-  unit_price: number
+  unit_price: number | null
   amount: number
   cost_price: number
   section_id: number | null
+  remarks?: string
+  unregistered_product?: string  // ★ 直接入力された商品名
 }
 
 export default function CaseNewPage() {
@@ -71,6 +73,11 @@ export default function CaseNewPage() {
   const [showProductModal, setShowProductModal] = useState(false)
   const [showPastCaseModal, setShowPastCaseModal] = useState(false)
 
+  // ★ 更新モード管理用
+  const [isUpdateMode, setIsUpdateMode] = useState(false)
+  const [loadedCaseId, setLoadedCaseId] = useState<string | null>(null)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+
   const [customers, setCustomers] = useState<Customer[]>([])
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -87,9 +94,17 @@ export default function CaseNewPage() {
   const [manualProductName, setManualProductName] = useState('')
   const [manualProductSpec, setManualProductSpec] = useState('')
   const [manualProductUnit, setManualProductUnit] = useState('')
-  const [manualProductUnitPrice, setManualProductUnitPrice] = useState(0)
+  const [manualProductUnitPrice, setManualProductUnitPrice] = useState<number | null>(null)
   const [manualProductCostPrice, setManualProductCostPrice] = useState(0)
   const [manualProductQuantity, setManualProductQuantity] = useState(1)
+
+  // ★ 単価計算モーダル用state
+  const [showPriceModal, setShowPriceModal] = useState(false)
+  const [priceModalRowIndex, setPriceModalRowIndex] = useState<number | null>(null)
+  const [priceModalListPrice, setPriceModalListPrice] = useState<number | null>(null)
+  const [priceModalRate, setPriceModalRate] = useState<number | null>(null)
+  const [priceModalCalculatedPrice, setPriceModalCalculatedPrice] = useState<number | null>(null)
+  const [priceModalMode, setPriceModalMode] = useState<'direct' | 'calculate'>('calculate')
 
   // ★ テーブル・モーダル用スタイル定義（未定義エラー対策）
   const thStyle: React.CSSProperties = {
@@ -304,9 +319,9 @@ export default function CaseNewPage() {
       spec: product.spec || '',
       unit: product.unit || '',
       quantity: product.quantity || 1,  // ★ undefined の場合は 1
-      unit_price: product.unit_price || 0,  // ★ undefined の場合は 0
-      amount: (product.unit_price || 0) * (product.quantity || 1),  // ★ 両方チェック
-      cost_price: product.cost_price || 0,
+      unit_price: null,  // ★ 単価は初期値null
+      amount: 0,  // ★ 金額は0で初期化
+      cost_price: product.cost_price || 0,  // ★ 原価は保持
       section_id: null,
     }
 
@@ -327,10 +342,11 @@ export default function CaseNewPage() {
       spec: manualProductSpec.trim(),
       unit: manualProductUnit.trim() || '個',
       quantity: manualProductQuantity > 0 ? manualProductQuantity : 1,
-      unit_price: manualProductUnitPrice >= 0 ? manualProductUnitPrice : 0,
-      amount: (manualProductUnitPrice >= 0 ? manualProductUnitPrice : 0) * (manualProductQuantity > 0 ? manualProductQuantity : 1),
+      unit_price: manualProductUnitPrice,  // ★ null許容型で保持
+      amount: (manualProductUnitPrice ?? 0) * (manualProductQuantity > 0 ? manualProductQuantity : 1),
       cost_price: manualProductCostPrice >= 0 ? manualProductCostPrice : 0,
       section_id: null,
+      unregistered_product: manualProductName.trim(),  // ★ 直接入力商品名を保存
     }
 
     setRows((prev) => [...prev, newRow])
@@ -339,7 +355,7 @@ export default function CaseNewPage() {
     setManualProductName('')
     setManualProductSpec('')
     setManualProductUnit('')
-    setManualProductUnitPrice(0)
+    setManualProductUnitPrice(null)
     setManualProductCostPrice(0)
     setManualProductQuantity(1)
     setProductModalTab('search')
@@ -400,7 +416,7 @@ export default function CaseNewPage() {
       return {
         product_id: detail.product_id || '',
         item_name:
-          product?.name || `削除された商品(ID:${detail.product_id})`,
+          product?.name || detail.unregistered_product || `削除された商品(ID:${detail.product_id})`,
         spec: detail.spec || '',
         unit: product?.unit || detail.unit || '',
         quantity: detail.quantity || 1,
@@ -408,6 +424,8 @@ export default function CaseNewPage() {
         amount: detail.amount || 0,
         cost_price: detail.cost_unit_price || 0,
         section_id: detail.section_id || null,
+        remarks: detail.remarks || undefined,
+        unregistered_product: detail.unregistered_product || undefined,
       }
     })
 
@@ -451,26 +469,84 @@ export default function CaseNewPage() {
 
     setRows(loadedRows)
     setShowPastCaseModal(false)
+    
+    // ★ 更新モードを有効化
+    setIsUpdateMode(true)
+    setLoadedCaseId(caseId)
 
     alert(
       `過去案件「${caseData.subject}」の情報を読み込みました\n顧客: ${
         caseData.customer_id || '不明'
-      }\n担当者: ${staffData?.name || '不明'}`
+      }\n担当者: ${staffData?.name || '不明'}\n\n保存時に「更新」または「新規登録」を選択できます。`
     )
   }
 
   const handleQuantityChange = (index: number, quantity: number) => {
     const newRows = [...rows]
     newRows[index].quantity = quantity
-    newRows[index].amount = quantity * newRows[index].unit_price
+    newRows[index].amount = quantity * (newRows[index].unit_price ?? 0)
     setRows(newRows)
   }
 
-  const handleUnitPriceChange = (index: number, unitPrice: number) => {
+  const handleUnitPriceChange = (index: number, unitPrice: number | null) => {
     const newRows = [...rows]
     newRows[index].unit_price = unitPrice
-    newRows[index].amount = newRows[index].quantity * unitPrice
+    newRows[index].amount = newRows[index].quantity * (unitPrice ?? 0)
     setRows(newRows)
+  }
+
+  // ★ 単価計算モーダルを開く
+  const handleOpenPriceModal = (index: number) => {
+    setPriceModalRowIndex(index)
+    setPriceModalListPrice(null)
+    setPriceModalRate(null)
+    setPriceModalCalculatedPrice(null)
+    setPriceModalMode('calculate')
+    setShowPriceModal(true)
+  }
+
+  // ★ 掛率で計算
+  const handleCalculatePrice = () => {
+    if (priceModalListPrice === null || priceModalRate === null) {
+      alert('定価と掛率を入力してください')
+      return
+    }
+    const calculated = Math.floor(priceModalListPrice * (priceModalRate / 100))
+    setPriceModalCalculatedPrice(calculated)
+  }
+
+  // ★ 単価を反映して閉じる
+  const handleApplyPrice = () => {
+    if (priceModalRowIndex === null) return
+
+    let finalPrice: number | null = null
+    let remarks = ''
+
+    if (priceModalMode === 'calculate') {
+      if (priceModalCalculatedPrice === null) {
+        alert('計算結果が未設定です')
+        return
+      }
+      finalPrice = priceModalCalculatedPrice
+      // ★ 掛率計算の場合、定価のみを備考に保存
+      remarks = `定価：${priceModalListPrice?.toLocaleString()}円`
+    } else {
+      if (priceModalListPrice === null) {
+        alert('単価を入力してください')
+        return
+      }
+      finalPrice = priceModalListPrice
+      remarks = ''
+    }
+
+    // 備考を含めて行を更新
+    const newRows = [...rows]
+    newRows[priceModalRowIndex].unit_price = finalPrice
+    newRows[priceModalRowIndex].amount = newRows[priceModalRowIndex].quantity * (finalPrice ?? 0)
+    newRows[priceModalRowIndex].remarks = remarks
+    setRows(newRows)
+
+    setShowPriceModal(false)
   }
 
   const handleDeleteRow = (index: number) => {
@@ -560,37 +636,85 @@ export default function CaseNewPage() {
       }
     }
 
+    // ★ 更新モードの場合、選択モーダルを表示
+    if (isUpdateMode && loadedCaseId) {
+      setShowSaveModal(true)
+      return
+    }
+
+    // 通常の新規登録処理
+    await performSave('new')
+  }
+
+  const performSave = async (mode: 'new' | 'update') => {
+    setShowSaveModal(false)  // モーダルを閉じる
+
     try {
-      const newCaseId = generateCaseId()
+      let targetCaseId: string
 
-      const { error: caseError } = await supabase.from('cases').insert({
-        case_id: newCaseId,
-        case_no: estimateNo ? parseInt(estimateNo) : null,
-        subject: subject,
-        created_date: estimateDate,
-        customer_id: customerId,
-        staff_id: staffId,
-        status: '商談中',  // ★ 'draft' → '商談中' に変更
-        special_discount: discount,
-        layout_type: layoutType,
-        delivery_place: deliveryPlace,
-        delivery_deadline: deliveryDeadline,
-        delivery_terms: deliveryTerms,
-        validity_text: validityText,
-        payment_terms: paymentTerms,
-        approve_staff: null,
-        approve_manager: null,
-        approve_director: null,
-        approve_president: null,
-      })
+      if (mode === 'update' && loadedCaseId) {
+        // 更新モード
+        targetCaseId = loadedCaseId
 
-      if (caseError) {
-        throw new Error(`案件登録エラー: ${caseError.message}`)
+        const { error: caseError } = await supabase
+          .from('cases')
+          .update({
+            case_no: estimateNo ? parseInt(estimateNo) : null,
+            subject: subject,
+            created_date: estimateDate,
+            customer_id: customerId,
+            staff_id: staffId,
+            special_discount: discount,
+            layout_type: layoutType,
+            delivery_place: deliveryPlace,
+            delivery_deadline: deliveryDeadline,
+            delivery_terms: deliveryTerms,
+            validity_text: validityText,
+            payment_terms: paymentTerms,
+          })
+          .eq('case_id', loadedCaseId)
+
+        if (caseError) {
+          throw new Error(`案件更新エラー: ${caseError.message}`)
+        }
+
+        // 既存の明細とセクションを削除
+        await supabase.from('case_details').delete().eq('case_id', loadedCaseId)
+        await supabase.from('case_sections').delete().eq('case_id', loadedCaseId)
+
+      } else {
+        // 新規登録モード
+        targetCaseId = generateCaseId()
+
+        const { error: caseError } = await supabase.from('cases').insert({
+          case_id: targetCaseId,
+          case_no: estimateNo ? parseInt(estimateNo) : null,
+          subject: subject,
+          created_date: estimateDate,
+          customer_id: customerId,
+          staff_id: staffId,
+          status: '商談中',
+          special_discount: discount,
+          layout_type: layoutType,
+          delivery_place: deliveryPlace,
+          delivery_deadline: deliveryDeadline,
+          delivery_terms: deliveryTerms,
+          validity_text: validityText,
+          payment_terms: paymentTerms,
+          approve_staff: null,
+          approve_manager: null,
+          approve_director: null,
+          approve_president: null,
+        })
+
+        if (caseError) {
+          throw new Error(`案件登録エラー: ${caseError.message}`)
+        }
       }
 
       if (layoutType === 'horizontal' && sections.length > 0) {
         const sectionsToInsert = sections.map((section) => ({
-          case_id: newCaseId,
+          case_id: targetCaseId,
           section_id: section.id,
           section_name: section.name,
         }))
@@ -600,14 +724,16 @@ export default function CaseNewPage() {
           .insert(sectionsToInsert)
 
         if (sectionError) {
-          await supabase.from('cases').delete().eq('case_id', newCaseId)
+          if (mode === 'new') {
+            await supabase.from('cases').delete().eq('case_id', targetCaseId)
+          }
           throw new Error(`セクション登録エラー: ${sectionError.message}`)
         }
       }
 
       const detailsToInsert = rows.map((row) => ({
-        case_id: newCaseId,
-        product_id: row.product_id,
+        case_id: targetCaseId,
+        product_id: row.product_id || null,
         spec: row.spec,
         unit: row.unit,
         quantity: row.quantity,
@@ -615,6 +741,7 @@ export default function CaseNewPage() {
         amount: row.amount,
         cost_unit_price: row.cost_price,
         section_id: row.section_id,
+        unregistered_product: row.unregistered_product || null,
       }))
 
       const { error: detailsError } = await supabase
@@ -622,15 +749,25 @@ export default function CaseNewPage() {
         .insert(detailsToInsert)
 
       if (detailsError) {
-        await supabase.from('cases').delete().eq('case_id', newCaseId)
+        if (mode === 'new') {
+          await supabase.from('cases').delete().eq('case_id', targetCaseId)
+        }
         if (layoutType === 'horizontal') {
-          await supabase.from('case_sections').delete().eq('case_id', newCaseId)
+          await supabase.from('case_sections').delete().eq('case_id', targetCaseId)
         }
         throw new Error(`明細登録エラー: ${detailsError.message}`)
       }
 
-      alert('見積書を保存しました')
-      router.push(`/cases/approval/${newCaseId}`)
+      const actionText = mode === 'update' ? '更新' : '保存'
+      alert(`見積書を${actionText}しました`)
+      
+      // 更新モードをリセット
+      if (mode === 'update') {
+        setIsUpdateMode(false)
+        setLoadedCaseId(null)
+      }
+      
+      router.push(`/cases/approval/${targetCaseId}`)
     } catch (error) {
       console.error('保存エラー:', error)
       alert(
@@ -1142,15 +1279,21 @@ export default function CaseNewPage() {
                       />
                     </td>
                     <td style={tdStyle}>
-                      <input
-                        type="number"
-                        value={row.unit_price}
-                        onChange={(e) =>
-                          handleUnitPriceChange(index, Number(e.target.value))
-                        }
-                        className="input-inset"
-                        style={{ width: 100, fontSize: 16 }}
-                      />
+                      <button
+                        onClick={() => handleOpenPriceModal(index)}
+                        className="btn-3d"
+                        style={{
+                          width: '100%',
+                          padding: '4px 8px',
+                          backgroundColor: row.unit_price ? '#e7f3ff' : '#fff',
+                          border: '1px solid #ddd',
+                          cursor: 'pointer',
+                          fontSize: 16,
+                          textAlign: 'right',
+                        }}
+                      >
+                        {row.unit_price ? row.unit_price.toLocaleString() : '未入力'}
+                      </button>
                     </td>
                     <td style={tdStyle}>{row.amount.toLocaleString()}</td>
                     <td style={tdStyle}>{costAmount.toLocaleString()}</td>
@@ -1566,7 +1709,7 @@ export default function CaseNewPage() {
                       <th style={thStyle}>商品名</th>
                       <th style={thStyle}>規格</th>
                       <th style={thStyle}>単位</th>
-                      <th style={thStyle}>単価</th>
+                      <th style={thStyle}>原価</th>
                       <th style={thStyle}>操作</th>
                     </tr>
                   </thead>
@@ -1577,7 +1720,7 @@ export default function CaseNewPage() {
                         <td style={tdStyle}>{product.spec || '-'}</td>
                         <td style={tdStyle}>{product.unit || '-'}</td>
                         <td style={tdStyle}>
-                          {(product.unit_price || 0).toLocaleString()}
+                          {(product.cost_price || 0).toLocaleString()}
                         </td>
                         <td style={tdStyle}>
                           <button
@@ -1724,8 +1867,8 @@ export default function CaseNewPage() {
                     <label style={labelStyle}>単価</label>
                     <input
                       type="text"
-                      value={manualProductUnitPrice}
-                      onChange={(e) => setManualProductUnitPrice(Number(e.target.value) || 0)}
+                      value={manualProductUnitPrice ?? ''}
+                      onChange={(e) => setManualProductUnitPrice(e.target.value ? Number(e.target.value) : null)}
                       className="input-inset"
                       style={{ width: '100%', fontSize: 16 }}
                       placeholder="0"
@@ -1762,6 +1905,152 @@ export default function CaseNewPage() {
               </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ★ 単価計算モーダル */}
+        {showPriceModal && (
+          <div style={modalOverlayStyle}>
+            <div style={{
+              ...modalContentStyle,
+              maxWidth: 600,
+            }}>
+              <h2>単価設定</h2>
+
+              {/* タブボタン */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #ddd' }}>
+                <button
+                  onClick={() => setPriceModalMode('calculate')}
+                  className="btn-3d"
+                  style={{
+                    backgroundColor: priceModalMode === 'calculate' ? '#007bff' : '#e9ecef',
+                    color: priceModalMode === 'calculate' ? '#fff' : '#333',
+                    borderRadius: '4px 4px 0 0',
+                    border: 'none',
+                    padding: '8px 16px',
+                    fontSize: 16,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  📊 掛率計算
+                </button>
+                <button
+                  onClick={() => setPriceModalMode('direct')}
+                  className="btn-3d"
+                  style={{
+                    backgroundColor: priceModalMode === 'direct' ? '#007bff' : '#e9ecef',
+                    color: priceModalMode === 'direct' ? '#fff' : '#333',
+                    borderRadius: '4px 4px 0 0',
+                    border: 'none',
+                    padding: '8px 16px',
+                    fontSize: 16,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  ✏️ 直接入力
+                </button>
+              </div>
+
+              {/* 掛率計算モード */}
+              {priceModalMode === 'calculate' && (
+                <>
+              <div style={{
+                padding: 16,
+                backgroundColor: '#f8f9fa',
+                borderRadius: 4,
+                marginBottom: 16,
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={labelStyle}>定価</label>
+                    <input
+                      type="text"
+                      value={priceModalListPrice ?? ''}
+                      onChange={(e) => setPriceModalListPrice(e.target.value ? Number(e.target.value) : null)}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>掛率 (%)</label>
+                    <input
+                      type="text"
+                      value={priceModalRate ?? ''}
+                      onChange={(e) => setPriceModalRate(e.target.value ? Number(e.target.value) : null)}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCalculatePrice}
+                  className="btn-3d btn-primary"
+                  style={{ width: '100%', marginBottom: 12 }}
+                >
+                  計算
+                </button>
+
+                {priceModalCalculatedPrice !== null && (
+                  <div style={{
+                    padding: 12,
+                    backgroundColor: '#fff',
+                    border: '2px solid #28a745',
+                    borderRadius: 4,
+                    textAlign: 'center',
+                  }}>
+                    <span style={{ fontSize: 14, color: '#666' }}>計算結果</span>
+                    <div style={{ fontSize: 24, fontWeight: 'bold', color: '#28a745' }}>
+                      {priceModalCalculatedPrice.toLocaleString()} 円
+                    </div>
+                  </div>
+                )}
+              </div>
+                </>
+              )}
+
+              {/* 直接入力モード */}
+              {priceModalMode === 'direct' && (
+                <>
+              <div style={{
+                padding: 16,
+                backgroundColor: '#f8f9fa',
+                borderRadius: 4,
+                marginBottom: 16,
+              }}>
+                <div>
+                  <label style={labelStyle}>単価</label>
+                  <input
+                    type="text"
+                    value={priceModalListPrice ?? ''}
+                    onChange={(e) => setPriceModalListPrice(e.target.value ? Number(e.target.value) : null)}
+                    className="input-inset"
+                    style={{ width: '100%', fontSize: 16 }}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowPriceModal(false)}
+                  className="btn-3d btn-reset"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleApplyPrice}
+                  className="btn-3d btn-primary"
+                  style={{ backgroundColor: '#28a745' }}
+                >
+                  ✅ 確定
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1871,6 +2160,65 @@ export default function CaseNewPage() {
                   className="btn-3d btn-reset"
                 >
                   閉じる
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 保存モード選択モーダル */}
+        {showSaveModal && (
+          <div style={modalOverlayStyle}>
+            <div
+              style={{
+                ...modalContentStyle,
+                maxWidth: 500,
+                padding: 32,
+              }}
+            >
+              <h2 style={{ marginBottom: 24, textAlign: 'center' }}>保存方法を選択してください</h2>
+              
+              <div style={{ marginBottom: 24, padding: 16, backgroundColor: '#f8f9fa', borderRadius: 8 }}>
+                <p style={{ margin: 0, fontSize: 14, color: '#666' }}>
+                  過去案件から読み込んだデータです。<br />
+                  既存の案件を更新するか、新しい案件として登録するか選択してください。
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <button
+                  onClick={() => performSave('update')}
+                  className="btn-3d"
+                  style={{
+                    padding: '16px 24px',
+                    fontSize: 18,
+                    backgroundColor: '#28a745',
+                    color: '#fff',
+                  }}
+                >
+                  既存案件を更新する
+                </button>
+                
+                <button
+                  onClick={() => performSave('new')}
+                  className="btn-3d btn-primary"
+                  style={{
+                    padding: '16px 24px',
+                    fontSize: 18,
+                  }}
+                >
+                  新しい案件として登録する
+                </button>
+
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="btn-3d btn-reset"
+                  style={{
+                    padding: '12px 24px',
+                    fontSize: 16,
+                  }}
+                >
+                  キャンセル
                 </button>
               </div>
             </div>

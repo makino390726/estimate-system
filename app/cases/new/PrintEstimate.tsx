@@ -7,10 +7,12 @@ export type PrintRow = {
   spec: string
   unit: string
   quantity: number
-  unit_price: number
+  unit_price: number | null  // ★ null許容に変更
   amount: number
   cost_price: number
   section_id: number | null
+  remarks?: string  // ★ 備考フィールドを追加
+  unregistered_product?: string  // ★ 直接入力商品名
 }
 
 export type PrintSection = { id: number; name: string }
@@ -455,12 +457,12 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
           <table style={{ width: '100%', border: '1px solid #000', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ backgroundColor: '#c8e6c8' }}>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 200, fontSize: 11 }}>商品名・規格</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 180, fontSize: 11 }}>商品名・規格</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 11 }}>数量</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 11 }}>単位</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 90, fontSize: 11 }}>単　　価</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>金　　額</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 80, fontSize: 11 }}>備　　考</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>備　　考</th>
               </tr>
             </thead>
             <tbody>
@@ -498,7 +500,9 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontSize: 11 }}>
                     {row.amount ? row.amount.toLocaleString() : ''}
                   </td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 10 }}>
+                    {row.remarks || ''}
+                  </td>
                 </tr>
               ))}
 
@@ -1078,12 +1082,12 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             >
               <thead>
                 <tr style={{ backgroundColor: '#c8e6c8' }}>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 250, height: '6mm' }}>品　　　名　・　規　　　格</th>
+                  <th style={{ border: '1px solid #000', padding: '2px', width: 230, height: '6mm' }}>品　　　名　・　規　　　格</th>
                   <th style={{ border: '1px solid #000', padding: '2px', width: 45, height: '6mm' }}>数 量</th>
                   <th style={{ border: '1px solid #000', padding: '2px', width: 35, height: '6mm' }}>単位</th>
                   <th style={{ border: '1px solid #000', padding: '2px', width: 70, height: '6mm' }}>単　　価</th>
                   <th style={{ border: '1px solid #000', padding: '2px', width: 80, height: '6mm' }}>金　　額</th>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 50, height: '6mm' }}>備　　考</th>
+                  <th style={{ border: '1px solid #000', padding: '2px', width: 70, height: '6mm' }}>備　　考</th>
                 </tr>
               </thead>
               <tbody>
@@ -1108,7 +1112,9 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                     <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
                       {row.amount ? row.amount.toLocaleString() : ''}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>
+                      {row.remarks || ''}
+                    </td>
                   </tr>
                 ))}
 
@@ -1119,7 +1125,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                     <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                     <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                     <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>&nbsp;</td>
                   </tr>
                 ))}
 
@@ -1131,7 +1137,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>&nbsp;</td>
                     </tr>
                     <tr>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
@@ -1139,7 +1145,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>&nbsp;</td>
                     </tr>
                   </>
                 )}

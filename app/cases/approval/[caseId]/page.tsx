@@ -182,7 +182,7 @@ export default function CaseApprovalPage() {
             const pid = detail.product_id ? String(detail.product_id) : ''
             const product = pid ? byId[pid] : null
 
-            let displayName = product?.name || '-'
+            let displayName = product?.name || detail.unregistered_product || '-'
             const specText = (detail.spec || '').trim()
             if (displayName !== '-' && specText) {
               displayName = `${displayName} ${specText}`
@@ -199,10 +199,11 @@ export default function CaseApprovalPage() {
           console.log('enrichedDetails:', enrichedDetails)
           setDetailsData(enrichedDetails)
         } else {
-          console.warn('product_idが空のため、商品名は設定できません。')
+          console.warn('product_idが空のため、商品マスタは参照できません。')
           setDetailsData(details.map(d => ({
             ...d,
-            product_name: '-',
+            product_name: d.unregistered_product || '-',  // ★ 直接入力商品名を表示
+            cost_price: d.cost_unit_price ?? 0,
           })))
         }
       } else {
@@ -268,6 +269,59 @@ export default function CaseApprovalPage() {
     }
   }
 
+  // ★ 承認のみ（メール送信なし）
+  const handleApproveOnly = async (role: string) => {
+    if (!currentUser) {
+      alert('ログインしてください')
+      return
+    }
+
+    const now = new Date().toISOString()
+    let updateData: any = {}
+
+    switch (role) {
+      case 'staff':
+        updateData = { approve_staff: now }
+        break
+      case 'manager':
+        if (!caseData?.approve_staff) {
+          alert('申請者の承認が必要です')
+          return
+        }
+        updateData = { approve_manager: now }
+        break
+      case 'director':
+        if (!caseData?.approve_manager) {
+          alert('所長の承認が必要です')
+          return
+        }
+        updateData = { approve_director: now }
+        break
+      case 'president':
+        if (!caseData?.approve_director) {
+          alert('専務の承認が必要です')
+          return
+        }
+        updateData = { approve_president: now }
+        break
+    }
+
+    const { error } = await supabase
+      .from('cases')
+      .update(updateData)
+      .eq('case_id', caseId)
+
+    if (error) {
+      console.error('承認エラー:', error)
+      alert('承認に失敗しました')
+    } else {
+      setMsg('承認しました（メール送信なし）')
+      fetchCaseData()
+      setTimeout(() => setMsg(null), 2000)
+    }
+  }
+
+  // ★ 承認してメール送信
   const handleApprove = async (role: string) => {
     if (!currentUser) {
       alert('ログインしてください')
@@ -640,7 +694,7 @@ export default function CaseApprovalPage() {
                       <td style={tdStyle}>{row.product_name || '-'}</td>
                       <td style={tdStyle}>{row.unit}</td>
                       <td style={tdStyle}>{row.quantity}</td>
-                      <td style={tdStyle}>{row.unit_price.toLocaleString()}</td>
+                      <td style={tdStyle}>{row.unit_price ? row.unit_price.toLocaleString() : ''}</td>
                       <td style={tdStyle}>{row.amount.toLocaleString()}</td>
                       <td style={tdStyle}>{costPrice.toLocaleString()}</td>
                       <td style={tdStyle}>{costAmount.toLocaleString()}</td>
@@ -769,7 +823,8 @@ export default function CaseApprovalPage() {
                   className="input-inset" 
                   style={{ flex: 1 }} 
                 />
-                <button onClick={() => handleApprove('staff')} className="btn-3d btn-primary" disabled={!!caseData?.approve_staff}>✓ 承認して次へ送信</button>
+                <button onClick={() => handleApproveOnly('staff')} className="btn-3d" disabled={!!caseData?.approve_staff} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
+                <button onClick={() => handleApprove('staff')} className="btn-3d" disabled={!!caseData?.approve_staff} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
                 <button onClick={() => openPrintPreview('staff')} className="btn-3d">🖨️ 印刷</button>
               </div>
               {approvers.sectionHead && (
@@ -796,7 +851,8 @@ export default function CaseApprovalPage() {
                   className="input-inset" 
                   style={{ flex: 1 }} 
                 />
-                <button onClick={() => handleApprove('manager')} className="btn-3d btn-primary" disabled={!!caseData?.approve_manager || !caseData?.approve_staff}>✓ 承認して次へ送信</button>
+                <button onClick={() => handleApproveOnly('manager')} className="btn-3d" disabled={!!caseData?.approve_manager || !caseData?.approve_staff} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
+                <button onClick={() => handleApprove('manager')} className="btn-3d" disabled={!!caseData?.approve_manager || !caseData?.approve_staff} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
                 <button onClick={() => handleResendEmail('manager')} className="btn-3d">📧 再送信</button>
                 <button onClick={() => openPrintPreview('manager')} className="btn-3d">🖨️ 印刷</button>
               </div>
@@ -835,7 +891,8 @@ export default function CaseApprovalPage() {
                   className="input-inset" 
                   style={{ flex: 1 }} 
                 />
-                <button onClick={() => handleApprove('director')} className="btn-3d btn-primary" disabled={!!caseData?.approve_director || !caseData?.approve_manager}>✓ 承認して次へ送信</button>
+                <button onClick={() => handleApproveOnly('director')} className="btn-3d" disabled={!!caseData?.approve_director || !caseData?.approve_manager} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
+                <button onClick={() => handleApprove('director')} className="btn-3d" disabled={!!caseData?.approve_director || !caseData?.approve_manager} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
                 <button onClick={() => handleResendEmail('director')} className="btn-3d">📧 再送信</button>
                 <button onClick={() => openPrintPreview('director')} className="btn-3d">🖨️ 印刷</button>
               </div>
@@ -866,7 +923,7 @@ export default function CaseApprovalPage() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <button onClick={() => handleApprove('president')} className="btn-3d btn-primary" disabled={!!caseData?.approve_president || !caseData?.approve_director} style={{ flex: 1 }}>✓ 最終承認</button>
+                <button onClick={() => handleApproveOnly('president')} className="btn-3d btn-primary" disabled={!!caseData?.approve_president || !caseData?.approve_director} style={{ flex: 1 }}>✓ 最終承認</button>
                 <button onClick={() => handleResendEmail('president')} className="btn-3d">📧 再送信</button>
                 <button onClick={() => openPrintPreview('president')} className="btn-3d">🖨️ 印刷</button>
               </div>
