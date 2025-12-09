@@ -82,6 +82,15 @@ export default function CaseNewPage() {
   const [pastCaseSearchSubject, setPastCaseSearchSubject] = useState('')
   const [printReady, setPrintReady] = useState(false)
 
+  // ★ 直接入力用state
+  const [productModalTab, setProductModalTab] = useState<'search' | 'manual'>('search')
+  const [manualProductName, setManualProductName] = useState('')
+  const [manualProductSpec, setManualProductSpec] = useState('')
+  const [manualProductUnit, setManualProductUnit] = useState('')
+  const [manualProductUnitPrice, setManualProductUnitPrice] = useState(0)
+  const [manualProductCostPrice, setManualProductCostPrice] = useState(0)
+  const [manualProductQuantity, setManualProductQuantity] = useState(1)
+
   // ★ テーブル・モーダル用スタイル定義（未定義エラー対策）
   const thStyle: React.CSSProperties = {
     border: '1px solid #ccc',
@@ -302,6 +311,39 @@ export default function CaseNewPage() {
     }
 
     setRows((prev) => [...prev, newRow])
+    setShowProductModal(false)
+  }
+
+  // ★ 直接入力商品を追加するハンドラー
+  const handleAddManualProduct = () => {
+    if (!manualProductName.trim()) {
+      alert('商品名を入力してください')
+      return
+    }
+
+    const newRow: Row = {
+      product_id: '',  // マスタに登録されていないため空
+      item_name: manualProductName.trim(),
+      spec: manualProductSpec.trim(),
+      unit: manualProductUnit.trim() || '個',
+      quantity: manualProductQuantity > 0 ? manualProductQuantity : 1,
+      unit_price: manualProductUnitPrice >= 0 ? manualProductUnitPrice : 0,
+      amount: (manualProductUnitPrice >= 0 ? manualProductUnitPrice : 0) * (manualProductQuantity > 0 ? manualProductQuantity : 1),
+      cost_price: manualProductCostPrice >= 0 ? manualProductCostPrice : 0,
+      section_id: null,
+    }
+
+    setRows((prev) => [...prev, newRow])
+
+    // フォームをリセット
+    setManualProductName('')
+    setManualProductSpec('')
+    setManualProductUnit('')
+    setManualProductUnitPrice(0)
+    setManualProductCostPrice(0)
+    setManualProductQuantity(1)
+    setProductModalTab('search')
+
     setShowProductModal(false)
   }
 
@@ -1446,8 +1488,45 @@ export default function CaseNewPage() {
         {showProductModal && (
           <div style={modalOverlayStyle}>
             <div style={modalContentStyle}>
-              <h2>商品選択</h2>
+              <h2>商品追加</h2>
 
+              {/* ★ タブボタン */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #ddd' }}>
+                <button
+                  onClick={() => setProductModalTab('search')}
+                  className="btn-3d"
+                  style={{
+                    backgroundColor: productModalTab === 'search' ? '#007bff' : '#e9ecef',
+                    color: productModalTab === 'search' ? '#fff' : '#333',
+                    borderRadius: '4px 4px 0 0',
+                    border: 'none',
+                    padding: '8px 16px',
+                    fontSize: 16,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  📚 マスタから選択
+                </button>
+                <button
+                  onClick={() => setProductModalTab('manual')}
+                  className="btn-3d"
+                  style={{
+                    backgroundColor: productModalTab === 'manual' ? '#007bff' : '#e9ecef',
+                    color: productModalTab === 'manual' ? '#fff' : '#333',
+                    borderRadius: '4px 4px 0 0',
+                    border: 'none',
+                    padding: '8px 16px',
+                    fontSize: 16,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  ✏️ 直接入力
+                </button>
+              </div>
+
+              {/* ★ マスタから選択タブ */}
+              {productModalTab === 'search' && (
+                <>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 <input
                   type="text"
@@ -1564,6 +1643,119 @@ export default function CaseNewPage() {
                   閉じる
                 </button>
               </div>
+                </>
+              )}
+
+              {/* ★ 直接入力タブ */}
+              {productModalTab === 'manual' && (
+                <>
+              <div style={{
+                padding: 16,
+                backgroundColor: '#f8f9fa',
+                borderRadius: 4,
+                marginBottom: 16,
+              }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 12,
+                }}>
+                  <div>
+                    <label style={labelStyle}>商品名 <span style={{ color: '#dc3545' }}>*</span></label>
+                    <input
+                      type="text"
+                      value={manualProductName}
+                      onChange={(e) => setManualProductName(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="商品名を入力"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>規格</label>
+                    <input
+                      type="text"
+                      value={manualProductSpec}
+                      onChange={(e) => setManualProductSpec(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="例: 1000x2000"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>単位</label>
+                    <input
+                      type="text"
+                      value={manualProductUnit}
+                      onChange={(e) => setManualProductUnit(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="例: 個、m、kg"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>数量</label>
+                    <input
+                      type="text"
+                      value={manualProductQuantity}
+                      onChange={(e) => setManualProductQuantity(Number(e.target.value) || 0)}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="1"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>単価</label>
+                    <input
+                      type="text"
+                      value={manualProductUnitPrice}
+                      onChange={(e) => setManualProductUnitPrice(Number(e.target.value) || 0)}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>原価</label>
+                    <input
+                      type="text"
+                      value={manualProductCostPrice}
+                      onChange={(e) => setManualProductCostPrice(Number(e.target.value) || 0)}
+                      className="input-inset"
+                      style={{ width: '100%', fontSize: 16 }}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => {
+                    setManualProductName('')
+                    setManualProductSpec('')
+                    setManualProductUnit('')
+                    setManualProductUnitPrice(0)
+                    setManualProductCostPrice(0)
+                    setManualProductQuantity(1)
+                  }}
+                  className="btn-3d btn-reset"
+                >
+                  リセット
+                </button>
+                <button
+                  onClick={handleAddManualProduct}
+                  className="btn-3d btn-primary"
+                  style={{ backgroundColor: '#28a745' }}
+                >
+                  ✅ 追加
+                </button>
+              </div>
+                </>
+              )}
             </div>
           </div>
         )}
