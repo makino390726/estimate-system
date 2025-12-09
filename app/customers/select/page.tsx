@@ -37,25 +37,33 @@ function CustomerSelectContent() {
   const [formData, setFormData] = useState<Customer>(emptyForm)
   const [isEdit, setIsEdit] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
   const router = useRouter()
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('returnTo')
   const formRef = useRef<HTMLDivElement | null>(null) // ★ 追加
+  const pageSize = 1000
 
   useEffect(() => {
     fetchCustomers()
   }, [])
 
-  const fetchCustomers = async () => {
-    const { data, error } = await supabase
+  const fetchCustomers = async (page: number = 0) => {
+    const start = page * pageSize
+    const end = start + pageSize - 1
+
+    const { data, error, count } = await supabase
       .from('customers')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('name')
+      .range(start, end)
 
     if (error) {
       console.error('顧客取得エラー:', error)
     } else {
       setCustomers((data || []) as Customer[])
+      setTotalCount(count || 0)
     }
   }
 
@@ -179,6 +187,9 @@ function CustomerSelectContent() {
       router.push(`/customers/${c.id}`)
     }
   }
+
+  // ページネーション
+  const totalPages = Math.ceil((totalCount || 0) / pageSize)
 
   return (
     <div style={{ padding: 24, maxWidth: 980, margin: '0 auto' }}>
@@ -367,6 +378,37 @@ function CustomerSelectContent() {
             style={{ backgroundColor: '#28a745', color: '#fff' }}
           >
             新規顧客を登録
+          </button>
+        </div>
+      )}
+
+      {/* ページネーション */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center' }}>
+          <button
+            disabled={currentPage === 0}
+            onClick={() => { setCurrentPage(0); fetchCustomers(0); }}
+          >
+            最初
+          </button>
+          <button
+            disabled={currentPage === 0}
+            onClick={() => { setCurrentPage(currentPage - 1); fetchCustomers(currentPage - 1); }}
+          >
+            ← 前へ
+          </button>
+          <span>{currentPage + 1} / {totalPages}</span>
+          <button
+            disabled={currentPage === totalPages - 1}
+            onClick={() => { setCurrentPage(currentPage + 1); fetchCustomers(currentPage + 1); }}
+          >
+            次へ →
+          </button>
+          <button
+            disabled={currentPage === totalPages - 1}
+            onClick={() => { setCurrentPage(totalPages - 1); fetchCustomers(totalPages - 1); }}
+          >
+            最後
           </button>
         </div>
       )}
