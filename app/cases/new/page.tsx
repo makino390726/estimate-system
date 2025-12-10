@@ -296,7 +296,8 @@ export default function CaseNewPage() {
   }
 
   const handleSelectCustomer = (customer: Customer) => {
-    setCustomerId(customer.id)
+    // ★ customer_idに得意先名を保存する仕様に合わせて、stateも名前を保持
+    setCustomerId(customer.name)
     setCustomerName(customer.name)
     setShowCustomerModal(false)
   }
@@ -432,8 +433,9 @@ export default function CaseNewPage() {
       }
     })
 
-    setCustomerId(caseData.customer_id || '')
-    setCustomerName(caseData.customer_id || '')
+    // ★ 保存仕様に合わせ、customer_idには顧客名を保持する
+    setCustomerId(caseData.customer_name || caseData.customer_id || '')
+    setCustomerName(caseData.customer_name || caseData.customer_id || '')
     setStaffId(staffData?.id || null)
     setStaffName(staffData?.name || '')
     setSubject(caseData.subject || '')
@@ -512,6 +514,14 @@ export default function CaseNewPage() {
     setPriceModalCalculatedPrice(null)
     setPriceModalMode('calculate')
     setPriceModalShowRemarksCheckbox(true)  // ★ チェックボックスをリセット
+
+    // ★ 単価クリック時に定価を即座に表示
+    if (retailPrice !== null) {
+      alert(`定価: ${retailPrice.toLocaleString()}円`)
+    } else {
+      alert('定価が未登録です')
+    }
+
     setShowPriceModal(true)
   }
 
@@ -697,6 +707,7 @@ export default function CaseNewPage() {
             case_no: estimateNo ? parseInt(estimateNo) : null,
             subject: subject,
             created_date: estimateDate,
+            // ★ customer_idには得意先名を保存する仕様
             customer_id: customerId,
             staff_id: staffId,
             special_discount: discount,
@@ -726,6 +737,7 @@ export default function CaseNewPage() {
           case_no: estimateNo ? parseInt(estimateNo) : null,
           subject: subject,
           created_date: estimateDate,
+          // ★ customer_idには得意先名を保存する仕様
           customer_id: customerId,
           staff_id: staffId,
           status: '商談中',
