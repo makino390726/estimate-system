@@ -103,6 +103,7 @@ export default function CaseNewPage() {
   const [showPriceModal, setShowPriceModal] = useState(false)
   const [priceModalRowIndex, setPriceModalRowIndex] = useState<number | null>(null)
   const [priceModalListPrice, setPriceModalListPrice] = useState<number | null>(null)
+  const [priceModalDirectPrice, setPriceModalDirectPrice] = useState<number | null>(null)  // ★ 直接入力用の値
   const [priceModalRate, setPriceModalRate] = useState<number | null>(null)
   const [priceModalCalculatedPrice, setPriceModalCalculatedPrice] = useState<number | null>(null)
   const [priceModalMode, setPriceModalMode] = useState<'direct' | 'calculate'>('calculate')
@@ -409,10 +410,26 @@ export default function CaseNewPage() {
 
     const { data: productsData } = await supabase
       .from('products')
-      .select('id, name, unit')
+      .select('id, name, unit, retail_price')
       .in('id', productIds)
 
     const productMap = new Map((productsData || []).map((p) => [p.id, p]))
+
+    // ★ 過去案件読込時にproducts配列に追加（定価参照用）
+    const productsToAdd = (productsData || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      spec: '',
+      unit: p.unit || '',
+      unit_price: 0,
+      cost_price: 0,
+      retail_price: p.retail_price || null,
+    }))
+    setProducts(prev => {
+      const existingIds = new Set(prev.map(p => p.id))
+      const newProducts = productsToAdd.filter(p => !existingIds.has(p.id))
+      return [...prev, ...newProducts]
+    })
 
     const loadedRows: Row[] = detailsData.map((detail) => {
       const product = productMap.get(detail.product_id)
@@ -504,18 +521,38 @@ export default function CaseNewPage() {
   const handleOpenPriceModal = (index: number) => {
     setPriceModalRowIndex(index)
     
-    // ★ 商品にretail_priceを初期値として設定（nullまたは0の場合はnullに）
     const row = rows[index]
     const product = products.find(p => p.id === row.product_id)
+    
+    // ★ product_idがあればproductsテーブルからretail_priceを取得
     const retailPrice = (product?.retail_price && product.retail_price > 0) ? product.retail_price : null
     
-    setPriceModalListPrice(retailPrice)
+    // ★ case_detailのunit_price（現在の単価）を直接入力欄に表示
+    const currentUnitPrice = row.unit_price && row.unit_price > 0 ? row.unit_price : null
+    
+    // ★ 過去案件読込時：掛率計算の定価欄にはretail_price、直接入力欄にはunit_priceを表示
+    // 新規追加時：retail_priceを初期値として表示
+    setPriceModalDirectPrice(currentUnitPrice)  // ★ 直接入力用の値を保持
+    
+    if (currentUnitPrice && retailPrice) {
+      // 過去案件読込時：掛率計算モードでretail_priceを表示
+      setPriceModalListPrice(retailPrice)
+      setPriceModalMode('calculate')
+    } else if (currentUnitPrice) {
+      // unit_priceのみある場合：直接入力モード
+      setPriceModalListPrice(currentUnitPrice)
+      setPriceModalMode('direct')
+    } else {
+      // 新規追加時：retail_priceを初期値として表示
+      setPriceModalListPrice(retailPrice)
+      setPriceModalMode('calculate')
+    }
+    
     setPriceModalRate(null)
     setPriceModalCalculatedPrice(null)
-    setPriceModalMode('calculate')
-    setPriceModalShowRemarksCheckbox(true)  // ★ チェックボックスをリセット
+    setPriceModalShowRemarksCheckbox(true)
 
-    // ★ 単価クリック時に定価を即座に表示
+    // ★ 定価を表示
     if (retailPrice !== null) {
       alert(`定価: ${retailPrice.toLocaleString()}円`)
     } else {
@@ -553,11 +590,11 @@ export default function CaseNewPage() {
         remarks = `定価：${priceModalListPrice.toLocaleString()}`
       }
     } else {
-      if (priceModalListPrice === null) {
+      if (priceModalDirectPrice === null) {
         alert('単価を入力してください')
         return
       }
-      finalPrice = priceModalListPrice
+      finalPrice = priceModalDirectPrice
       remarks = ''
     }
 
@@ -2090,8 +2127,8 @@ export default function CaseNewPage() {
                   <label style={labelStyle}>単価</label>
                   <input
                     type="text"
-                    value={priceModalListPrice ?? ''}
-                    onChange={(e) => setPriceModalListPrice(e.target.value ? Number(e.target.value) : null)}
+                    value={priceModalDirectPrice ?? ''}
+                    onChange={(e) => setPriceModalDirectPrice(e.target.value ? Number(e.target.value) : null)}
                     className="input-inset"
                     style={{ width: '100%', fontSize: 16 }}
                     placeholder="0"
