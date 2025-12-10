@@ -40,13 +40,20 @@ export default function MasterSelectorPage() {
           </div>
         </Link>
 
-        <Link href="/products" className="selector-card">
+        <div className="selector-card">
           <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>
             <h2 style={{ marginTop: 0, color: '#fff' }}>商品マスタ</h2>
             <p>商品を検索・選択／修正／削除します</p>
-            <button style={{ ...buttonStyle, marginTop: 8 }}>商品一覧へ</button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <Link href="/products" style={{ flex: 1 }}>
+                <button style={{ ...buttonStyle, width: '100%' }}>商品一覧へ</button>
+              </Link>
+              <Link href="/products/price_import" style={{ flex: 1 }}>
+                <button style={{ ...buttonStyle, width: '100%' }}>マスタ更新</button>
+              </Link>
+            </div>
           </div>
-        </Link>
+        </div>
 
         <Link href="/staffs" className="selector-card">
           <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>

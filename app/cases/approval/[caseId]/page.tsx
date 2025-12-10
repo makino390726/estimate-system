@@ -139,7 +139,19 @@ export default function CaseApprovalPage() {
 
     if (caseDataResult) {
       setCaseData(caseDataResult)
-      setCustomerName(caseDataResult.customer_id || caseDataResult.customer_name || '-')
+
+      // ★ 得意先名を取得
+      if (caseDataResult.customer_id) {
+        const { data: customerData } = await supabase
+          .from('customers')
+          .select('name')
+          .eq('id', caseDataResult.customer_id)
+          .single()
+        
+        setCustomerName(customerData?.name || caseDataResult.customer_name || '-')
+      } else {
+        setCustomerName(caseDataResult.customer_name || '-')
+      }
 
       // ★ セクションデータ取得を追加
       const { data: caseSections, error: sectionsError } = await supabase
@@ -751,7 +763,7 @@ export default function CaseApprovalPage() {
                       <td style={tdStyle}>{costPrice.toLocaleString()}</td>
                       <td style={tdStyle}>{costAmount.toLocaleString()}</td>
                       <td style={tdStyle}>{grossProfit.toLocaleString()}</td>
-                      <td style={tdStyle}>{row.section || '-'}</td>
+                      <td style={tdStyle}>{row.remarks || '-'}</td>
                     </tr>
                   )
                 })}

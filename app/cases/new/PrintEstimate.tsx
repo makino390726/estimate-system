@@ -203,7 +203,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               <th style={{ border: '1px solid #000', padding: '4px', width: 200, fontSize: 11 }}>商品名・規格</th>
               <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 11 }}>数量</th>
               <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 11 }}>単位</th>
-              <th style={{ border: '1px solid #000', padding: '4px', width: 90, fontSize: 11 }}>単　　価</th>
+              <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 11 }}>単　　価</th>
               <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>金　　額</th>
               <th style={{ border: '1px solid #000', padding: '4px', width: 80, fontSize: 11 }}>備　　考</th>
             </tr>
@@ -460,7 +460,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                 <th style={{ border: '1px solid #000', padding: '4px', width: 180, fontSize: 11 }}>商品名・規格</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 11 }}>数量</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 11 }}>単位</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 90, fontSize: 11 }}>単　　価</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 11 }}>単　　価</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>金　　額</th>
                 <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>備　　考</th>
               </tr>

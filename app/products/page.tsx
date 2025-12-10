@@ -9,6 +9,7 @@ type Product = {
   name: string
   unit: string | null
   cost_price: number | null
+  retail_price: number | null
 }
 
 type FormData = {
@@ -16,6 +17,7 @@ type FormData = {
   name: string
   unit: string
   cost_price: string
+  retail_price: string
 }
 
 export default function ProductsPage() {
@@ -28,62 +30,50 @@ export default function ProductsPage() {
     name: '',
     unit: '',
     cost_price: '',
+    retail_price: '',
   })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const itemsPerPage = 50
 
   useEffect(() => {
     fetchProducts()
-  }, [])
+  }, [currentPage, keyword])
 
   const fetchProducts = async () => {
-    // ★ より安全な全件取得方法
     try {
-      let allProducts: Product[] = []
-      let page = 0
-      const pageSize = 1000
+      const from = (currentPage - 1) * itemsPerPage
+      const to = from + itemsPerPage - 1
 
-      while (true) {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .order('name')
-          .range(page * pageSize, (page + 1) * pageSize - 1)
+      let query = supabase
+        .from('products')
+        .select('*', { count: 'exact' })
+        .order('name')
+        .range(from, to)
 
-        if (error) {
-          throw error
-        }
-
-        if (!data || data.length === 0) {
-          break
-        }
-
-        allProducts.push(...(data as Product[]))
-
-        if (data.length < pageSize) {
-          break
-        }
-
-        page++
+      if (keyword.trim()) {
+        query = query.ilike('name', `%${keyword.trim()}%`)
       }
 
-      console.log(`取得完了: 全${allProducts.length}件`)
-      setProducts(allProducts)
+      const { data, error, count } = await query
+
+      if (error) {
+        throw error
+      }
+
+      setProducts(data || [])
+      setTotalCount(count || 0)
+      console.log(`取得完了: ${data?.length || 0}件 / 全${count || 0}件`)
     } catch (error) {
       console.error('商品取得エラー:', error)
       alert('商品取得エラーが発生しました')
     }
   }
 
-  // ★ 改善された曖昧検索（全角・半角対応、複数文字対応）
-  const filteredProducts = products.filter((p) => {
-    const productName = p.name.toLowerCase()
-    const searchKeyword = keyword.toLowerCase()
-    
-    // 空白削除版でも検索
-    const productNameNoSpace = productName.replace(/\s+/g, '')
-    const searchKeywordNoSpace = searchKeyword.replace(/\s+/g, '')
-    
-    return productName.includes(searchKeyword) || productNameNoSpace.includes(searchKeywordNoSpace)
-  })
+  const handleSearchChange = (value: string) => {
+    setKeyword(value)
+    setCurrentPage(1)
+  }
 
   const handleNew = () => {
     setEditingId(null)
@@ -92,6 +82,7 @@ export default function ProductsPage() {
       name: '',
       unit: '',
       cost_price: '',
+      retail_price: '',
     })
     setShowForm(true)
   }
@@ -103,6 +94,7 @@ export default function ProductsPage() {
       name: product.name,
       unit: product.unit || '',
       cost_price: product.cost_price?.toString() || '',
+      retail_price: product.retail_price?.toString() || '',
     })
     setShowForm(true)
   }
@@ -115,6 +107,7 @@ export default function ProductsPage() {
       name: '',
       unit: '',
       cost_price: '',
+      retail_price: '',
     })
   }
 
@@ -125,6 +118,7 @@ export default function ProductsPage() {
     }
 
     const costPrice = formData.cost_price ? parseInt(formData.cost_price) : null
+    const retailPrice = formData.retail_price ? parseInt(formData.retail_price) : null
 
     try {
       if (editingId) {
@@ -135,6 +129,7 @@ export default function ProductsPage() {
             name: formData.name,
             unit: formData.unit || null,
             cost_price: costPrice,
+            retail_price: retailPrice,
           })
           .eq('id', editingId)
 
@@ -148,25 +143,58 @@ export default function ProductsPage() {
           alert('商品IDを入力してください')
           return
         }
-
-        const { error } = await supabase
+        // 既存IDのレコードがあり、商品名が異なる場合は商品名（および入力された項目）を更新する
+        const { data: existingRows, error: existingFetchError } = await supabase
           .from('products')
-          .insert({
-            id: formData.id,
+          .select('id, name')
+          .eq('id', formData.id)
+          .limit(1)
+
+        if (existingFetchError) {
+          throw existingFetchError
+        }
+
+        const existing = existingRows?.[0]
+
+        if (existing) {
+          const updatePayload: any = {
             name: formData.name,
             unit: formData.unit || null,
             cost_price: costPrice,
-          })
+            retail_price: retailPrice,
+          }
 
-        if (error) {
-          throw error
+          const { error: updateExistingError } = await supabase
+            .from('products')
+            .update(updatePayload)
+            .eq('id', formData.id)
+
+          if (updateExistingError) {
+            throw updateExistingError
+          }
+          alert('既存IDの商品名を更新しました（その他入力項目も反映）')
+        } else {
+          const { error } = await supabase
+            .from('products')
+            .insert({
+              id: formData.id,
+              name: formData.name,
+              unit: formData.unit || null,
+              cost_price: costPrice,
+              retail_price: retailPrice,
+            })
+
+          if (error) {
+            throw error
+          }
+          alert('商品を登録しました')
         }
-        alert('商品を登録しました')
       }
 
       setShowForm(false)
       setEditingId(null)
       setKeyword('')
+      setCurrentPage(1)
       fetchProducts()
     } catch (error: any) {
       console.error('保存エラー:', error)
@@ -189,6 +217,7 @@ export default function ProductsPage() {
         throw error
       }
       alert('商品を削除しました')
+      setCurrentPage(1)
       fetchProducts()
     } catch (error: any) {
       console.error('削除エラー:', error)
@@ -212,9 +241,9 @@ export default function ProductsPage() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             <input
               type="text"
-              placeholder="商品名で検索（全件対象・曖昧検索）"
+              placeholder="商品名で検索（曖昧検索）"
               value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               autoFocus
               style={{ flex: 1, maxWidth: 400 }}
               className="input-inset"
@@ -226,8 +255,8 @@ export default function ProductsPage() {
 
           {keyword && (
             <div style={{ marginBottom: 8, fontSize: 14, color: '#666' }}>
-              「<strong>{keyword}</strong>」で検索：<strong>{filteredProducts.length}</strong>件
-              {filteredProducts.length === 0 && (
+              「<strong>{keyword}</strong>」で検索：<strong>{totalCount}</strong>件
+              {totalCount === 0 && (
                 <span style={{ marginLeft: 16, color: '#d32f2f' }}>
                   ヒント: 登録されている商品名を確認してください
                 </span>
@@ -235,7 +264,7 @@ export default function ProductsPage() {
             </div>
           )}
 
-          {filteredProducts.length > 0 ? (
+          {products.length > 0 ? (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -243,11 +272,12 @@ export default function ProductsPage() {
                   <th style={thStyle}>商品名</th>
                   <th style={thStyle}>単位</th>
                   <th style={thStyle}>原価</th>
+                  <th style={thStyle}>定価</th>
                   <th style={{ ...thStyle, width: 120, textAlign: 'center' }}>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.map((p) => (
+                {products.map((p) => (
                   <tr key={p.id}>
                     <td style={tdStyle}>{p.id}</td>
                     <td style={tdStyle}>
@@ -273,6 +303,9 @@ export default function ProductsPage() {
                     <td style={tdStyle}>{p.unit || '-'}</td>
                     <td style={tdStyle}>
                       {p.cost_price != null ? p.cost_price.toLocaleString() : '-'}
+                    </td>
+                    <td style={tdStyle}>
+                      {p.retail_price != null ? p.retail_price.toLocaleString() : '-'}
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'center' }}>
                       <button
@@ -300,8 +333,34 @@ export default function ProductsPage() {
             </p>
           ) : (
             <p style={{ textAlign: 'center', color: '#999', marginTop: 24 }}>
-              全<strong>{products.length}</strong>件の商品があります
+              全<strong>{totalCount}</strong>件の商品があります
             </p>
+          )}
+
+          {/* ページネーション */}
+          {totalCount > itemsPerPage && (
+            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="btn-3d"
+                style={{ padding: '8px 16px', opacity: currentPage === 1 ? 0.5 : 1 }}
+              >
+                ← 前へ
+              </button>
+              <span style={{ fontSize: 14, color: '#666' }}>
+                {currentPage} / {Math.ceil(totalCount / itemsPerPage)} ページ
+                （全{totalCount}件中 {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, totalCount)}件を表示）
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / itemsPerPage), prev + 1))}
+                disabled={currentPage >= Math.ceil(totalCount / itemsPerPage)}
+                className="btn-3d"
+                style={{ padding: '8px 16px', opacity: currentPage >= Math.ceil(totalCount / itemsPerPage) ? 0.5 : 1 }}
+              >
+                次へ →
+              </button>
+            </div>
           )}
         </>
       )}
@@ -350,12 +409,24 @@ export default function ProductsPage() {
             />
           </div>
 
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>原価</label>
             <input
               type="number"
               value={formData.cost_price}
               onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
+              placeholder="0"
+              className="input-inset"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>定価</label>
+            <input
+              type="number"
+              value={formData.retail_price}
+              onChange={(e) => setFormData({ ...formData, retail_price: e.target.value })}
               placeholder="0"
               className="input-inset"
               style={{ width: '100%' }}
