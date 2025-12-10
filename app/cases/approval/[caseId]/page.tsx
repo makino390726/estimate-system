@@ -705,7 +705,7 @@ export default function CaseApprovalPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div><strong>見積番号:</strong> {caseData.case_no}</div>
               <div><strong>作成日:</strong> {caseData.created_date}</div>
-              <div><strong>得意先名:</strong> {customerName || caseData.customer_name || '-'}</div>
+              <div><strong>得意先名:</strong> {caseData?.customer_id || caseData?.customer_name || '-'}</div>
               <div><strong>担当者:</strong> {staffName}</div>
               <div><strong>件名:</strong> {caseData.subject}</div>
               <div><strong>ステータス:</strong> {getStatusText(caseData.status)}</div>

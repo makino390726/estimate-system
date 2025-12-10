@@ -501,7 +501,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                     {row.amount ? row.amount.toLocaleString() : ''}
                   </td>
                   <td style={{ border: '1px solid #000', padding: '4px', fontSize: 10 }}>
-                    {row.remarks || ''}
+                    {(row.remarks || '').replace(/円$/g, '')}
                   </td>
                 </tr>
               ))}
@@ -1113,7 +1113,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                       {row.amount ? row.amount.toLocaleString() : ''}
                     </td>
                     <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>
-                      {row.remarks || ''}
+                      {(row.remarks || '').replace(/円$/g, '')}
                     </td>
                   </tr>
                 ))}
