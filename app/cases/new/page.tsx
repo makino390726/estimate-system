@@ -550,7 +550,7 @@ export default function CaseNewPage() {
       finalPrice = priceModalCalculatedPrice
       // ★ チェックボックスがオンの場合のみ定価を備考に保存
       if (priceModalShowRemarksCheckbox && priceModalListPrice) {
-        remarks = `定価：${priceModalListPrice.toLocaleString()}円`
+        remarks = `定価：${priceModalListPrice.toLocaleString()}`
       }
     } else {
       if (priceModalListPrice === null) {
