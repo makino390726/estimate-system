@@ -140,18 +140,9 @@ export default function CaseApprovalPage() {
     if (caseDataResult) {
       setCaseData(caseDataResult)
 
-      // ★ 得意先名を取得
-      if (caseDataResult.customer_id) {
-        const { data: customerData } = await supabase
-          .from('customers')
-          .select('name')
-          .eq('id', caseDataResult.customer_id)
-          .single()
-        
-        setCustomerName(customerData?.name || caseDataResult.customer_name || '-')
-      } else {
-        setCustomerName(caseDataResult.customer_name || '-')
-      }
+      // ★ customer_idに得意先名が直接保存されている仕様に対応
+      // customer_idが得意先名を保持しているため直接表示
+      setCustomerName(caseDataResult.customer_id || caseDataResult.customer_name || '-')
 
       // ★ セクションデータ取得を追加
       const { data: caseSections, error: sectionsError } = await supabase
