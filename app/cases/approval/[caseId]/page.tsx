@@ -95,8 +95,14 @@ export default function CaseApprovalPage() {
   })
 
   const openPrintPreview = (level: 'staff' | 'manager' | 'director' | 'president') => {
+    console.log('openPrintPreview called with level:', level)
     setPreviewApprovalLevel(level)
     setShowPrintPreview(true)
+  }
+
+  const closePrintPreview = () => {
+    console.log('closePrintPreview called')
+    setShowPrintPreview(false)
   }
 
   useEffect(() => {
@@ -105,6 +111,7 @@ export default function CaseApprovalPage() {
       fetchCaseData()
     }
     setCurrentUser({ id: 1, name: '仮ユーザー', role: 'staff' })
+    console.log('Initial showPrintPreview state:', showPrintPreview)
   }, [caseId])
 
   // ★ approversが更新されたらメールアドレスを自動入力
@@ -273,6 +280,9 @@ export default function CaseApprovalPage() {
         senmu: senmu?.name || null,
         shacho: shacho?.name || null,
       })
+
+      // ★ モーダル状態をリセット（ホワイトアウト対策）
+      setShowPrintPreview(false)
     }
   }
 
@@ -501,6 +511,33 @@ export default function CaseApprovalPage() {
     await sendApprovalEmail(email, caseId, true)
   }
 
+  // ★ 承認取消処理
+  const handleCancelApproval = async () => {
+    if (!confirm('申請者の承認を取り消しますか？\n印章が削除され、承認前の状態に戻ります。')) {
+      return
+    }
+
+    const { error } = await supabase
+      .from('cases')
+      .update({
+        approve_staff: null,
+        approve_manager: null,
+        approve_director: null,
+        approve_president: null,
+        skip_higher_approval: null,
+      })
+      .eq('case_id', caseId)
+
+    if (error) {
+      console.error('承認取消エラー:', error)
+      alert('承認取消に失敗しました')
+    } else {
+      setMsg('承認を取り消しました')
+      fetchCaseData()
+      setTimeout(() => setMsg(null), 2000)
+    }
+  }
+
   const sendApprovalEmail = async (email: string, caseId: string, isResend: boolean = false) => {
     try {
       const response = await fetch('/api/send-approval-email', {
@@ -646,13 +683,13 @@ export default function CaseApprovalPage() {
         <>
           {/* 印刷プレビューモーダル */}
           {showPrintPreview && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowPrintPreview(false)}>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={closePrintPreview}>
               <div style={{ backgroundColor: '#fff', padding: 24, borderRadius: 8, maxWidth: '95vw', maxHeight: '95vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
                   <h2>印刷プレビュー</h2>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={handlePrint} className="btn-3d btn-primary">🖨️ 印刷</button>
-                    <button onClick={() => setShowPrintPreview(false)} className="btn-3d btn-reset">✕ 閉じる</button>
+                    <button onClick={closePrintPreview} className="btn-3d btn-reset">✕ 閉じる</button>
                   </div>
                 </div>
                 <PrintEstimate
@@ -874,9 +911,17 @@ export default function CaseApprovalPage() {
                   onClick={() => handleApproveOnly('staff')}
                   className="btn-3d"
                   disabled={!!caseData?.approve_staff}
-                  style={{ backgroundColor: '#dc3545', color: '#fff', flex: 1 }}
+                  style={{ backgroundColor: '#dc3545', color: '#fff', minWidth: 120 }}
                 >
-                  申請不要（印章を付与）
+                  申請不要
+                </button>
+                <button
+                  onClick={handleCancelApproval}
+                  className="btn-3d"
+                  disabled={!caseData?.approve_staff}
+                  style={{ backgroundColor: '#6c757d', color: '#fff', minWidth: 120 }}
+                >
+                  承認取消
                 </button>
                 <button onClick={() => handleApprove('staff')} className="btn-3d" disabled={!!caseData?.approve_staff} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
                 <button onClick={() => openPrintPreview('staff')} className="btn-3d">🖨️ 印刷</button>
