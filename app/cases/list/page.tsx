@@ -22,12 +22,30 @@ type CaseWithDetails = {
 
 export default function CaseListPage() {
   const [cases, setCases] = useState<CaseWithDetails[]>([])
+  const [originalCases, setOriginalCases] = useState<CaseWithDetails[]>([])
   const [loading, setLoading] = useState(true)
+  const [staffFilter, setStaffFilter] = useState('')
+  const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([])
   const router = useRouter()
 
   useEffect(() => {
     fetchCases()
+    fetchStaffOptions()
   }, [])
+
+  const fetchStaffOptions = async () => {
+    const { data, error } = await supabase
+      .from('staffs')
+      .select('id, name')
+      .order('name', { ascending: true })
+
+    if (error) {
+      console.error('担当者一覧取得エラー:', error)
+      return
+    }
+
+    setStaffOptions(data || [])
+  }
 
   const fetchCases = async () => {
     setLoading(true)
@@ -105,6 +123,7 @@ export default function CaseListPage() {
       })
 
       setCases(formattedCases)
+      setOriginalCases(formattedCases)
 
       const endTime = performance.now()
       console.log(`✅ データ取得時間: ${(endTime - startTime).toFixed(2)}ms`)
@@ -217,6 +236,20 @@ export default function CaseListPage() {
     }
   }
 
+  const handleFilterByStaff = () => {
+    if (!staffFilter) {
+      setCases(originalCases)
+      return
+    }
+
+    setCases(originalCases.filter((c) => c.staff_name === staffFilter))
+  }
+
+  const handleShowAll = () => {
+    setStaffFilter('')
+    fetchCases()
+  }
+
   const getStatusBadge = (status: string) => {
     const styles: { [key: string]: React.CSSProperties } = {
       pending: { backgroundColor: '#ffc107', color: '#000' },
@@ -261,8 +294,24 @@ export default function CaseListPage() {
     <div style={{ padding: 24, maxWidth: 1600, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1 style={{ marginTop: 0 }}>案件一覧・承認</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={fetchCases} className="btn-3d btn-reset">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select
+            value={staffFilter}
+            onChange={(e) => setStaffFilter(e.target.value)}
+            className="input-inset"
+            style={{ minWidth: 200 }}
+          >
+            <option value="">担当者を選択</option>
+            {staffOptions.map((staff) => (
+              <option key={staff.id} value={staff.name}>
+                {staff.name}
+              </option>
+            ))}
+          </select>
+          <button onClick={handleFilterByStaff} className="btn-3d btn-primary">
+            担当者で絞込
+          </button>
+          <button onClick={handleShowAll} className="btn-3d btn-reset">
             全件表示
           </button>
           <Link href="/selectors">
