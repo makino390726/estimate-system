@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const isDevelopment = process.env.NODE_ENV !== 'production'
 
     // 開発中は自分だけに飛ばす
-    const toEmail = isDevelopment ? 'smata2696@gmail.com' : email
+    const toEmail = isDevelopment ? 'test@sanshu.co.jp' : email
 
     if (isDevelopment && email !== toEmail) {
       console.log(`⚠️ 開発環境: ${email} → ${toEmail} にリダイレクト`)

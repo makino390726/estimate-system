@@ -76,9 +76,9 @@ export default function CaseApprovalPage() {
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
-  const [managerEmail, setManagerEmail] = useState('smata2696@gmail.com')
-  const [directorEmail, setDirectorEmail] = useState('smata2696@gmail.com')
-  const [presidentEmail, setPresidentEmail] = useState('smata2696@gmail.com')
+  const [managerEmail, setManagerEmail] = useState('')
+  const [directorEmail, setDirectorEmail] = useState('')
+  const [presidentEmail, setPresidentEmail] = useState('')
 
   const [rejectEmailManager, setRejectEmailManager] = useState('')
   const [rejectEmailDirector, setRejectEmailDirector] = useState('')
