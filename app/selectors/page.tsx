@@ -51,7 +51,7 @@ export default function MasterSelectorPage() {
               <FiFileText className="icon" />
               <h2>見積書作成</h2>
             </div>
-            <p>見積書作成のいた、既設者のと信頼書、仕事数者に不件を探します。</p>
+            <p>見積書作成の画面です、縦・横の様式選択、過去案件からの作成等が出来ます。</p>
             <div className="selector-card-buttons">
               <Link href="/cases/new" className="selector-button primary">
                 見積書作成
@@ -65,7 +65,7 @@ export default function MasterSelectorPage() {
               <FiArchive className="icon" />
               <h2>案件一覧・承認</h2>
             </div>
-            <p>案件一覧・承認、案件相談限定者計に確認ることができます。</p>
+            <p>案件一覧・承認、見積書の進捗（ステータス）、明細表示から承認依頼も行えます。</p>
             <div className="selector-card-buttons">
               <Link href="/cases/list" className="selector-button primary">
                 案件一覧・承認
@@ -79,13 +79,13 @@ export default function MasterSelectorPage() {
               <FiBox className="icon" />
               <h2>商品マスタ</h2>
             </div>
-            <p>商品マスタと商品で入り、商品を作成します。</p>
+            <p>商品マスタの新規登録及び、価格等の変更に伴う更新作業を行います。</p>
             <div className="selector-card-buttons">
               <Link href="/products" className="selector-button primary">
                 商品検索
               </Link>
               <Link href="/products/price_import" className="selector-button primary">
-                新規登録
+                マスタ取込
               </Link>
             </div>
           </div>
@@ -96,7 +96,7 @@ export default function MasterSelectorPage() {
               <FiUser className="icon" />
               <h2>担当者マスタ</h2>
             </div>
-            <p>担当者マスタにようした担当者の名誉番号を設置ができます。</p>
+            <p>担当者の新規登録、印章登録、承認経路を設定する画面です。</p>
             <div className="selector-card-buttons">
               <Link href="/staffs" className="selector-button primary">
                 担当者マスタ
@@ -110,7 +110,7 @@ export default function MasterSelectorPage() {
               <FiUsers className="icon" />
               <h2>顧客マスタ</h2>
             </div>
-            <p>顧客マスタは、多長の顧客と作業を許します。</p>
+            <p>顧客マスタの新規登録及び登録された顧客情報の更新作業を行う画面です。</p>
             <div className="selector-card-buttons">
               <Link href="/customers/select" className="selector-button primary">
                 顧客マスタ
@@ -124,13 +124,13 @@ export default function MasterSelectorPage() {
               <FiTrendingUp className="icon" />
               <h2>実績関係出力</h2>
             </div>
-            <p>実績関係出力やシャートに数置に定置ができます。</p>
+            <p>各担当者別実績表を、期間、担当者別に出力、製造計画書は受注案件の商品をPDFで出力できます。</p>
             <div className="selector-card-buttons">
               <Link href="/plan" className="selector-button primary">
-                実績検索
+                製造計画一覧
               </Link>
               <Link href="/plan/staff_performance" className="selector-button primary">
-                マスタ更新
+                担当者別実績表
               </Link>
             </div>
           </div>
