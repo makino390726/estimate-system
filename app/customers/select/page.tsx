@@ -192,9 +192,9 @@ function CustomerSelectContent() {
   const totalPages = Math.ceil((totalCount || 0) / pageSize)
 
   return (
-    <div style={{ padding: 24, maxWidth: 980, margin: '0 auto' }}>
+    <div style={{ padding: 24, maxWidth: 980, margin: '0 auto', color: '#e2e8f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h1 style={{ marginTop: 0 }}>顧客マスタ検索</h1>
+        <h1 style={{ marginTop: 0, color: '#fff' }}>顧客マスタ検索</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={startNew}
@@ -204,7 +204,7 @@ function CustomerSelectContent() {
             + 新規登録 / 編集
           </button>
           <Link href={returnTo || "/selectors"}>
-            <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
+            <button className="btn-3d btn-reset" style={{ padding: '8px 16px', color: '#fff', backgroundColor: '#16a34a', border: '1px solid #15803d' }}>
               ← {returnTo ? '戻る' : 'メニューに戻る'}
             </button>
           </Link>
@@ -215,11 +215,11 @@ function CustomerSelectContent() {
       {showForm && (
         <div
           ref={formRef} // ★ 追加
-          style={{ marginBottom: 16, padding: 16, border: '2px solid #28a745', borderRadius: 8, backgroundColor: '#f0f9f4' }}
+          style={{ marginBottom: 16, padding: 16, border: '1px solid #334155', borderRadius: 12, backgroundColor: '#1e293b', color: '#e2e8f0' }}
         >
-          <h3 style={{ marginTop: 0 }}>{isEdit ? '顧客編集' : '新規顧客登録'}</h3>
+          <h3 style={{ marginTop: 0, color: '#93c5fd' }}>{isEdit ? '顧客編集' : '新規顧客登録'}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <label>顧客名
+            <label style={{ color: '#cbd5e1' }}>顧客名
               <input
                 type="text"
                 value={formData.name}
@@ -227,7 +227,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label>フリガナ
+            <label style={{ color: '#cbd5e1' }}>フリガナ
               <input
                 type="text"
                 value={formData.furigana || ''}
@@ -235,7 +235,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label>郵便番号
+            <label style={{ color: '#cbd5e1' }}>郵便番号
               <input
                 type="text"
                 value={formData.postal_code || ''}
@@ -243,7 +243,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label>住所1
+            <label style={{ color: '#cbd5e1' }}>住所1
               <input
                 type="text"
                 value={formData.address1 || ''}
@@ -251,7 +251,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label>住所2
+            <label style={{ color: '#cbd5e1' }}>住所2
               <input
                 type="text"
                 value={formData.address2 || ''}
@@ -259,7 +259,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label>電話
+            <label style={{ color: '#cbd5e1' }}>電話
               <input
                 type="text"
                 value={formData.tel || ''}
@@ -267,7 +267,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label>FAX
+            <label style={{ color: '#cbd5e1' }}>FAX
               <input
                 type="text"
                 value={formData.fax || ''}
@@ -275,7 +275,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label>メール
+            <label style={{ color: '#cbd5e1' }}>メール
               <input
                 type="email"
                 value={formData.email || ''}
@@ -283,7 +283,7 @@ function CustomerSelectContent() {
                 className="input-inset"
               />
             </label>
-            <label style={{ gridColumn: '1 / -1' }}>備考
+            <label style={{ gridColumn: '1 / -1', color: '#cbd5e1' }}>備考
               <textarea
                 value={formData.note || ''}
                 onChange={(e) => setFormData({ ...formData, note: e.target.value })}
@@ -305,6 +305,7 @@ function CustomerSelectContent() {
               type="button" // ★ 追加
               onClick={() => { setShowForm(false); setIsEdit(false); setFormData(emptyForm); }}
               className="btn-3d btn-reset"
+              style={{ color: '#fff' }}
             >
               キャンセル
             </button>
@@ -370,8 +371,8 @@ function CustomerSelectContent() {
       </table>
 
       {filteredCustomers.length === 0 && (
-        <div style={{ textAlign: 'center', marginTop: 24 }}>
-          <p style={{ color: '#999' }}>該当する顧客がいません</p>
+        <div style={{ textAlign: 'center', marginTop: 24, color: '#94a3b8' }}>
+          <p>該当する顧客がいません</p>
           <button
             onClick={startNew}
             className="btn-3d"
@@ -384,16 +385,20 @@ function CustomerSelectContent() {
 
       {/* ページネーション */}
       {totalPages > 1 && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center', color: '#cbd5e1' }}>
           <button
             disabled={currentPage === 0}
             onClick={() => { setCurrentPage(0); fetchCustomers(0); }}
+            className="btn-3d"
+            style={{ padding: '6px 10px', color: '#fff', opacity: currentPage === 0 ? 0.5 : 1 }}
           >
             最初
           </button>
           <button
             disabled={currentPage === 0}
             onClick={() => { setCurrentPage(currentPage - 1); fetchCustomers(currentPage - 1); }}
+            className="btn-3d"
+            style={{ padding: '6px 10px', color: '#fff', opacity: currentPage === 0 ? 0.5 : 1 }}
           >
             ← 前へ
           </button>
@@ -401,12 +406,16 @@ function CustomerSelectContent() {
           <button
             disabled={currentPage === totalPages - 1}
             onClick={() => { setCurrentPage(currentPage + 1); fetchCustomers(currentPage + 1); }}
+            className="btn-3d"
+            style={{ padding: '6px 10px', color: '#fff', opacity: currentPage === totalPages - 1 ? 0.5 : 1 }}
           >
             次へ →
           </button>
           <button
             disabled={currentPage === totalPages - 1}
             onClick={() => { setCurrentPage(totalPages - 1); fetchCustomers(totalPages - 1); }}
+            className="btn-3d"
+            style={{ padding: '6px 10px', color: '#fff', opacity: currentPage === totalPages - 1 ? 0.5 : 1 }}
           >
             最後
           </button>
@@ -426,13 +435,16 @@ export default function CustomerSelectPage() {
 }
 
 const thStyle: React.CSSProperties = {
-  border: '1px solid #ccc',
+  border: '1px solid #334155',
   padding: '8px 12px',
-  backgroundColor: '#f5f5f5',
+  backgroundColor: '#1e293b',
+  color: '#cbd5e1',
   textAlign: 'left',
 }
 
 const tdStyle: React.CSSProperties = {
-  border: '1px solid #ccc',
+  border: '1px solid #334155',
   padding: '8px 12px',
+  backgroundColor: '#0f172a',
+  color: '#e2e8f0',
 }

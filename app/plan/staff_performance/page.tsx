@@ -207,8 +207,8 @@ export default function StaffPlanPage() {
             style={{
               padding: '8px 16px',
               borderRadius: 4,
-              border: '1px solid #999',
-              backgroundColor: '#999',
+              border: '1px solid #15803d',
+              backgroundColor: '#16a34a',
               color: '#fff',
               cursor: 'pointer',
               fontWeight: 'bold',

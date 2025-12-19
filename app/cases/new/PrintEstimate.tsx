@@ -79,6 +79,21 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   const taxAmount = Math.floor(subtotalAfterDiscount * taxRate)
   const totalAmount = subtotalAfterDiscount + taxAmount
 
+  // ★ 印刷用スタイルを返す
+  const printStyleSheet = `
+    @media print {
+      * {
+        color: #000 !important;
+        background-color: transparent !important;
+        background-image: none !important;
+        text-shadow: none !important;
+      }
+      body, div, p, span, td, th, table, tr {
+        color: #000 !important;
+      }
+    }
+  `
+
   // ★ 和暦変換関数を追加
   const toWareki = (dateStr: string): string => {
     if (!dateStr) return ''
@@ -194,6 +209,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
           boxSizing: 'border-box',
           fontFamily: 'MS Gothic, "Hiragino Sans", "Yu Gothic", sans-serif',
           fontSize: 11,
+          color: '#000',
           pageBreakAfter: 'always',
         }}
       >
@@ -451,6 +467,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             boxSizing: 'border-box',
             fontFamily: 'MS Gothic, "Hiragino Sans", "Yu Gothic", sans-serif',
             fontSize: 11,
+            color: '#000',
             pageBreakAfter: groupIndex < sectionGroups.length - 1 ? 'always' : 'auto',
           }}
         >
@@ -539,7 +556,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
     // 横様式の戻り値：表紙＋セクション合計＋明細
     return (
-      <div ref={ref} style={{ backgroundColor: '#fff' }}>
+      <div ref={ref} style={{ backgroundColor: '#fff', color: '#000' }}>
         {/* 表紙ページ */}
         <div
           style={{
@@ -551,6 +568,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             fontSize: 10,
             position: 'relative',
             pageBreakAfter: 'always',
+            color: '#000',
           }}
         >
           <div
@@ -827,7 +845,8 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   }
 
   return (
-    <div ref={ref} style={{ backgroundColor: '#fff' }}>
+    <div ref={ref} style={{ backgroundColor: '#fff', color: '#000' }}>
+      <style>{printStyleSheet}</style>
       {pages.map((pageRows, pageIndex) => {
         const isLast = pageIndex === pages.length - 1
         const emptyCount = Math.max(0, DATA_ROWS_PER_PAGE - pageRows.length)

@@ -271,26 +271,19 @@ const ProductPriceImportPage: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto', color: '#e2e8f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ marginTop: 0 }}>商品マスタ 単価一括更新／取込（Excel）</h1>
+        <h1 style={{ marginTop: 0, color: '#fff' }}>商品マスタ 単価一括更新／取込（Excel）</h1>
         <button
-          onClick={() => router.push('/')}
-          style={{
-            padding: '8px 14px',
-            backgroundColor: '#f0f0f0',
-            border: '1px solid #ccc',
-            borderRadius: '6px',
-            color: '#333',
-            fontWeight: 'bold',
-            cursor: 'pointer'
-          }}
+          onClick={() => router.push('/selectors')}
+          className="selector-button"
+          style={{ padding: '10px 16px', backgroundColor: '#16a34a', border: '1px solid #15803d', color: '#fff' }}
         >
           メニューへ戻る
         </button>
       </div>
 
-      <p style={{ color: '#555' }}>
+      <p style={{ color: '#94a3b8' }}>
         Excel ファイルを読み込み、カラムマッピングを設定して、
         <br />
         Supabase の <code>products</code> テーブルを更新します。
@@ -303,14 +296,14 @@ const ProductPriceImportPage: React.FC = () => {
               style={{
                 display: 'inline-block',
                 padding: '10px 20px',
-                backgroundColor: '#28a745',
-                color: '#000',
-                border: '2px solid #1e7e34',
-                borderRadius: '6px',
+                backgroundColor: '#2563eb',
+                color: '#fff',
+                border: '2px solid #1d4ed8',
+                borderRadius: '10px',
                 cursor: isLoading ? 'not-allowed' : 'pointer',
                 fontWeight: 'bold',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.3)',
-                textShadow: '0 1px 0 rgba(255,255,255,0.3)',
+                boxShadow: '0 8px 24px rgba(37, 99, 235, 0.25)',
+                textShadow: '0 1px 2px rgba(0,0,0,0.25)',
                 opacity: isLoading ? 0.5 : 1
               }}
             >
@@ -323,7 +316,7 @@ const ProductPriceImportPage: React.FC = () => {
                 style={{ display: 'none' }}
               />
             </label>
-            {file && <span style={{ marginLeft: 12, color: '#555' }}>{file.name}</span>}
+            {file && <span style={{ marginLeft: 12, color: '#cbd5e1' }}>{file.name}</span>}
           </div>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
@@ -332,16 +325,16 @@ const ProductPriceImportPage: React.FC = () => {
               disabled={!file || isLoading}
               style={{
                 padding: '10px 20px',
-                backgroundColor: !file || isLoading ? '#ccc' : '#28a745',
-                color: !file || isLoading ? '#666' : '#000',
-                border: '2px solid',
-                borderColor: !file || isLoading ? '#999' : '#1e7e34',
-                borderRadius: '6px',
+                backgroundColor: !file || isLoading ? '#334155' : '#2563eb',
+                color: '#fff',
+                border: '1px solid',
+                borderColor: !file || isLoading ? '#475569' : '#1d4ed8',
+                borderRadius: '10px',
                 cursor: !file || isLoading ? 'not-allowed' : 'pointer',
                 fontWeight: 'bold',
                 fontSize: '14px',
-                boxShadow: !file || isLoading ? 'none' : '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.3)',
-                textShadow: !file || isLoading ? 'none' : '0 1px 0 rgba(255,255,255,0.3)'
+                boxShadow: !file || isLoading ? 'none' : '0 8px 24px rgba(37, 99, 235, 0.25)',
+                textShadow: '0 1px 2px rgba(0,0,0,0.25)'
               }}
             >
               ① ファイル分析
@@ -351,17 +344,17 @@ const ProductPriceImportPage: React.FC = () => {
       )}
 
       {showColumnMapping && sheetHeaders.length > 0 && (
-        <div style={{ backgroundColor: '#f9f9f9', padding: 20, borderRadius: 8, marginBottom: 16 }}>
-          <h2>カラムマッピング設定</h2>
-          <p style={{ fontSize: 13, color: '#666' }}>
+        <div style={{ backgroundColor: '#1e293b', padding: 20, borderRadius: 12, marginBottom: 16, border: '1px solid #334155', color: '#e2e8f0' }}>
+          <h2 style={{ color: '#93c5fd' }}>カラムマッピング設定</h2>
+          <p style={{ fontSize: 13, color: '#fff' }}>
             Excel の各列を、products テーブルのカラムにマップしてください。
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
             {/* ID列 */}
             <div>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
-                商品ID / CD列 <span style={{ color: 'red' }}>*</span>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
+                商品ID / CD列 <span style={{ color: '#ef4444' }}>*</span>
               </label>
               <select
                 value={columnMapping.idColumn}
@@ -369,9 +362,11 @@ const ProductPriceImportPage: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '8px',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#0f172a',
+                  color: '#e2e8f0'
                 }}
               >
                 <option value="">選択してください</option>
@@ -385,7 +380,7 @@ const ProductPriceImportPage: React.FC = () => {
 
             {/* 商品名列 */}
             <div>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                 商品名列（オプション）
               </label>
               <select
@@ -394,9 +389,11 @@ const ProductPriceImportPage: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '8px',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#0f172a',
+                  color: '#e2e8f0'
                 }}
               >
                 <option value="">反映しない（既存値を使用）</option>
@@ -410,7 +407,7 @@ const ProductPriceImportPage: React.FC = () => {
 
             {/* 単位列 */}
             <div>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                 単位列（オプション）
               </label>
               <select
@@ -419,9 +416,11 @@ const ProductPriceImportPage: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '8px',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#0f172a',
+                  color: '#e2e8f0'
                 }}
               >
                 <option value="">反映しない</option>
@@ -435,7 +434,7 @@ const ProductPriceImportPage: React.FC = () => {
 
             {/* 原価列 */}
             <div>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                 原価列（オプション）
               </label>
               <select
@@ -444,9 +443,11 @@ const ProductPriceImportPage: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '8px',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#0f172a',
+                  color: '#e2e8f0'
                 }}
               >
                 <option value="">反映しない</option>
@@ -460,7 +461,7 @@ const ProductPriceImportPage: React.FC = () => {
 
             {/* 定価列 */}
             <div>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                 定価列（オプション）
               </label>
               <select
@@ -469,9 +470,11 @@ const ProductPriceImportPage: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '8px',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  fontSize: '14px'
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  backgroundColor: '#0f172a',
+                  color: '#e2e8f0'
                 }}
               >
                 <option value="">反映しない</option>
@@ -490,7 +493,7 @@ const ProductPriceImportPage: React.FC = () => {
                 setShowColumnMapping(false)
                 setSheetHeaders([])
               }}
-              style={{ padding: '8px 16px', backgroundColor: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+              style={{ padding: '10px 16px', backgroundColor: '#16a34a', border: '1px solid #15803d', borderRadius: '8px', cursor: 'pointer', color: '#fff' }}
             >
               キャンセル
             </button>
@@ -499,16 +502,16 @@ const ProductPriceImportPage: React.FC = () => {
               disabled={!columnMapping.idColumn || isLoading}
               style={{
                 padding: '10px 20px',
-                backgroundColor: !columnMapping.idColumn || isLoading ? '#ccc' : '#28a745',
-                color: !columnMapping.idColumn || isLoading ? '#666' : '#000',
-                border: '2px solid',
-                borderColor: !columnMapping.idColumn || isLoading ? '#999' : '#1e7e34',
-                borderRadius: '6px',
+                backgroundColor: !columnMapping.idColumn || isLoading ? '#334155' : '#2563eb',
+                color: '#fff',
+                border: '1px solid',
+                borderColor: !columnMapping.idColumn || isLoading ? '#475569' : '#1d4ed8',
+                borderRadius: '10px',
                 cursor: !columnMapping.idColumn || isLoading ? 'not-allowed' : 'pointer',
                 fontWeight: 'bold',
                 fontSize: '14px',
-                boxShadow: !columnMapping.idColumn || isLoading ? 'none' : '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.3)',
-                textShadow: !columnMapping.idColumn || isLoading ? 'none' : '0 1px 0 rgba(255,255,255,0.3)'
+                boxShadow: !columnMapping.idColumn || isLoading ? 'none' : '0 8px 24px rgba(37, 99, 235, 0.25)',
+                textShadow: '0 1px 2px rgba(0,0,0,0.25)'
               }}
             >
               ② Excel 解析
@@ -518,7 +521,7 @@ const ProductPriceImportPage: React.FC = () => {
       )}
 
       {message && (
-        <p style={{ marginTop: 8, whiteSpace: 'pre-line', color: '#333' }}>{message}</p>
+        <p style={{ marginTop: 8, whiteSpace: 'pre-line', color: '#cbd5e1' }}>{message}</p>
       )}
 
       {rows.length > 0 && (
@@ -529,16 +532,16 @@ const ProductPriceImportPage: React.FC = () => {
               disabled={rows.length === 0 || isLoading}
               style={{
                 padding: '10px 20px',
-                backgroundColor: rows.length === 0 || isLoading ? '#ccc' : '#dc3545',
-                color: rows.length === 0 || isLoading ? '#666' : '#fff',
-                border: '2px solid',
-                borderColor: rows.length === 0 || isLoading ? '#999' : '#bd2130',
-                borderRadius: '6px',
+                backgroundColor: rows.length === 0 || isLoading ? '#334155' : '#dc2626',
+                color: '#fff',
+                border: '1px solid',
+                borderColor: rows.length === 0 || isLoading ? '#475569' : '#b91c1c',
+                borderRadius: '10px',
                 cursor: rows.length === 0 || isLoading ? 'not-allowed' : 'pointer',
                 fontWeight: 'bold',
                 fontSize: '14px',
-                boxShadow: rows.length === 0 || isLoading ? 'none' : '0 4px 6px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.2)',
-                textShadow: rows.length === 0 || isLoading ? 'none' : '0 1px 2px rgba(0,0,0,0.3)'
+                boxShadow: rows.length === 0 || isLoading ? 'none' : '0 8px 24px rgba(220, 38, 38, 0.25)',
+                textShadow: '0 1px 2px rgba(0,0,0,0.25)'
               }}
             >
               ③ 商品マスタ更新
@@ -550,18 +553,18 @@ const ProductPriceImportPage: React.FC = () => {
               placeholder="更新日時"
               style={{
                 padding: '10px 16px',
-                border: '2px solid #ddd',
-                borderRadius: '6px',
+                border: '1px solid #334155',
+                borderRadius: '8px',
                 fontSize: '14px',
-                backgroundColor: '#f8f9fa',
-                color: '#333',
+                backgroundColor: '#0f172a',
+                color: '#e2e8f0',
                 minWidth: '200px'
               }}
             />
           </div>
 
           <div style={{ marginTop: 24 }}>
-            <h2 style={{ fontSize: 16 }}>更新プレビュー（先頭 20 件）</h2>
+            <h2 style={{ fontSize: 16, color: '#93c5fd' }}>更新プレビュー（先頭 20 件）</h2>
             <table
               style={{
                 borderCollapse: 'collapse',
@@ -571,22 +574,22 @@ const ProductPriceImportPage: React.FC = () => {
             >
               <thead>
                 <tr>
-                  <th style={{ border: '1px solid #eee', padding: 8, backgroundColor: '#f5f5f5', fontSize: 11, textAlign: 'left' }}>
+                  <th style={{ border: '1px solid #334155', padding: 8, backgroundColor: '#1e293b', color: '#cbd5e1', fontSize: 11, textAlign: 'left' }}>
                     ID
                   </th>
-                  <th style={{ border: '1px solid #eee', padding: 8, backgroundColor: '#f5f5f5', fontSize: 11, textAlign: 'left' }}>
+                  <th style={{ border: '1px solid #334155', padding: 8, backgroundColor: '#1e293b', color: '#cbd5e1', fontSize: 11, textAlign: 'left' }}>
                     商品名
                   </th>
-                  <th style={{ border: '1px solid #eee', padding: 8, backgroundColor: '#f5f5f5', fontSize: 11, textAlign: 'left' }}>
+                  <th style={{ border: '1px solid #334155', padding: 8, backgroundColor: '#1e293b', color: '#cbd5e1', fontSize: 11, textAlign: 'left' }}>
                     単位
                   </th>
-                  <th style={{ border: '1px solid #eee', padding: 8, backgroundColor: '#f5f5f5', fontSize: 11, textAlign: 'left' }}>
+                  <th style={{ border: '1px solid #334155', padding: 8, backgroundColor: '#1e293b', color: '#cbd5e1', fontSize: 11, textAlign: 'left' }}>
                     原価
                   </th>
-                  <th style={{ border: '1px solid #eee', padding: 8, backgroundColor: '#f5f5f5', fontSize: 11, textAlign: 'left' }}>
+                  <th style={{ border: '1px solid #334155', padding: 8, backgroundColor: '#1e293b', color: '#cbd5e1', fontSize: 11, textAlign: 'left' }}>
                     定価
                   </th>
-                  <th style={{ border: '1px solid #eee', padding: 8, backgroundColor: '#f5f5f5', fontSize: 11, textAlign: 'left' }}>
+                  <th style={{ border: '1px solid #334155', padding: 8, backgroundColor: '#1e293b', color: '#cbd5e1', fontSize: 11, textAlign: 'left' }}>
                     更新日時
                   </th>
                 </tr>
@@ -596,16 +599,16 @@ const ProductPriceImportPage: React.FC = () => {
                   const displayTime = r.created_at ? new Date(r.created_at).toLocaleString('ja-JP') : '新規'
                   return (
                     <tr key={idx}>
-                      <td style={{ border: '1px solid #eee', padding: 4, fontSize: 11 }}>{r.id}</td>
-                      <td style={{ border: '1px solid #eee', padding: 4, fontSize: 11 }}>{r.name}</td>
-                      <td style={{ border: '1px solid #eee', padding: 4, fontSize: 11 }}>{r.unit || '-'}</td>
-                      <td style={{ border: '1px solid #eee', padding: 4, fontSize: 11, textAlign: 'right' }}>
+                      <td style={{ border: '1px solid #334155', padding: 4, fontSize: 11, color: '#e2e8f0' }}>{r.id}</td>
+                      <td style={{ border: '1px solid #334155', padding: 4, fontSize: 11, color: '#e2e8f0' }}>{r.name}</td>
+                      <td style={{ border: '1px solid #334155', padding: 4, fontSize: 11, color: '#e2e8f0' }}>{r.unit || '-'}</td>
+                      <td style={{ border: '1px solid #334155', padding: 4, fontSize: 11, textAlign: 'right', color: '#e2e8f0' }}>
                         {r.cost_price ? r.cost_price.toLocaleString() : '-'}
                       </td>
-                      <td style={{ border: '1px solid #eee', padding: 4, fontSize: 11, textAlign: 'right' }}>
+                      <td style={{ border: '1px solid #334155', padding: 4, fontSize: 11, textAlign: 'right', color: '#e2e8f0' }}>
                         {r.retail_price ? r.retail_price.toLocaleString() : '-'}
                       </td>
-                      <td style={{ border: '1px solid #eee', padding: 4, fontSize: 11, color: r.created_at ? '#666' : '#28a745', fontWeight: r.created_at ? 'normal' : 'bold' }}>
+                      <td style={{ border: '1px solid #334155', padding: 4, fontSize: 11, color: r.created_at ? '#cbd5e1' : '#22c55e', fontWeight: r.created_at ? 'normal' : 'bold' }}>
                         {displayTime}
                       </td>
                     </tr>

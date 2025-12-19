@@ -226,11 +226,11 @@ export default function ProductsPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 1000, margin: '0 auto' }}>
+    <div style={{ padding: 24, maxWidth: 1000, margin: '0 auto', color: '#e2e8f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h1 style={{ marginTop: 0 }}>商品マスタ</h1>
+        <h1 style={{ marginTop: 0, color: '#fff' }}>商品マスタ</h1>
         <Link href="/selectors">
-          <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
+          <button className="btn-3d btn-reset" style={{ padding: '8px 16px', color: '#fff', backgroundColor: '#16a34a', border: '1px solid #15803d' }}>
             ← メニューに戻る
           </button>
         </Link>
@@ -254,10 +254,10 @@ export default function ProductsPage() {
           </div>
 
           {keyword && (
-            <div style={{ marginBottom: 8, fontSize: 14, color: '#666' }}>
+            <div style={{ marginBottom: 8, fontSize: 14, color: '#94a3b8' }}>
               「<strong>{keyword}</strong>」で検索：<strong>{totalCount}</strong>件
               {totalCount === 0 && (
-                <span style={{ marginLeft: 16, color: '#d32f2f' }}>
+                <span style={{ marginLeft: 16, color: '#ef4444' }}>
                   ヒント: 登録されている商品名を確認してください
                 </span>
               )}
@@ -328,11 +328,11 @@ export default function ProductsPage() {
               </tbody>
             </table>
           ) : keyword ? (
-            <p style={{ textAlign: 'center', color: '#999', marginTop: 24 }}>
+            <p style={{ textAlign: 'center', color: '#94a3b8', marginTop: 24 }}>
               「<strong>{keyword}</strong>」に該当する商品がありません
             </p>
           ) : (
-            <p style={{ textAlign: 'center', color: '#999', marginTop: 24 }}>
+            <p style={{ textAlign: 'center', color: '#94a3b8', marginTop: 24 }}>
               全<strong>{totalCount}</strong>件の商品があります
             </p>
           )}
@@ -348,7 +348,7 @@ export default function ProductsPage() {
               >
                 ← 前へ
               </button>
-              <span style={{ fontSize: 14, color: '#666' }}>
+              <span style={{ fontSize: 14, color: '#94a3b8' }}>
                 {currentPage} / {Math.ceil(totalCount / itemsPerPage)} ページ
                 （全{totalCount}件中 {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, totalCount)}件を表示）
               </span>
@@ -366,11 +366,11 @@ export default function ProductsPage() {
       )}
 
       {showForm && (
-        <div style={{ backgroundColor: '#f9f9f9', padding: 20, borderRadius: 8, maxWidth: 600 }}>
-          <h2 style={{ marginTop: 0 }}>{editingId ? '商品編集' : '商品新規登録'}</h2>
+        <div style={{ backgroundColor: '#1e293b', padding: 20, borderRadius: 12, maxWidth: 600, border: '1px solid #334155', color: '#e2e8f0' }}>
+          <h2 style={{ marginTop: 0, color: '#93c5fd' }}>{editingId ? '商品編集' : '商品新規登録'}</h2>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
               商品ID {!editingId && <span style={{ color: 'red' }}>*</span>}
             </label>
             <input
@@ -384,8 +384,8 @@ export default function ProductsPage() {
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
-              商品名 <span style={{ color: 'red' }}>*</span>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
+              商品名 <span style={{ color: '#ef4444' }}>*</span>
             </label>
             <input
               type="text"
@@ -398,7 +398,7 @@ export default function ProductsPage() {
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>単位</label>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>単位</label>
             <input
               type="text"
               value={formData.unit}
@@ -410,7 +410,7 @@ export default function ProductsPage() {
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>原価</label>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>原価</label>
             <input
               type="number"
               value={formData.cost_price}
@@ -422,7 +422,7 @@ export default function ProductsPage() {
           </div>
 
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>定価</label>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>定価</label>
             <input
               type="number"
               value={formData.retail_price}
@@ -434,7 +434,7 @@ export default function ProductsPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={handleCancel} className="btn-3d btn-reset">
+            <button onClick={handleCancel} className="btn-3d btn-reset" style={{ color: '#fff' }}>
               キャンセル
             </button>
             <button onClick={handleSave} className="btn-3d btn-primary">
@@ -448,14 +448,17 @@ export default function ProductsPage() {
 }
 
 const thStyle: React.CSSProperties = {
-  border: '1px solid #ccc',
+  border: '1px solid #334155',
   padding: '8px 12px',
-  backgroundColor: '#f5f5f5',
+  backgroundColor: '#1e293b',
+  color: '#cbd5e1',
   textAlign: 'left',
 }
 
 const tdStyle: React.CSSProperties = {
-  border: '1px solid #ccc',
+  border: '1px solid #334155',
   padding: '8px 12px',
+  backgroundColor: '#0f172a',
+  color: '#e2e8f0',
 }
 

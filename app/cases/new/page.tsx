@@ -109,29 +109,32 @@ export default function CaseNewPage() {
   const [priceModalMode, setPriceModalMode] = useState<'direct' | 'calculate'>('calculate')
   const [priceModalShowRemarksCheckbox, setPriceModalShowRemarksCheckbox] = useState(false)  // ★ 定価備考表示チェック
 
-  // ★ テーブル・モーダル用スタイル定義（未定義エラー対策）
+  // ★ テーブル・モーダル用スタイル定義（ダークテーマ対応）
   const thStyle: React.CSSProperties = {
-    border: '1px solid #ccc',
-    padding: 6,
-    backgroundColor: '#f1f3f5',
-    fontSize: 16,  // 12 → 16
+    border: '1px solid #334155',
+    padding: '8px 12px',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
     textAlign: 'center',
     whiteSpace: 'nowrap',
+    color: '#cbd5e1',
   }
   const tdStyle: React.CSSProperties = {
-    border: '1px solid #ddd',
-    padding: 6,
-    fontSize: 16,  // 12 → 16
+    border: '1px solid #334155',
+    padding: '8px 12px',
+    fontSize: 16,
     verticalAlign: 'middle',
-    backgroundColor: '#fff',
+    backgroundColor: '#0f172a',
+    color: '#e2e8f0',
   }
   const sumRowStyle: React.CSSProperties = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    fontSize: 16,  // 12 → 16
-    padding: '4px 8px',
-    borderBottom: '1px solid #eee',
+    fontSize: 16,
+    padding: '6px 10px',
+    borderBottom: '1px solid #334155',
+    color: '#cbd5e1',
   }
   const modalOverlayStyle: React.CSSProperties = {
     position: 'fixed',
@@ -139,7 +142,7 @@ export default function CaseNewPage() {
     left: 0,
     width: '100vw',
     height: '100vh',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
@@ -147,27 +150,35 @@ export default function CaseNewPage() {
     zIndex: 1000,
   }
   const modalContentStyle: React.CSSProperties = {
-    backgroundColor: '#fff',
+    backgroundColor: '#1e293b',
     padding: 24,
     borderRadius: 8,
     width: '900px',
     maxHeight: '80vh',
     overflow: 'auto',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-    fontSize: 16,  // 12 → 16
+    boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+    fontSize: 16,
+    color: '#e2e8f0',
+    border: '1px solid #334155',
   }
 
   // ★ ラベル用スタイル追加
   const labelStyle: React.CSSProperties = {
     display: 'block',
-    marginBottom: 4,
-    fontSize: 16,  // 12 → 16
+    marginBottom: 6,
+    fontSize: 16,
     fontWeight: 'bold',
+    color: '#94a3b8',
   }
 
   // ★ 入力フィールド用スタイル追加
   const inputStyle: React.CSSProperties = {
-    fontSize: 16,  // 12 → 16
+    fontSize: 16,
+    backgroundColor: '#1e293b',
+    color: '#e2e8f0',
+    border: '1px solid #475569',
+    borderRadius: 4,
+    padding: '8px 12px',
   }
 
   // ★ ページネーション用の state を追加
@@ -919,14 +930,18 @@ export default function CaseNewPage() {
             marginBottom: 16,
           }}
         >
-          <h1 style={{ margin: 0 }}>案件登録</h1>
+          <h1 style={{ margin: 0, color: '#fff', fontSize: '20pt' }}>案件登録</h1>
           <Link
-            href="/"
-            className="btn-3d"
+            href="/selectors"
+            className="selector-button"
             style={{
-              backgroundColor: '#6c757d',
-              color: '#fff',
               textDecoration: 'none',
+              backgroundColor: '#16a34a',
+              border: '1px solid #15803d',
+              color: '#fff',
+              padding: '10px 16px',
+              flex: '0 0 auto',
+              width: 'fit-content',
             }}
           >
             ← メニューに戻る
@@ -938,18 +953,18 @@ export default function CaseNewPage() {
           style={{
             marginBottom: 16,
             padding: 16,
-            border: '2px solid #007bff',
-            borderRadius: 4,
-            backgroundColor: '#e3f2fd',
+            border: '1px solid #334155',
+            borderRadius: 8,
+            backgroundColor: '#1e293b',
           }}
         >
           <label
             style={{
               fontWeight: 'bold',
-              marginBottom: 8,
+              marginBottom: 12,
               display: 'block',
-              fontSize: 20,  // 16 → 20
-              color: '#007bff',
+              fontSize: 20,
+              color: '#93c5fd',
             }}
           >
             📋 様式選択:
@@ -968,14 +983,16 @@ export default function CaseNewPage() {
                 alignItems: 'center',
                 gap: 8,
                 cursor: 'pointer',
-                padding: '8px 12px',
+                padding: '10px 16px',
                 backgroundColor:
-                  layoutType === 'vertical' ? '#fff' : 'transparent',
-                borderRadius: 4,
+                  layoutType === 'vertical' ? '#2563eb' : 'transparent',
+                borderRadius: 6,
                 border:
                   layoutType === 'vertical'
-                    ? '2px solid #007bff'
-                    : '2px solid transparent',
+                    ? '2px solid #3b82f6'
+                    : '2px solid #334155',
+                color: layoutType === 'vertical' ? '#fff' : '#cbd5e1',
+                transition: 'all 0.2s ease',
               }}
             >
               <input
@@ -987,11 +1004,7 @@ export default function CaseNewPage() {
                   setLayoutType('vertical')
                   setSections([])
                 }}
-                style={{
-                  width: 20,
-                  height: 20,
-                  cursor: 'pointer',
-                }}
+                className="hidden"
               />
               <span style={{ fontSize: 18, fontWeight: 'bold' }}>
                 📄 縦様式（セクションなし）
@@ -1004,14 +1017,16 @@ export default function CaseNewPage() {
                 alignItems: 'center',
                 gap: 8,
                 cursor: 'pointer',
-                padding: '8px 12px',
+                padding: '10px 16px',
                 backgroundColor:
-                  layoutType === 'horizontal' ? '#fff' : 'transparent',
-                borderRadius: 4,
+                  layoutType === 'horizontal' ? '#2563eb' : 'transparent',
+                borderRadius: 6,
                 border:
                   layoutType === 'horizontal'
-                    ? '2px solid #007bff'
-                    : '2px solid transparent',
+                    ? '2px solid #3b82f6'
+                    : '2px solid #334155',
+                color: layoutType === 'horizontal' ? '#fff' : '#cbd5e1',
+                transition: 'all 0.2s ease',
               }}
             >
               <input
@@ -1023,11 +1038,7 @@ export default function CaseNewPage() {
                   setLayoutType('horizontal')
                   setShowSectionModal(true)
                 }}
-                style={{
-                  width: 20,
-                  height: 20,
-                  cursor: 'pointer',
-                }}
+                className="hidden"
               />
               <span style={{ fontSize: 18, fontWeight: 'bold' }}>
                 📊 横様式(セクションあり)
@@ -1037,13 +1048,7 @@ export default function CaseNewPage() {
             {layoutType === 'horizontal' && (
               <button
                 onClick={() => setShowSectionModal(true)}
-                className="btn-3d"
-                style={{
-                  fontSize: 16,
-                  backgroundColor: '#6c757d',
-                  color: '#fff',
-                  padding: '8px 16px',
-                }}
+                className="selector-button"
               >
                 ⚙️ セクション設定
               </button>
@@ -1054,18 +1059,18 @@ export default function CaseNewPage() {
             <div
               style={{
                 marginTop: 12,
-                padding: 8,
-                backgroundColor: '#fff',
-                borderRadius: 4,
+                padding: 12,
+                backgroundColor: '#0f172a',
+                borderRadius: 6,
               }}
             >
-              <strong>📌 登録済みセクション:</strong>
+              <strong style={{ color: '#94a3b8' }}>📌 登録済みセクション:</strong>
               <div
                 style={{
                   display: 'flex',
                   gap: 8,
                   flexWrap: 'wrap',
-                  marginTop: 4,
+                  marginTop: 8,
                 }}
               >
                 {sections.map((section) => (
@@ -1073,7 +1078,7 @@ export default function CaseNewPage() {
                     key={section.id}
                     style={{
                       padding: '6px 12px',
-                      backgroundColor: '#28a745',
+                      backgroundColor: '#16a34a',
                       color: '#fff',
                       borderRadius: 4,
                       fontSize: 16,
@@ -1093,17 +1098,18 @@ export default function CaseNewPage() {
           style={{
             marginBottom: 16,
             padding: 16,
-            border: '1px solid #ddd',
-            borderRadius: 4,
-            backgroundColor: '#f8f9fa',
+            border: '1px solid #334155',
+            borderRadius: 8,
+            backgroundColor: '#1e293b',
           }}
         >
           <h3
             style={{
               marginTop: 0,
-              marginBottom: 12,
-              fontSize: 20,  // 16 → 20
+              marginBottom: 16,
+              fontSize: 20,
               fontWeight: 'bold',
+              color: '#e2e8f0',
             }}
           >
             📝 付帯情報
@@ -1112,8 +1118,8 @@ export default function CaseNewPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 12,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+              gap: '16px 24px',
             }}
           >
             <div>
@@ -1124,11 +1130,10 @@ export default function CaseNewPage() {
                 type="text"
                 value={estimateNo}
                 onChange={(e) => setEstimateNo(e.target.value)}
-                className="input-inset"
-                style={{ width: '100%', fontSize: 16 }}
+                style={{ ...inputStyle, width: '100%' }}
                 placeholder="数値のみ入力"
               />
-              <span style={{ fontSize: 14, color: '#666' }}>
+              <span style={{ fontSize: 14, color: '#64748b' }}>
                 ※空欄の場合は未採番
               </span>
             </div>
@@ -1141,8 +1146,7 @@ export default function CaseNewPage() {
                 type="date"
                 value={estimateDate}
                 onChange={(e) => setEstimateDate(e.target.value)}
-                className="input-inset"
-                style={{ width: '100%', fontSize: 16 }}
+                style={{ ...inputStyle, width: '100%' }}
               />
             </div>
 
@@ -1154,8 +1158,7 @@ export default function CaseNewPage() {
                 type="text"
                 value={deliveryPlace}
                 onChange={(e) => setDeliveryPlace(e.target.value)}
-                className="input-inset"
-                style={{ width: '100%', fontSize: 16 }}
+                style={{ ...inputStyle, width: '100%' }}
               />
             </div>
 
@@ -1167,8 +1170,7 @@ export default function CaseNewPage() {
                 type="text"
                 value={deliveryDeadline}
                 onChange={(e) => setDeliveryDeadline(e.target.value)}
-                className="input-inset"
-                style={{ width: '100%', fontSize: 16 }}
+                style={{ ...inputStyle, width: '100%' }}
               />
             </div>
 
@@ -1180,8 +1182,7 @@ export default function CaseNewPage() {
                 type="text"
                 value={deliveryTerms}
                 onChange={(e) => setDeliveryTerms(e.target.value)}
-                className="input-inset"
-                style={{ width: '100%', fontSize: 16 }}
+                style={{ ...inputStyle, width: '100%' }}
               />
             </div>
 
@@ -1193,12 +1194,11 @@ export default function CaseNewPage() {
                 type="text"
                 value={validityText}
                 onChange={(e) => setValidityText(e.target.value)}
-                className="input-inset"
-                style={{ width: '100%', fontSize: 16 }}
+                style={{ ...inputStyle, width: '100%' }}
               />
             </div>
 
-            <div style={{ gridColumn: 'span 3' }}>
+            <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>
                 御支払条件:
               </label>
@@ -1206,51 +1206,46 @@ export default function CaseNewPage() {
                 type="text"
                 value={paymentTerms}
                 onChange={(e) => setPaymentTerms(e.target.value)}
-                className="input-inset"
-                style={{ width: '100%', fontSize: 16 }}
+                style={{ ...inputStyle, width: '100%' }}
               />
             </div>
           </div>
         </div>
 
         {/* 顧客・担当者 */}
-        <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 16 }}>
+          <div>
             <label style={labelStyle}>顧客:</label>
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"
                 value={customerName}
                 readOnly
-                className="input-inset"
-                style={{ flex: 1, fontSize: 16 }}
+                style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
                 placeholder="顧客を選択してください"
               />
               <button
                 onClick={() => setShowCustomerModal(true)}
-                className="btn-3d btn-search"
-                style={{ fontSize: 16 }}
+                className="selector-button primary"
               >
                 顧客選択
               </button>
             </div>
           </div>
 
-          <div style={{ flex: 1 }}>
+          <div>
             <label style={labelStyle}>担当者:</label>
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"
                 value={staffName}
                 readOnly
-                className="input-inset"
-                style={{ flex: 1, fontSize: 16 }}
+                style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
                 placeholder="担当者を選択してください"
               />
               <button
                 onClick={() => setShowStaffModal(true)}
-                className="btn-3d btn-search"
-                style={{ fontSize: 16 }}
+                className="selector-button primary"
               >
                 担当者選択
               </button>
@@ -1259,156 +1254,156 @@ export default function CaseNewPage() {
         </div>
 
         {/* 件名 */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 24 }}>
           <label style={labelStyle}>件名:</label>
           <input
             type="text"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
-            className="input-inset"
-            style={{ width: '100%', marginTop: 4, fontSize: 16 }}
+            style={{ ...inputStyle, width: '100%' }}
             placeholder="例: ○○工事見積"
           />
         </div>
 
         {/* 明細 */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 24 }}>
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: 8,
+              marginBottom: 12,
             }}
           >
-            <h2 style={{ margin: 0 }}>明細</h2>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <h2 style={{ margin: 0, color: '#e2e8f0' }}>明細</h2>
+            <div style={{ display: 'flex', gap: 12 }}>
               <button
                 onClick={() => {
                   fetchPastCases()
                   setShowPastCaseModal(true)
                 }}
-                className="btn-3d"
-                style={{ backgroundColor: '#17a2b8', color: '#fff' }}
+                className="selector-button primary"
               >
                 📋 過去案件から読込
               </button>
               <button
                 onClick={() => setShowProductModal(true)}
-                className="btn-3d btn-primary"
+                className="selector-button primary"
               >
                 + 商品追加
               </button>
             </div>
           </div>
 
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                {layoutType === 'horizontal' && (
-                  <th style={thStyle}>セクション</th>
-                )}
-                <th style={thStyle}>商品名</th>
-                <th style={thStyle}>規格</th>
-                <th style={thStyle}>単位</th>
-                <th style={thStyle}>数量</th>
-                <th style={thStyle}>単価</th>
-                <th style={thStyle}>金額</th>
-                <th style={thStyle}>原価額</th>
-                <th style={thStyle}>粗利額</th>
-                <th style={thStyle}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => {
-                const costAmount = row.cost_price * row.quantity
-                const grossProfit = row.amount - costAmount
+          <div className="overflow-x-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
+              <thead>
+                <tr>
+                  {layoutType === 'horizontal' && (
+                    <th style={{...thStyle, minWidth: '180px'}}>セクション</th>
+                  )}
+                  <th style={{...thStyle, minWidth: '250px'}}>商品名</th>
+                  <th style={{...thStyle, minWidth: '200px'}}>規格</th>
+                  <th style={{...thStyle, width: '80px'}}>単位</th>
+                  <th style={{...thStyle, width: '100px'}}>数量</th>
+                  <th style={{...thStyle, width: '150px'}}>単価</th>
+                  <th style={{...thStyle, width: '150px'}}>金額</th>
+                  <th style={{...thStyle, width: '150px'}}>原価額</th>
+                  <th style={{...thStyle, width: '150px'}}>粗利額</th>
+                  <th style={{...thStyle, width: '100px'}}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => {
+                  const costAmount = row.cost_price * row.quantity
+                  const grossProfit = row.amount - costAmount
 
-                return (
-                  <tr key={index}>
-                    {layoutType === 'horizontal' && (
+                  return (
+                    <tr key={index}>
+                      {layoutType === 'horizontal' && (
+                        <td style={tdStyle}>
+                          <select
+                            value={row.section_id || ''}
+                            onChange={(e) => {
+                              const newRows = [...rows]
+                              newRows[index].section_id = e.target.value
+                                ? Number(e.target.value)
+                                : null
+                              setRows(newRows)
+                            }}
+                            style={{ ...inputStyle, width: '100%' }}
+                          >
+                            <option value="">選択してください</option>
+                            {sections.map((section) => (
+                              <option key={section.id} value={section.id}>
+                                {section.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      )}
+                      <td style={tdStyle}>{row.item_name}</td>
+                      <td style={tdStyle}>{row.spec}</td>
+                      <td style={{...tdStyle, textAlign: 'center'}}>{row.unit}</td>
                       <td style={tdStyle}>
-                        <select
-                          value={row.section_id || ''}
-                          onChange={(e) => {
-                            const newRows = [...rows]
-                            newRows[index].section_id = e.target.value
-                              ? Number(e.target.value)
-                              : null
-                            setRows(newRows)
-                          }}
-                          className="input-inset"
-                          style={{ width: 150 }}
-                        >
-                          <option value="">選択してください</option>
-                          {sections.map((section) => (
-                            <option key={section.id} value={section.id}>
-                              {section.name}
-                            </option>
-                          ))}
-                        </select>
+                        <input
+                          type="number"
+                          value={row.quantity}
+                          onChange={(e) =>
+                            handleQuantityChange(index, Number(e.target.value))
+                          }
+                          style={{ ...inputStyle, width: '100%', textAlign: 'right' }}
+                        />
                       </td>
-                    )}
-                    <td style={tdStyle}>{row.item_name}</td>
-                    <td style={tdStyle}>{row.spec}</td>
-                    <td style={tdStyle}>{row.unit}</td>
-                    <td style={tdStyle}>
-                      <input
-                        type="number"
-                        value={row.quantity}
-                        onChange={(e) =>
-                          handleQuantityChange(index, Number(e.target.value))
-                        }
-                        className="input-inset"
-                        style={{ width: 80, fontSize: 16 }}
-                      />
-                    </td>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => handleOpenPriceModal(index)}
-                        className="btn-3d"
-                        style={{
-                          width: '100%',
-                          padding: '4px 8px',
-                          backgroundColor: row.unit_price ? '#e7f3ff' : '#fff',
-                          border: '1px solid #ddd',
-                          cursor: 'pointer',
-                          fontSize: 16,
-                          textAlign: 'right',
-                        }}
-                      >
-                        {row.unit_price ? row.unit_price.toLocaleString() : '未入力'}
-                      </button>
-                    </td>
-                    <td style={tdStyle}>{row.amount.toLocaleString()}</td>
-                    <td style={tdStyle}>{costAmount.toLocaleString()}</td>
-                    <td style={tdStyle}>{grossProfit.toLocaleString()}</td>
-                    <td style={tdStyle}>
-                      <button
-                        onClick={() => handleDeleteRow(index)}
-                        className="btn-3d"
-                        style={{
-                          backgroundColor: '#dc3545',
-                          color: '#fff',
-                          fontSize: 15,
-                        }}
-                      >
-                        削除
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      <td style={tdStyle}>
+                        <button
+                          onClick={() => handleOpenPriceModal(index)}
+                          className="w-full text-right px-3 py-2 rounded-md"
+                          style={{
+                            backgroundColor: row.unit_price ? '#334155' : '#1e293b',
+                            border: '1px solid #475569',
+                            cursor: 'pointer',
+                            color: '#e2e8f0',
+                          }}
+                        >
+                          {row.unit_price ? row.unit_price.toLocaleString() : '未入力'}
+                        </button>
+                      </td>
+                      <td style={{...tdStyle, textAlign: 'right'}}>{row.amount.toLocaleString()}</td>
+                      <td style={{...tdStyle, textAlign: 'right'}}>{costAmount.toLocaleString()}</td>
+                      <td style={{...tdStyle, textAlign: 'right'}}>{grossProfit.toLocaleString()}</td>
+                      <td style={{...tdStyle, textAlign: 'center'}}>
+                        <button
+                          onClick={() => handleDeleteRow(index)}
+                          className="selector-button"
+                          style={{
+                            backgroundColor: '#dc2626',
+                            borderColor: '#991b1b',
+                            color: '#fff',
+                          }}
+                        >
+                          削除
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* 合計・出精値引き・消費税 */}
         <div
           style={{
             marginLeft: 'auto',
-            maxWidth: 400,
+            width: '100%',
+            maxWidth: 450,
             marginBottom: 24,
+            backgroundColor: '#1e293b',
+            borderRadius: 8,
+            padding: '8px',
+            border: '1px solid #334155',
           }}
         >
           <div style={sumRowStyle}>
@@ -1427,14 +1422,13 @@ export default function CaseNewPage() {
             <span>粗利率</span>
             <span>{grossProfitRate.toFixed(1)} %</span>
           </div>
-          <div style={sumRowStyle}>
+          <div style={{...sumRowStyle, padding: '10px'}}>
             <span>出精値引き</span>
             <input
               type="number"
               value={discount}
               onChange={(e) => setDiscount(Number(e.target.value))}
-              className="input-inset"
-              style={{ width: 120, textAlign: 'right', fontSize: 16 }}
+              style={{ ...inputStyle, width: 140, textAlign: 'right' }}
             />
           </div>
           <div style={sumRowStyle}>
@@ -1449,12 +1443,15 @@ export default function CaseNewPage() {
             style={{
               ...sumRowStyle,
               fontWeight: 'bold',
-              fontSize: 18,
-              backgroundColor: '#f8f9fa',
+              fontSize: 20,
+              backgroundColor: '#0f172a',
+              padding: '12px',
+              marginTop: '8px',
+              borderRadius: '4px'
             }}
           >
             <span>合計金額</span>
-            <span style={{ color: '#dc3545' }}>
+            <span style={{ color: '#60a5fa' }}>
               {totalAmount.toLocaleString()} 円
             </span>
           </div>
@@ -1466,19 +1463,20 @@ export default function CaseNewPage() {
             display: 'flex',
             gap: 16,
             justifyContent: 'flex-end',
+            paddingTop: 16,
+            borderTop: '1px solid #334155'
           }}
         >
-          <button onClick={handleClear} className="btn-3d btn-reset">
+          <button onClick={handleClear} className="selector-button">
             キャンセル
           </button>
           <button
             onClick={handlePrintPreview}
-            className="btn-3d"
-            style={{ backgroundColor: '#17a2b8', color: '#fff' }}
+            className="selector-button"
           >
             📄 PDF印刷プレビュー
           </button>
-          <button onClick={handleSave} className="btn-3d btn-primary">
+          <button onClick={handleSave} className="selector-button primary">
             保存
           </button>
         </div>
@@ -2186,6 +2184,7 @@ export default function CaseNewPage() {
                 <button
                   onClick={fetchPastCases}
                   className="btn-3d btn-search"
+                  style={{ backgroundColor: '#2563eb', color: '#fff' }}
                 >
                   検索
                 </button>
@@ -2231,7 +2230,7 @@ export default function CaseNewPage() {
                               handleLoadPastCase(c.case_id)
                             }
                             className="btn-3d btn-primary"
-                            style={{ fontSize: 15 }}
+                            style={{ fontSize: 15, backgroundColor: '#2563eb', color: '#fff' }}
                           >
                             読込
                           </button>

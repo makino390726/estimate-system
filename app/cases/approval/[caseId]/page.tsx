@@ -655,25 +655,25 @@ export default function CaseApprovalPage() {
   const higherApprovalDisabled = !!caseData?.skip_higher_approval
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto', fontSize: 12 }}>
+    <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto', fontSize: 12, color: '#e2e8f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h1 style={{ marginTop: 0 }}>案件詳細・承認 (ID: {caseId})</h1>
+        <h1 style={{ marginTop: 0, color: '#fff' }}>案件詳細・承認 (ID: {caseId})</h1>
         <Link href="/cases/list">
-          <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
+          <button className="selector-button" style={{ padding: '8px 16px', color: '#fff' }}>
             ← 案件一覧に戻る
           </button>
         </Link>
       </div>
 
       {msg && (
-        <div style={{ padding: '8px 12px', backgroundColor: '#d4edda', color: '#155724', border: '1px solid #c3e6cb', borderRadius: 4, marginBottom: 12 }}>
+        <div style={{ padding: '8px 12px', backgroundColor: '#16a34a', color: '#fff', border: '1px solid #15803d', borderRadius: 4, marginBottom: 12 }}>
           {msg}
         </div>
       )}
 
       {/* ★ caseData がない場合の読み込み中表示 */}
       {!caseData && (
-        <div style={{ padding: 24, textAlign: 'center', color: '#999' }}>
+        <div style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>
           読み込み中...
         </div>
       )}
@@ -683,13 +683,13 @@ export default function CaseApprovalPage() {
         <>
           {/* 印刷プレビューモーダル */}
           {showPrintPreview && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={closePrintPreview}>
-              <div style={{ backgroundColor: '#fff', padding: 24, borderRadius: 8, maxWidth: '95vw', maxHeight: '95vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={closePrintPreview}>
+              <div style={{ backgroundColor: '#1e293b', padding: 24, borderRadius: 12, maxWidth: '95vw', maxHeight: '95vh', overflow: 'auto', border: '1px solid #334155' }} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <h2>印刷プレビュー</h2>
+                  <h2 style={{ color: '#fff' }}>印刷プレビュー</h2>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={handlePrint} className="btn-3d btn-primary">🖨️ 印刷</button>
-                    <button onClick={closePrintPreview} className="btn-3d btn-reset">✕ 閉じる</button>
+                    <button onClick={handlePrint} className="selector-button primary">🖨️ 印刷</button>
+                    <button onClick={closePrintPreview} className="selector-button">✕ 閉じる</button>
                   </div>
                 </div>
                 <PrintEstimate
@@ -737,9 +737,9 @@ export default function CaseApprovalPage() {
           )}
 
           {/* 案件情報 */}
-          <div style={{ marginBottom: 24, padding: 16, border: '1px solid #ddd', borderRadius: 4, backgroundColor: '#f9f9f9' }}>
-            <h2 style={{ marginTop: 0 }}>案件情報</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div style={{ marginBottom: 24, padding: 16, border: '1px solid #334155', borderRadius: 8, backgroundColor: '#1e293b' }}>
+            <h2 style={{ marginTop: 0, color: '#93c5fd' }}>案件情報</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, color: '#cbd5e1' }}>
               <div><strong>見積番号:</strong> {caseData.case_no}</div>
               <div><strong>作成日:</strong> {caseData.created_date}</div>
               <div><strong>得意先名:</strong> {caseData?.customer_id || caseData?.customer_name || '-'}</div>
@@ -756,9 +756,9 @@ export default function CaseApprovalPage() {
           </div>
 
           {/* 明細テーブル */}
-          <h2>明細</h2>
+          <h2 style={{ color: '#93c5fd' }}>明細</h2>
           {detailsData.length === 0 ? (
-            <p style={{ color: '#999', fontStyle: 'italic' }}>明細データがありません</p>
+            <p style={{ color: '#64748b', fontStyle: 'italic' }}>明細データがありません</p>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24 }}>
               <thead>
@@ -840,14 +840,14 @@ export default function CaseApprovalPage() {
           </div>
 
           {/* 承認フロー */}
-          <div style={{ marginBottom: 24, padding: 16, backgroundColor: '#f0f8ff', borderRadius: 8 }}>
-            <h3 style={{ marginTop: 0, marginBottom: 16 }}>承認フロー</h3>
+          <div style={{ marginBottom: 24, padding: 16, backgroundColor: '#1e293b', borderRadius: 8, border: '1px solid #334155' }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16, color: '#93c5fd' }}>承認フロー</h3>
             {/* 承認フローの表示（存在チェックを追加） */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ padding: '12px 20px', backgroundColor: '#fff', border: '2px solid #007bff', borderRadius: 8, minWidth: 160 }}>
-                <div style={{ fontSize: 12, color: '#666' }}>申請者</div>
-                <div style={{ fontWeight: 'bold', fontSize: 16 }}>{approvers.applicant?.name ?? '-'}</div>
-                <div style={{ fontSize: 11, color: '#555' }}>{approvers.applicant?.email ?? '-'}</div>
+              <div style={{ padding: '12px 20px', backgroundColor: '#334155', border: '2px solid #3b82f6', borderRadius: 8, minWidth: 160 }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>申請者</div>
+                <div style={{ fontWeight: 'bold', fontSize: 16, color: '#fff' }}>{approvers.applicant?.name ?? '-'}</div>
+                <div style={{ fontSize: 11, color: '#cbd5e1' }}>{approvers.applicant?.email ?? '-'}</div>
               </div>
 
               {approvers.sectionHead && (
@@ -897,14 +897,14 @@ export default function CaseApprovalPage() {
           </div>
 
           {/* 承認操作 */}
-          <div style={{ marginBottom: 24, padding: 16, border: '1px solid #ddd', borderRadius: 4, backgroundColor: '#fff' }}>
-            <h3 style={{ marginTop: 0 }}>承認操作</h3>
+          <div style={{ marginBottom: 24, padding: 16, border: '1px solid #334155', borderRadius: 8, backgroundColor: '#1e293b' }}>
+            <h3 style={{ marginTop: 0, color: '#93c5fd' }}>承認操作</h3>
             
             {/* 申請者承認（申請不要 / 通常送信） */}
-            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f8f9fa', borderRadius: 4 }}>
-              <h4 style={{ margin: '0 0 8px 0' }}>申請者承認</h4>
-              <div style={{ marginBottom: 8, fontSize: 13, color: '#666' }}>
-                <strong>申請者:</strong> {approvers.applicant?.name || '-'} ({approvers.applicant?.email || 'メールアドレスなし'})
+            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#0f172a', borderRadius: 4, border: '1px solid #334155' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>申請者承認</h4>
+              <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
+                <strong style={{ color: '#cbd5e1' }}>申請者:</strong> {approvers.applicant?.name || '-'} ({approvers.applicant?.email || 'メールアドレスなし'})
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                 <button
@@ -924,7 +924,7 @@ export default function CaseApprovalPage() {
                   承認取消
                 </button>
                 <button onClick={() => handleApprove('staff')} className="btn-3d" disabled={!!caseData?.approve_staff} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
-                <button onClick={() => openPrintPreview('staff')} className="btn-3d">🖨️ 印刷</button>
+                <button onClick={() => openPrintPreview('staff')} className="btn-3d" style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input 
@@ -937,17 +937,17 @@ export default function CaseApprovalPage() {
                   disabled={!!caseData?.approve_staff}
                 />
               </div>
-              <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
                 「申請不要」を押すと上位承認は無効化します。「承認して次へ送信」で通常の承認フローを継続できます。
               </div>
             </div>
 
             {/* 所長承認 */}
-            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f8f9fa', borderRadius: 4 }}>
-              <h4 style={{ margin: '0 0 8px 0' }}>所長承認</h4>
+            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#0f172a', borderRadius: 4, border: '1px solid #334155' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>所長承認</h4>
               {approvers.sectionHead && (
-                <div style={{ marginBottom: 8, fontSize: 13, color: '#666' }}>
-                  <strong>所長:</strong> {approvers.sectionHead.name} ({approvers.sectionHead.email || 'メールアドレスなし'})
+                <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
+                  <strong style={{ color: '#cbd5e1' }}>所長:</strong> {approvers.sectionHead.name} ({approvers.sectionHead.email || 'メールアドレスなし'})
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -962,8 +962,8 @@ export default function CaseApprovalPage() {
                 />
                 <button onClick={() => handleApproveOnly('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
                 <button onClick={() => handleApprove('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
-                <button onClick={() => handleResendEmail('manager')} className="btn-3d" disabled={higherApprovalDisabled}>📧 再送信</button>
-                <button onClick={() => openPrintPreview('manager')} className="btn-3d" disabled={higherApprovalDisabled}>🖨️ 印刷</button>
+                <button onClick={() => handleResendEmail('manager')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
+                <button onClick={() => openPrintPreview('manager')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               {approvers.senmu && (
                 <div style={{ marginTop: 4, fontSize: 12, color: '#28a745' }}>
@@ -985,11 +985,11 @@ export default function CaseApprovalPage() {
             </div>
 
             {/* 専務承認 */}
-            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f8f9fa', borderRadius: 4 }}>
-              <h4 style={{ margin: '0 0 8px 0' }}>専務承認</h4>
+            <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#0f172a', borderRadius: 4, border: '1px solid #334155' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>専務承認</h4>
               {approvers.senmu && (
-                <div style={{ marginBottom: 8, fontSize: 13, color: '#666' }}>
-                  <strong>専務:</strong> {approvers.senmu.name} ({approvers.senmu.email || 'メールアドレスなし'})
+                <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
+                  <strong style={{ color: '#cbd5e1' }}>専務:</strong> {approvers.senmu.name} ({approvers.senmu.email || 'メールアドレスなし'})
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -1004,8 +1004,8 @@ export default function CaseApprovalPage() {
                 />
                 <button onClick={() => handleApproveOnly('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
                 <button onClick={() => handleApprove('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
-                <button onClick={() => handleResendEmail('director')} className="btn-3d" disabled={higherApprovalDisabled}>📧 再送信</button>
-                <button onClick={() => openPrintPreview('director')} className="btn-3d" disabled={higherApprovalDisabled}>🖨️ 印刷</button>
+                <button onClick={() => handleResendEmail('director')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
+                <button onClick={() => openPrintPreview('director')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               {approvers.shacho && (
                 <div style={{ marginTop: 4, fontSize: 12, color: '#28a745' }}>
@@ -1027,17 +1027,17 @@ export default function CaseApprovalPage() {
             </div>
 
             {/* 社長承認 */}
-            <div style={{ padding: 12, backgroundColor: '#f9f9fa', borderRadius: 4 }}>
-              <h4 style={{ margin: '0 0 8px 0' }}>社長承認</h4>
+            <div style={{ padding: 12, backgroundColor: '#0f172a', borderRadius: 4, border: '1px solid #334155' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>社長承認</h4>
               {approvers.shacho && (
-                <div style={{ marginBottom: 8, fontSize: 13, color: '#666' }}>
-                  <strong>社長:</strong> {approvers.shacho.name} ({approvers.shacho.email || 'メールアドレスなし'})
+                <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
+                  <strong style={{ color: '#cbd5e1' }}>社長:</strong> {approvers.shacho.name} ({approvers.shacho.email || 'メールアドレスなし'})
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                 <button onClick={() => handleApproveOnly('president')} className="btn-3d btn-primary" disabled={higherApprovalDisabled || !!caseData?.approve_president || !caseData?.approve_director || !!caseData?.skip_higher_approval} style={{ flex: 1 }}>✓ 最終承認</button>
-                <button onClick={() => handleResendEmail('president')} className="btn-3d" disabled={higherApprovalDisabled}>📧 再送信</button>
-                <button onClick={() => openPrintPreview('president')} className="btn-3d" disabled={higherApprovalDisabled}>🖨️ 印刷</button>
+                <button onClick={() => handleResendEmail('president')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
+                <button onClick={() => openPrintPreview('president')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input 
@@ -1061,15 +1061,19 @@ export default function CaseApprovalPage() {
 
 const thStyle = {
   padding: '8px 12px',
-  backgroundColor: '#f2f2f2',
-  color: '#333',
-  borderBottom: '2px solid #007bff',
+  backgroundColor: '#1e293b',
+  color: '#cbd5e1',
+  borderBottom: '2px solid #3b82f6',
   textAlign: 'left' as const,
   fontWeight: 'bold' as const,
+  border: '1px solid #334155',
 }
 
 const tdStyle = {
   padding: '8px 12px',
-  borderBottom: '1px solid #ddd',
+  borderBottom: '1px solid #334155',
+  border: '1px solid #334155',
+  backgroundColor: '#0f172a',
+  color: '#cbd5e1',
   verticalAlign: 'top' as const,
 }

@@ -269,11 +269,11 @@ export default function StaffsPage() {
   )
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto', color: '#e2e8f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h1 style={{ marginTop: 0 }}>担当者マスタ</h1>
+        <h1 style={{ marginTop: 0, color: '#fff' }}>担当者マスタ</h1>
         <Link href="/selectors">
-          <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
+          <button className="btn-3d btn-reset" style={{ padding: '8px 16px', color: '#fff', backgroundColor: '#16a34a', border: '1px solid #15803d' }}>
             ← メニューに戻る
           </button>
         </Link>
@@ -283,10 +283,10 @@ export default function StaffsPage() {
         <div
           style={{
             padding: '8px 12px',
-            backgroundColor: msg.includes('失敗') ? '#f8d7da' : '#d4edda',
-            color: msg.includes('失敗') ? '#721c24' : '#155724',
-            border: `1px solid ${msg.includes('失敗') ? '#f5c6cb' : '#c3e6cb'}`,
-            borderRadius: 4,
+            backgroundColor: msg.includes('失敗') ? '#7f1d1d' : '#14532d',
+            color: '#fff',
+            border: `1px solid ${msg.includes('失敗') ? '#ef4444' : '#22c55e'}`,
+            borderRadius: 6,
             marginBottom: 12,
           }}
         >
@@ -320,10 +320,11 @@ export default function StaffsPage() {
 
           <div
             style={{
-              border: '1px solid #ddd',
-              borderRadius: 4,
+              border: '1px solid #334155',
+              borderRadius: 8,
               maxHeight: 'calc(100vh - 280px)',
               overflowY: 'auto',
+              backgroundColor: '#0f172a',
             }}
           >
             {filteredStaffs.map((staff) => (
@@ -332,9 +333,9 @@ export default function StaffsPage() {
                 onClick={() => handleSelectStaff(staff)}
                 style={{
                   padding: '12px',
-                  borderBottom: '1px solid #eee',
+                  borderBottom: '1px solid #1f2937',
                   cursor: 'pointer',
-                  backgroundColor: selectedStaff?.id === staff.id ? '#e3f2fd' : '#fff',
+                  backgroundColor: selectedStaff?.id === staff.id ? '#1e293b' : 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
@@ -379,9 +380,9 @@ export default function StaffsPage() {
 
                 {/* 担当者情報 */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 'bold', fontSize: 14 }}>{staff.name}</div>
-                  <div style={{ fontSize: 12, color: '#666' }}>{staff.furigana}</div>
-                  <div style={{ fontSize: 11, color: '#999', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 14, color: '#e2e8f0' }}>{staff.name}</div>
+                  <div style={{ fontSize: 12, color: '#cbd5e1' }}>{staff.furigana}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {staff.email}
                   </div>
                 </div>
@@ -390,7 +391,7 @@ export default function StaffsPage() {
           </div>
 
           {filteredStaffs.length === 0 && (
-            <p style={{ textAlign: 'center', color: '#999', marginTop: 24 }}>
+            <p style={{ textAlign: 'center', color: '#94a3b8', marginTop: 24 }}>
               該当する担当者がいません
             </p>
           )}
@@ -399,8 +400,8 @@ export default function StaffsPage() {
         {/* 右側：編集フォーム */}
         <div>
           {isEditing ? (
-            <div style={{ border: '1px solid #ddd', borderRadius: 4, padding: 24, backgroundColor: '#f9f9f9' }}>
-              <h2 style={{ marginTop: 0 }}>
+            <div style={{ border: '1px solid #334155', borderRadius: 12, padding: 24, backgroundColor: '#1e293b', color: '#e2e8f0' }}>
+              <h2 style={{ marginTop: 0, color: '#93c5fd' }}>
                 {selectedStaff ? '担当者情報編集' : '新規担当者登録'}
               </h2>
 
@@ -408,8 +409,8 @@ export default function StaffsPage() {
                 {/* 基本情報 */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
-                      氏名 <span style={{ color: 'red' }}>*</span>
+                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
+                      氏名 <span style={{ color: '#ef4444' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -421,7 +422,7 @@ export default function StaffsPage() {
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                       フリガナ
                     </label>
                     <input
@@ -436,7 +437,7 @@ export default function StaffsPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                       メールアドレス
                     </label>
                     <input
@@ -449,7 +450,7 @@ export default function StaffsPage() {
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                    <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                       電話番号
                     </label>
                     <input
@@ -463,7 +464,7 @@ export default function StaffsPage() {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                  <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                     備考
                   </label>
                   <textarea
@@ -476,7 +477,7 @@ export default function StaffsPage() {
 
                 {/* 印章画像アップロード */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                  <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                     印章画像（PNG）
                   </label>
                   <input
@@ -486,13 +487,13 @@ export default function StaffsPage() {
                     style={{ marginBottom: 8 }}
                   />
                   {stampFile && (
-                    <p style={{ fontSize: 12, color: '#28a745', marginTop: 4 }}>
+                    <p style={{ fontSize: 12, color: '#22c55e', marginTop: 4 }}>
                       選択: {stampFile.name}
                     </p>
                   )}
                   {formData.stamp_path && (
                     <div style={{ marginTop: 8 }}>
-                      <p style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>現在の画像:</p>
+                      <p style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>現在の画像:</p>
                       <img 
                         src={formData.stamp_path} 
                         alt="印章" 
@@ -500,18 +501,18 @@ export default function StaffsPage() {
                       />
                     </div>
                   )}
-                  <p style={{ fontSize: 11, color: '#666', marginTop: 6 }}>
+                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
                     保存時に「stamps/{'{社員ID}'}/stamp.png」でアップロードされます
                   </p>
                 </div>
 
                 {/* 承認経路設定 */}
-                <div style={{ borderTop: '1px solid #ddd', paddingTop: 16, marginTop: 8 }}>
-                  <h3 style={{ marginTop: 0, fontSize: 16 }}>承認経路設定</h3>
+                <div style={{ borderTop: '1px solid #334155', paddingTop: 16, marginTop: 8 }}>
+                  <h3 style={{ marginTop: 0, fontSize: 16, color: '#cbd5e1' }}>承認経路設定</h3>
 
                   <div style={{ display: 'grid', gap: 12 }}>
                     <div>
-                      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                         所長承認者
                       </label>
                       <select
@@ -532,7 +533,7 @@ export default function StaffsPage() {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                         専務承認者
                       </label>
                       <select
@@ -553,7 +554,7 @@ export default function StaffsPage() {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold' }}>
+                      <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
                         社長承認者
                       </label>
                       <select
@@ -581,7 +582,7 @@ export default function StaffsPage() {
                 <button onClick={handleSave} className="btn-3d btn-primary" style={{ flex: 1 }}>
                   💾 保存
                 </button>
-                <button onClick={handleCancel} className="btn-3d btn-reset" style={{ flex: 1 }}>
+                <button onClick={handleCancel} className="btn-3d btn-reset" style={{ flex: 1, color: '#fff' }}>
                   ✕ キャンセル
                 </button>
                 {selectedStaff && (
@@ -598,11 +599,12 @@ export default function StaffsPage() {
           ) : (
             <div
               style={{
-                border: '1px solid #ddd',
-                borderRadius: 4,
+                border: '1px solid #334155',
+                borderRadius: 12,
                 padding: 48,
                 textAlign: 'center',
-                color: '#999',
+                color: '#94a3b8',
+                backgroundColor: '#0f172a',
               }}
             >
               <p>左側から担当者を選択するか、新規登録ボタンをクリックしてください</p>

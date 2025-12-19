@@ -259,10 +259,10 @@ const ProductPriceImportPage: React.FC = () => {
           onClick={() => router.push('/')}
           style={{
             padding: '8px 14px',
-            backgroundColor: '#f0f0f0',
-            border: '1px solid #ccc',
+            backgroundColor: '#16a34a',
+            border: '1px solid #15803d',
             borderRadius: '6px',
-            color: '#333',
+            color: '#fff',
             fontWeight: 'bold',
             cursor: 'pointer'
           }}

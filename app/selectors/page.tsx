@@ -1,87 +1,136 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
+import {
+  FiFileText,
+  FiArchive,
+  FiBox,
+  FiUsers,
+  FiUser,
+  FiTrendingUp,
+} from 'react-icons/fi'
 
 export default function MasterSelectorPage() {
-  const buttonStyle = {
-    backgroundColor: '#00bcd4',
-    color: '#000',
-    padding: '10px 16px',
-    borderRadius: 4,
-    border: 'none',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-    fontSize: 14,
-  }
-
   return (
-    <div style={{ padding: 24, maxWidth: 980, margin: '0 auto' }}>
-      <div style={{ textAlign: 'center' }}>
-        <h1 style={{ marginTop: 0, fontSize: 45, fontWeight: 'bold' }}>三州見積書作成システム</h1>
-        <p style={{ color: '#070707ff', marginTop: 4, marginBottom: 20 }}>
-          商品・担当者・顧客の各マスタ選択画面、および見積書作成・案件一覧画面へ移動します。
-        </p>
-      </div>
-
-      <div className="selector-grid" style={{ marginTop: 20 }}>
-        <Link href="/cases/new" className="selector-card">
-          <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>
-            <h2 style={{ marginTop: 0, color: '#fff' }}>見積書作成</h2>
-            <p>案件登録・見積書作成を行います</p>
-            <button style={{ ...buttonStyle, marginTop: 8 }}>見積書作成へ</button>
+    <div className="min-h-screen p-6 sm:p-10">
+      <div className="max-w-7xl mx-auto">
+        <header className="relative overflow-hidden flex items-center justify-between mb-12 gap-4">
+          <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none select-none">
+            <Image
+              src="/会社ロゴ（スタイリッシュ）.png"
+              alt="背景ロゴ"
+              width={189}
+              height={113}
+              className="object-contain"
+              style={{ width: '5cm', height: '3cm' }}
+              priority
+            />
           </div>
-        </Link>
-
-        <Link href="/cases/list" className="selector-card">
-          <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>
-            <h2 style={{ marginTop: 0, color: '#fff' }}>案件一覧・承認</h2>
-            <p>案件を一覧表示・承認・削除します</p>
-            <button style={{ ...buttonStyle, marginTop: 8 }}>案件一覧へ</button>
+          <div className="flex-1 relative z-10" />
+          <h1 className="flex-1 relative z-10 text-center text-3xl sm:text-4xl font-bold text-white whitespace-nowrap">
+            三州見積書作成システム
+          </h1>
+          <div className="flex-1 relative z-10 flex justify-end">
+            <Image
+              src="/会社ロゴ（スタイリッシュ）.png"
+              alt="会社ロゴ"
+              width={189}
+              height={113}
+              className="object-contain drop-shadow"
+              style={{ width: '5cm', height: '3cm' }}
+              priority
+            />
           </div>
-        </Link>
+        </header>
 
-        <div className="selector-card">
-          <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>
-            <h2 style={{ marginTop: 0, color: '#fff' }}>商品マスタ</h2>
-            <p>商品を検索・選択／修正／削除します</p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <Link href="/products" style={{ flex: 1 }}>
-                <button style={{ ...buttonStyle, width: '100%' }}>商品一覧へ</button>
-              </Link>
-              <Link href="/products/price_import" style={{ flex: 1 }}>
-                <button style={{ ...buttonStyle, width: '100%' }}>マスタ更新</button>
+        <div className="selector-grid">
+          {/* 見積書作成 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiFileText className="icon" />
+              <h2>見積書作成</h2>
+            </div>
+            <p>見積書作成のいた、既設者のと信頼書、仕事数者に不件を探します。</p>
+            <div className="selector-card-buttons">
+              <Link href="/cases/new" className="selector-button primary">
+                見積書作成
               </Link>
             </div>
           </div>
-        </div>
 
-        <Link href="/staffs" className="selector-card">
-          <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>
-            <h2 style={{ marginTop: 0, color: '#fff' }}>担当者マスタ</h2>
-            <p>担当者を検索・選択／修正／削除します</p>
-            <button style={{ ...buttonStyle, marginTop: 8 }}>担当者一覧へ</button>
-          </div>
-        </Link>
-
-        <Link href="/customers/select" className="selector-card">
-          <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>
-            <h2 style={{ marginTop: 0, color: '#fff' }}>顧客マスタ</h2>
-            <p>顧客を検索・選択／新規登録／修正／削除します</p>
-            <button style={{ ...buttonStyle, marginTop: 8 }}>顧客検索へ</button>
-          </div>
-        </Link>
-
-        {/* ★ 6番目：実績関係出力 */}
-        <div className="selector-card">
-          <div style={{ backgroundColor: '#1e3a8a', padding: 20, borderRadius: 8, color: '#fff' }}>
-            <h2 style={{ marginTop: 0, color: '#fff' }}>実績関係出力</h2>
-            <p>製造計画・担当者別実績の表示</p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <Link href="/plan" style={{ flex: 1 }}>
-                <button style={{ ...buttonStyle, width: '100%' }}>製造計画書</button>
+          {/* 案件一覧・承認 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiArchive className="icon" />
+              <h2>案件一覧・承認</h2>
+            </div>
+            <p>案件一覧・承認、案件相談限定者計に確認ることができます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/cases/list" className="selector-button primary">
+                案件一覧・承認
               </Link>
-              <Link href="/plan/staff_performance" style={{ flex: 1 }}>
-                <button style={{ ...buttonStyle, width: '100%' }}>担当者別実績書</button>
+            </div>
+          </div>
+
+          {/* 商品マスタ */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiBox className="icon" />
+              <h2>商品マスタ</h2>
+            </div>
+            <p>商品マスタと商品で入り、商品を作成します。</p>
+            <div className="selector-card-buttons">
+              <Link href="/products" className="selector-button primary">
+                商品検索
+              </Link>
+              <Link href="/products/price_import" className="selector-button primary">
+                新規登録
+              </Link>
+            </div>
+          </div>
+
+          {/* 担当者マスタ */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiUser className="icon" />
+              <h2>担当者マスタ</h2>
+            </div>
+            <p>担当者マスタにようした担当者の名誉番号を設置ができます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/staffs" className="selector-button primary">
+                担当者マスタ
+              </Link>
+            </div>
+          </div>
+
+          {/* 顧客マスタ */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiUsers className="icon" />
+              <h2>顧客マスタ</h2>
+            </div>
+            <p>顧客マスタは、多長の顧客と作業を許します。</p>
+            <div className="selector-card-buttons">
+              <Link href="/customers/select" className="selector-button primary">
+                顧客マスタ
+              </Link>
+            </div>
+          </div>
+
+          {/* 実績関係出力 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiTrendingUp className="icon" />
+              <h2>実績関係出力</h2>
+            </div>
+            <p>実績関係出力やシャートに数置に定置ができます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/plan" className="selector-button primary">
+                実績検索
+              </Link>
+              <Link href="/plan/staff_performance" className="selector-button primary">
+                マスタ更新
               </Link>
             </div>
           </div>

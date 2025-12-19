@@ -315,7 +315,7 @@ export default function CaseListPage() {
             全件表示
           </button>
           <Link href="/selectors">
-            <button className="btn-3d btn-reset" style={{ padding: '8px 16px' }}>
+            <button className="btn-3d btn-reset" style={{ padding: '8px 16px', backgroundColor: '#16a34a', border: '1px solid #15803d', color: '#fff' }}>
               ← メニューに戻る
             </button>
           </Link>
