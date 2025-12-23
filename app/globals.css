@@ -150,3 +150,146 @@ body {
   background-color: #1d4ed8;
   border-color: #1e40af;
 }
+/* ========== モバイル対応 ========== */
+@media (max-width: 768px) {
+  .selector-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .selector-card {
+    padding: 16px;
+  }
+
+  .selector-card h2 {
+    font-size: 18px;
+  }
+
+  .selector-card p {
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  .selector-card-buttons {
+    gap: 8px;
+  }
+
+  .selector-button {
+    padding: 10px 12px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  body {
+    font-size: 14px;
+  }
+
+  /* テーブルのレスポンシブ対応 */
+  table {
+    font-size: 12px;
+  }
+
+  th, td {
+    padding: 4px 6px !important;
+  }
+
+  /* モーダルのレスポンシブ対応 */
+  .fixed {
+    padding: 8px;
+  }
+
+  .fixed > div {
+    max-width: 95vw;
+    max-height: 90vh;
+    margin: auto;
+  }
+
+  /* グリッドレイアウトの最適化 */
+  [style*="display: grid"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 入力フィールドの最適化 */
+  input, select, textarea {
+    font-size: 16px;
+    padding: 10px 8px;
+    min-height: 44px;
+  }
+
+  /* ボタンのサイズ最適化 */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  /* オーバーフローの制御 */
+  div[style*="overflowX"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 480px) {
+  .selector-card {
+    padding: 12px;
+  }
+
+  .selector-card h2 {
+    font-size: 16px;
+  }
+
+  body {
+    font-size: 13px;
+  }
+
+  table {
+    font-size: 11px;
+  }
+
+  th, td {
+    padding: 3px 4px !important;
+  }
+
+  button {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  input, select, textarea {
+    font-size: 16px;
+    padding: 8px 6px;
+  }
+
+  /* フレックスボックスの単列化 */
+  [style*="display: flex"] {
+    flex-direction: column;
+  }
+
+  /* スペーシングの削減 */
+  [style*="gap:"] {
+    gap: 8px !important;
+  }
+
+  [style*="margin:"] {
+    margin: 8px !important;
+  }
+
+  [style*="padding:"] {
+    padding: 8px !important;
+  }
+}
+
+/* タッチデバイス用の最適化 */
+@media (hover: none) and (pointer: coarse) {
+  button:hover,
+  .selector-button:hover {
+    background-color: inherit;
+  }
+
+  button:active,
+  .selector-button:active {
+    opacity: 0.8;
+  }
+}
