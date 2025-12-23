@@ -10,6 +10,8 @@ type PlanRow = {
   product_name: string | null;
   status: string | null;
   total_quantity: number;
+  source_warehouse_name?: string | null;
+  destination_warehouse_name?: string | null;
 };
 
 export default function PlanPage() {
@@ -229,7 +231,13 @@ export default function PlanPage() {
                   {row.product_name}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>
-                  {row.status}
+                  {row.status === '倉庫移動' ? (
+                    <span>
+                      {row.source_warehouse_name || '-'} ➡ {row.destination_warehouse_name || '-'}
+                    </span>
+                  ) : (
+                    row.status
+                  )}
                 </td>
                 <td
                   style={{

@@ -431,20 +431,22 @@ function Section({ title, rows }: { title: string; rows: ViewRow[] }) {
       <table style={{ width: "100%", borderCollapse: "collapse", background: "#0b1220" }}>
         <thead>
           <tr>
-            <th style={{ ...th, width: "70%" }}>品名</th>
+            <th style={{ ...th, width: "20%" }}>商品コード</th>
+            <th style={{ ...th, width: "50%" }}>品名</th>
             <th style={{ ...th, width: "30%" }}>数量</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, idx) => (
             <tr key={idx}>
+              <td style={td}>{r.product_id || '不明'}</td>
               <td style={td}>{r.product_name || '不明'}</td>
               <td style={td}>{r.stock_qty}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={2} style={{ ...td, textAlign: "center", color: "#94a3b8" }}>
+              <td colSpan={3} style={{ ...td, textAlign: "center", color: "#94a3b8" }}>
                 データがありません
               </td>
             </tr>

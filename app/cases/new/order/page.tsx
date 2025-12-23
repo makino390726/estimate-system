@@ -63,6 +63,7 @@ function PurchaseOrderPageContent() {
     new Date().toISOString().split('T')[0]
   )
   const [purchaserName, setPurchaserName] = useState('')
+  const [note, setNote] = useState('')
 
   const [layoutType, setLayoutType] = useState<'vertical' | 'horizontal'>(
     'vertical'
@@ -604,6 +605,7 @@ function PurchaseOrderPageContent() {
     )
     setDepartment(caseData.department || '')
     setPurchaserName(caseData.purchaser_name || '')
+    setNote(caseData.note || '')
 
     if (caseData.layout_type === 'horizontal') {
       const { data: sectionsData, error: sectionsError } = await supabase
@@ -796,6 +798,7 @@ function PurchaseOrderPageContent() {
     setSections([])
     setOrderNo('')
     setOrderDate(new Date().toISOString().split('T')[0])
+    setNote('')
     // 支払条件は入力欄削除に伴い初期化不要
 
     alert('入力内容をクリアしました')
@@ -1142,6 +1145,28 @@ function PurchaseOrderPageContent() {
       if (errorMessages.length > 0) {
         message += `\n\n⚠️ エラー:\n${errorMessages.join('\n')}`
       }
+
+      // 倉庫移動ケースレコードの保存
+      try {
+        const caseId = generateOrderId()
+        const { error: caseError } = await supabase.from('cases').insert({
+          case_id: caseId,
+          subject: subject || '倉庫移動',
+          created_date: orderDate,
+          status: '倉庫移動',
+          source_warehouse_id: supplierId,
+          source_warehouse_name: supplierName,
+          destination_warehouse_id: destinationWarehouseId,
+          destination_warehouse_name: destinationWarehouseName,
+          note: note || null,
+        })
+
+        if (caseError) {
+          console.warn('ケース記録警告:', caseError.message)
+        }
+      } catch (e: any) {
+        console.warn('ケース記録の例外:', e?.message)
+      }
       
       console.log('=== 倉庫移動保存完了 ===')
       alert(message)
@@ -1199,6 +1224,7 @@ function PurchaseOrderPageContent() {
             special_discount: discount,
             layout_type: layoutType,
             purchaser_name: purchaserName || null,
+            note: note || null,
           })
           .eq('case_id', loadedOrderId)
 
@@ -1225,6 +1251,7 @@ function PurchaseOrderPageContent() {
           special_discount: discount,
           layout_type: layoutType,
           purchaser_name: purchaserName || null,
+          note: note || null,
           approve_staff: null,
           approve_manager: null,
           approve_director: null,
@@ -1473,7 +1500,7 @@ function PurchaseOrderPageContent() {
             {titleMode !== 'warehouse-move' && (
               <div>
                 <label style={labelStyle}>
-                  発注者名:
+                  納品先名:
                 </label>
                 <input
                   type="text"
@@ -1601,39 +1628,51 @@ function PurchaseOrderPageContent() {
         </div>
         )}
 
-        {/* 倉庫移動モード: 発注者 */}
+        {/* 倉庫移動モード: 納品先名 */}
         {titleMode === 'warehouse-move' && (
           <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>発注者:</label>
+            <label style={labelStyle}>納品先名:</label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"
                 value={staffName}
                 readOnly
                 style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
-                placeholder="発注者を選択してください"
+                placeholder="納品先名を選択してください"
               />
               <button
                 onClick={() => setShowStaffModal(true)}
                 className="selector-button primary"
               >
-                発注者選択
+                納品先名選択
               </button>
             </div>
           </div>
         )}
 
-        {/* 件名 (倉庫移動では非表示) */}
+        {/* 件名・備考 (倉庫移動では非表示) */}
         {titleMode !== 'warehouse-move' && (
-        <div style={{ marginBottom: 24 }}>
-          <label style={labelStyle}>件名:</label>
-          <input
-            type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            style={{ ...inputStyle, width: '100%' }}
-            placeholder="例: ○○工事発注"
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+          <div>
+            <label style={labelStyle}>件名:</label>
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              style={{ ...inputStyle, width: '100%' }}
+              placeholder="例: ○○工事発注"
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>備考:</label>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              style={{ ...inputStyle, width: '100%' }}
+              placeholder="備考を入力"
+            />
+          </div>
         </div>
         )}
 
@@ -1729,7 +1768,14 @@ function PurchaseOrderPageContent() {
                           </select>
                         </td>
                       )}
-                      <td style={tdStyle}>{row.item_name}</td>
+                      <td style={tdStyle}>
+                        {row.item_name}
+                        {titleMode !== 'warehouse-move' && (row.unit_price === null || row.unit_price === 0) && (
+                          <span style={{ color: '#ef4444', marginLeft: 8, fontSize: 14, fontWeight: 'bold' }}>
+                            価格未入力
+                          </span>
+                        )}
+                      </td>
                       <td style={tdStyle}>{row.spec}</td>
                       <td style={{...tdStyle, textAlign: 'center'}}>{row.unit}</td>
                       <td style={tdStyle}>
@@ -2194,6 +2240,7 @@ function PurchaseOrderPageContent() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
+                          <th style={thStyle}>商品コード</th>
                           <th style={thStyle}>商品名</th>
                           <th style={thStyle}>規格</th>
                           <th style={thStyle}>単位</th>
@@ -2204,6 +2251,7 @@ function PurchaseOrderPageContent() {
                       <tbody>
                         {products.map((product) => (
                           <tr key={product.id}>
+                            <td style={tdStyle}>{product.id}</td>
                             <td style={tdStyle}>{product.name}</td>
                             <td style={tdStyle}>{product.spec || '-'}</td>
                             <td style={tdStyle}>{product.unit || '-'}</td>
@@ -2315,10 +2363,11 @@ function PurchaseOrderPageContent() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
+                          <th style={thStyle}>商品コード</th>
                           <th style={thStyle}>商品名（移動元在庫）</th>
                           <th style={thStyle}>規格</th>
                           <th style={thStyle}>単位</th>
-                          <th style={thStyle}>在庫数量</th>
+                          <th style={{ ...thStyle, width: 80 }}>在庫</th>
                           <th style={thStyle}>原価</th>
                           <th style={thStyle}>操作</th>
                         </tr>
@@ -2328,6 +2377,7 @@ function PurchaseOrderPageContent() {
                           const hasIssue = !stk.spec || !stk.unit || stk.cost_price <= 0
                           return (
                             <tr key={stk.product_id} style={hasIssue ? { backgroundColor: '#422006' } : {}}>
+                              <td style={tdStyle}>{stk.product_id}</td>
                               <td style={tdStyle}>{stk.product_name}</td>
                               <td 
                                 style={{ ...tdStyle, cursor: !stk.spec ? 'pointer' : 'default' }}
@@ -2379,33 +2429,25 @@ function PurchaseOrderPageContent() {
                               <td style={tdStyle}>
                                 <button
                                   onClick={() => {
-                                    if (hasIssue) {
-                                      setEditingStock(stk)
-                                      setEditSpec(stk.spec || '')
-                                      setEditUnit(stk.unit || '')
-                                      setEditCostPrice(stk.cost_price || 0)
-                                      setShowStockEditModal(true)
-                                    } else {
-                                      const newRow: Row = {
-                                        product_id: stk.product_id,
-                                        item_name: stk.product_name,
-                                        spec: stk.spec || '',
-                                        unit: stk.unit || '',
-                                        quantity: 1,
-                                        unit_price: null,
-                                        amount: 0,
-                                        cost_price: stk.cost_price || 0,
-                                        section_id: null,
-                                        max_stock_qty: stk.stock_qty,
-                                      }
-                                      setRows((prev) => [...prev, newRow])
-                                      setShowProductModal(false)
+                                    // 不足情報（規格・単位・原価）があっても行追加を許可
+                                    const newRow: Row = {
+                                      product_id: stk.product_id,
+                                      item_name: stk.product_name,
+                                      spec: stk.spec || '',
+                                      unit: stk.unit || '',
+                                      quantity: 1,
+                                      unit_price: null,
+                                      amount: 0,
+                                      cost_price: stk.cost_price || 0,
+                                      section_id: null,
+                                      max_stock_qty: stk.stock_qty,
                                     }
+                                    setRows((prev) => [...prev, newRow])
+                                    setShowProductModal(false)
                                   }}
                                   className="selector-button primary"
-                                  style={hasIssue ? { backgroundColor: '#d97706' } : {}}
                                 >
-                                  {hasIssue ? '情報入力' : '選択'}
+                                  選択
                                 </button>
                               </td>
                             </tr>
@@ -2413,7 +2455,7 @@ function PurchaseOrderPageContent() {
                         })}
                         {warehouseStocks.length === 0 && (
                           <tr>
-                            <td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
+                            <td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
                               在庫が見つかりません
                             </td>
                           </tr>
@@ -2904,7 +2946,7 @@ function PurchaseOrderPageContent() {
                     />
                   </div>
                   <div>
-                    <label style={labelStyle}>単位 <span style={{ color: '#dc2626' }}>*</span></label>
+                    <label style={labelStyle}>単位</label>
                     <input
                       type="text"
                       value={editUnit}
@@ -2914,7 +2956,7 @@ function PurchaseOrderPageContent() {
                     />
                   </div>
                   <div>
-                    <label style={labelStyle}>原価 <span style={{ color: '#dc2626' }}>*</span></label>
+                    <label style={labelStyle}>原価</label>
                     <input
                       type="number"
                       value={editCostPrice}
@@ -2943,25 +2985,16 @@ function PurchaseOrderPageContent() {
                 </button>
                 <button
                   onClick={async () => {
-                    if (!editUnit) {
-                      alert('単位を入力してください')
-                      return
-                    }
-                    if (editCostPrice <= 0) {
-                      alert('原価を入力してください')
-                      return
-                    }
-
-                    // 明細に追加（productsテーブルは更新せず、case_detailsに保存）
+                    // 入力不足でも追加を許容
                     const newRow: Row = {
                       product_id: editingStock.product_id,
                       item_name: editingStock.product_name,
                       spec: editSpec || '',
-                      unit: editUnit,
+                      unit: editUnit || '',
                       quantity: 1,
                       unit_price: null,
                       amount: 0,
-                      cost_price: editCostPrice,
+                      cost_price: Number(editCostPrice) || 0,
                       section_id: null,
                       max_stock_qty: editingStock.stock_qty,
                     }

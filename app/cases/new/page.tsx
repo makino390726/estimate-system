@@ -1789,6 +1789,7 @@ export default function CaseNewPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
+                      <th style={thStyle}>商品コード</th>
                       <th style={thStyle}>商品名</th>
                       <th style={thStyle}>規格</th>
                       <th style={thStyle}>単位</th>
@@ -1799,6 +1800,7 @@ export default function CaseNewPage() {
                   <tbody>
                     {products.map((product) => (
                       <tr key={product.id}>
+                        <td style={tdStyle}>{product.id}</td>
                         <td style={tdStyle}>{product.name}</td>
                         <td style={tdStyle}>{product.spec || '-'}</td>
                         <td style={tdStyle}>{product.unit || '-'}</td>
@@ -1890,7 +1892,7 @@ export default function CaseNewPage() {
                 <>
               <div style={{
                 padding: 16,
-                backgroundColor: '#f8f9fa',
+                backgroundColor: '#0f172a',
                 borderRadius: 4,
                 marginBottom: 16,
               }}>
@@ -1900,14 +1902,14 @@ export default function CaseNewPage() {
                   gap: 12,
                 }}>
                   <div>
-                    <label style={labelStyle}>商品名 <span style={{ color: '#dc3545' }}>*</span></label>
+                    <label style={labelStyle}>商品名 <span style={{ color: '#ef4444' }}>*</span></label>
                     <input
                       type="text"
                       value={manualProductName}
                       onChange={(e) => setManualProductName(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
                       placeholder="商品名を入力"
                     />
                   </div>
@@ -1919,7 +1921,7 @@ export default function CaseNewPage() {
                       onChange={(e) => setManualProductSpec(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
                       placeholder="例: 1000x2000"
                     />
                   </div>
@@ -1931,7 +1933,7 @@ export default function CaseNewPage() {
                       onChange={(e) => setManualProductUnit(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
                       placeholder="例: 個、m、kg"
                     />
                   </div>
@@ -1942,7 +1944,7 @@ export default function CaseNewPage() {
                       value={manualProductQuantity}
                       onChange={(e) => setManualProductQuantity(Number(e.target.value) || 0)}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
                       placeholder="1"
                     />
                   </div>
@@ -1953,7 +1955,7 @@ export default function CaseNewPage() {
                       value={manualProductUnitPrice ?? ''}
                       onChange={(e) => setManualProductUnitPrice(e.target.value ? Number(e.target.value) : null)}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
                       placeholder="0"
                     />
                   </div>
@@ -1964,7 +1966,7 @@ export default function CaseNewPage() {
                       value={manualProductCostPrice}
                       onChange={(e) => setManualProductCostPrice(Number(e.target.value) || 0)}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
                       placeholder="0"
                     />
                   </div>

@@ -288,6 +288,7 @@ export default function OrderListPage() {
           <thead>
             <tr>
               <th style={{ ...thStyle, width: 120 }}>案件ID</th>
+              <th style={{ ...thStyle, width: 100 }}>伝票種別</th>
               <th style={{ ...thStyle, width: 80 }}>案件No</th>
               <th style={{ ...thStyle, width: 110 }}>作成日</th>
               <th style={{ ...thStyle, width: 180 }}>件名</th>
@@ -306,6 +307,17 @@ export default function OrderListPage() {
               <React.Fragment key={o.case_id}>
                 <tr>
                   <td style={tdStyle}>{o.case_id}</td>
+                  <td style={tdStyle}>
+                    {o.status === '注文' ? (
+                      <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>発注書作成</span>
+                    ) : o.status === '倉庫移動' ? (
+                      <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>倉庫移動</span>
+                    ) : o.status === '受注' ? (
+                      <span style={{ color: '#34d399', fontWeight: 'bold' }}>移動伝票作成</span>
+                    ) : (
+                      <span style={{ color: '#94a3b8' }}>{o.status}</span>
+                    )}
+                  </td>
                   <td style={tdStyle}>{o.case_no ?? "-"}</td>
                   <td style={tdStyle}>{o.created_date}</td>
                   <td style={tdStyle}>{o.subject}</td>
@@ -352,6 +364,7 @@ export default function OrderListPage() {
                       )}
                     </div>
                   </td>
+                  {o.status !== '受注' && (
                   <td style={{ ...tdStyle, backgroundColor: "#fff", color: "#000" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
                       <select
@@ -390,6 +403,7 @@ export default function OrderListPage() {
                       )}
                     </div>
                   </td>
+                  )}
                   <td style={tdStyle}>
                     <button
                       onClick={() => toggleExpand(o.case_id)}
@@ -402,7 +416,7 @@ export default function OrderListPage() {
                 </tr>
                 {expanded.has(o.case_id) && (
                   <tr>
-                    <td colSpan={11} style={{ background: "#1e293b", padding: 12, borderColor: "#334155" }}>
+                    <td colSpan={13} style={{ background: "#1e293b", padding: 12, borderColor: "#334155" }}>
                       <div style={{ fontWeight: "bold", marginBottom: 8, color: "#93c5fd", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span>明細</span>
                         <button
