@@ -368,7 +368,7 @@ export default function CaseListPage() {
                   <button
                     onClick={() => handleShowDetail(c.case_id)}
                     className="btn-3d btn-search"
-                    style={{ fontSize: 11, padding: '4px 12px' }}
+                    style={{ fontSize: 11, padding: '4px 12px', backgroundColor: '#16a34a' }}
                   >
                     明細表示
                   </button>
@@ -401,11 +401,13 @@ export default function CaseListPage() {
 }
 
 const thStyle: React.CSSProperties = {
-  border: '1px solid #ccc',
+  border: '1px solid #334155',
   padding: '8px 12px',
-  backgroundColor: '#f5f5f5',
+  backgroundColor: '#0f172a',
+  color: '#cbd5e1',
   textAlign: 'left',
   fontSize: 12,
+  fontWeight: 'bold',
 }
 
 const tdStyle: React.CSSProperties = {
