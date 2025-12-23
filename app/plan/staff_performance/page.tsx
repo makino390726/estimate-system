@@ -193,6 +193,7 @@ export default function StaffPlanPage() {
     cursor: 'pointer',
     backgroundColor: sortKey === key ? '#e3f2fd' : '#f5f5f5',
     userSelect: 'none',
+    color: '#000',
   });
 
   return (
@@ -395,7 +396,7 @@ export default function StaffPlanPage() {
 
             {/* 合計行 */}
             {displayRows.length > 0 && (
-              <tr style={{ backgroundColor: '#fffacd', fontWeight: 'bold' }}>
+              <tr style={{ backgroundColor: '#fffacd', fontWeight: 'bold', color: '#000' }}>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>合計</td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
                   {totalRow.negotiating_count}

@@ -9,6 +9,8 @@ import {
   FiUsers,
   FiUser,
   FiTrendingUp,
+  FiShoppingCart,
+  FiHome,
 } from 'react-icons/fi'
 
 export default function MasterSelectorPage() {
@@ -73,6 +75,23 @@ export default function MasterSelectorPage() {
             </div>
           </div>
 
+          {/* 注文書作成・確認 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiShoppingCart className="icon" />
+              <h2>注文書作成・確認</h2>
+            </div>
+            <p>注文書の新規作成及び、注文ステータスの案件を確認できます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/cases/new/order" className="selector-button primary">
+                注文書作成
+              </Link>
+              <Link href="/cases/orders" className="selector-button primary">
+                注文受付確認
+              </Link>
+            </div>
+          </div>
+
           {/* 商品マスタ */}
           <div className="selector-card">
             <div className="selector-card-header">
@@ -100,6 +119,23 @@ export default function MasterSelectorPage() {
             <div className="selector-card-buttons">
               <Link href="/staffs" className="selector-button primary">
                 担当者マスタ
+              </Link>
+            </div>
+          </div>
+
+          {/* 倉庫マスタ */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiHome className="icon" />
+              <h2>倉庫マスタ</h2>
+            </div>
+            <p>倉庫ID（担当者ID）と名称（担当者名＋倉庫）を登録・更新・削除します。</p>
+            <div className="selector-card-buttons">
+              <Link href="/wfrehouses" className="selector-button primary">
+                倉庫登録
+              </Link>
+              <Link href="/warehouses/stock" className="selector-button primary">
+                在庫一覧
               </Link>
             </div>
           </div>

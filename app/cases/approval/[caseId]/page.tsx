@@ -738,7 +738,29 @@ export default function CaseApprovalPage() {
 
           {/* 案件情報 */}
           <div style={{ marginBottom: 24, padding: 16, border: '1px solid #334155', borderRadius: 8, backgroundColor: '#1e293b' }}>
-            <h2 style={{ marginTop: 0, color: '#93c5fd' }}>案件情報</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ marginTop: 0, color: '#93c5fd' }}>案件情報</h2>
+              <button
+                onClick={async () => {
+                  const { error } = await supabase
+                    .from('cases')
+                    .update({
+                      branch_manager: caseData.branch_manager,
+                      final_approver: caseData.final_approver,
+                    })
+                    .eq('case_id', caseId)
+                  if (error) {
+                    alert('保存エラー: ' + error.message)
+                  } else {
+                    alert('営業所確認者と最終確認者を保存しました')
+                  }
+                }}
+                className="btn-3d btn-primary"
+                style={{ padding: '8px 16px', fontSize: 12 }}
+              >
+                💾 保存
+              </button>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, color: '#cbd5e1' }}>
               <div><strong>見積番号:</strong> {caseData.case_no}</div>
               <div><strong>作成日:</strong> {caseData.created_date}</div>
@@ -752,6 +774,28 @@ export default function CaseApprovalPage() {
               <div><strong>有効期限:</strong> {caseData.validity_text || '-'}</div>
               <div><strong>支払条件:</strong> {caseData.payment_terms || '-'}</div>
               <div><strong>レイアウト:</strong> {caseData.layout_type === 'horizontal' ? '横様式' : '縦様式'}</div>
+              <div style={{ gridColumn: '1 / span 2', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <div style={{ marginBottom: 8 }}><strong>営業所確認者:</strong></div>
+                  <input
+                    type="text"
+                    value={caseData.branch_manager || ''}
+                    onChange={(e) => setCaseData({ ...caseData, branch_manager: e.target.value })}
+                    placeholder="営業所確認者名"
+                    style={{ border: '1px solid #475569', padding: '8px 10px', width: '100%', backgroundColor: '#0f172a', color: '#cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 8 }}><strong>最終確認者:</strong></div>
+                  <input
+                    type="text"
+                    value={caseData.final_approver || ''}
+                    onChange={(e) => setCaseData({ ...caseData, final_approver: e.target.value })}
+                    placeholder="最終確認者名"
+                    style={{ border: '1px solid #475569', padding: '8px 10px', width: '100%', backgroundColor: '#0f172a', color: '#cbd5e1', borderRadius: 6 }}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

@@ -212,10 +212,10 @@ export default function PlanPage() {
         >
           <thead>
             <tr style={{ backgroundColor: '#f5f5f5' }}>
-              <th style={{ border: '1px solid #ccc', padding: 4 }}>商品コード</th>
-              <th style={{ border: '1px solid #ccc', padding: 4 }}>商品名</th>
-              <th style={{ border: '1px solid #ccc', padding: 4 }}>ステータス</th>
-              <th style={{ border: '1px solid #ccc', padding: 4 }}>数量合計</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>商品コード</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>商品名</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>ステータス</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>数量合計</th>
             </tr>
           </thead>
 
