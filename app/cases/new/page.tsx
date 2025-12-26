@@ -201,6 +201,32 @@ export default function CaseNewPage() {
     if (!error) setCustomers(data || [])
   }
 
+  // 次の案件番号を取得（cases.case_noの最大+1、数値のみ対象）
+  const fetchNextCaseNo = async (): Promise<number> => {
+    try {
+      const { data, error } = await supabase
+        .from('cases')
+        .select('case_no, created_date')
+        .not('case_no', 'is', null)
+        .order('created_date', { ascending: false })
+        .limit(200)
+
+      if (error) throw error
+      const nums = (data || [])
+        .map((r: any) => {
+          const val = String(r.case_no || '')
+          const parsed = parseInt(val, 10)
+          return Number.isFinite(parsed) ? parsed : 0
+        })
+        .filter((n: number) => n > 0)
+      const next = (nums.length ? Math.max(...nums) : 0) + 1
+      return next
+    } catch (e) {
+      console.warn('次の案件番号取得に失敗:', (e as any)?.message)
+      return 1
+    }
+  }
+
   const fetchStaffs = async () => {
     const { data, error } = await supabase
       .from('staffs')
@@ -758,6 +784,7 @@ export default function CaseNewPage() {
             // ★ customer_idには得意先名を保存する仕様
             customer_id: customerId,
             staff_id: staffId,
+            coreplus_no: null,
             special_discount: discount,
             layout_type: layoutType,
             delivery_place: deliveryPlace,
@@ -780,14 +807,18 @@ export default function CaseNewPage() {
         // 新規登録モード
         targetCaseId = generateCaseId()
 
+        // 新規採番ルール：常に次の案件番号を採番
+        const nextCaseNo = await fetchNextCaseNo()
+
         const { error: caseError } = await supabase.from('cases').insert({
           case_id: targetCaseId,
-          case_no: estimateNo ? parseInt(estimateNo) : null,
+          case_no: nextCaseNo,
           subject: subject,
           created_date: estimateDate,
           // ★ customer_idには得意先名を保存する仕様
           customer_id: customerId,
           staff_id: staffId,
+          coreplus_no: null,
           status: '商談中',
           special_discount: discount,
           layout_type: layoutType,
@@ -828,6 +859,7 @@ export default function CaseNewPage() {
 
       const detailsToInsert = rows.map((row) => ({
         case_id: targetCaseId,
+        coreplus_no: null,
         product_id: row.product_id || null,
         spec: row.spec,
         unit: row.unit,

@@ -53,7 +53,14 @@ export default function StaffsPage() {
     if (error) {
       console.error('担当者取得エラー:', error)
     } else {
-      setStaffs((data || []) as Staff[])
+      const normalized = (data || []).map((s: any) => ({
+        ...s,
+        id: String(s.id ?? ''),
+        approver_section_head_id: s.approver_section_head_id ? String(s.approver_section_head_id) : null,
+        approver_senmu_id: s.approver_senmu_id ? String(s.approver_senmu_id) : null,
+        approver_shacho_id: s.approver_shacho_id ? String(s.approver_shacho_id) : null,
+      }))
+      setStaffs(normalized as Staff[])
     }
   }
 
@@ -223,13 +230,14 @@ export default function StaffsPage() {
       // 登録成功後、IDを取得してスタンプをアップロード
       const createdStaff = Array.isArray(data) && data.length > 0 ? data[0] : null
       if (createdStaff && stampFile) {
-        const uploadedPath = await uploadStampImage(createdStaff.id, stampFile)
+        const createdId = String(createdStaff.id)
+        const uploadedPath = await uploadStampImage(createdId, stampFile)
         if (uploadedPath) {
           // stamp_pathを更新
           await supabase
             .from('staffs')
             .update({ stamp_path: uploadedPath })
-            .eq('id', createdStaff.id)
+            .eq('id', createdId)
         }
       }
 

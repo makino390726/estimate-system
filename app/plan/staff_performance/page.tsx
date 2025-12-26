@@ -8,16 +8,23 @@ import { supabase } from '@/lib/supabaseClient';
 type StaffSummary = {
   staff_id: number;
   staff_name: string | null;
+  // 取扱件数（倉庫移動を除く全てのステータス）
+  total_count: number;
+  // 取扱額（倉庫移動を除く全てのステータス）
+  total_amount: number;
+  // 商談中件数（ステータス「商談中」）
   negotiating_count: number;
+  // 商談中金額
   negotiating_amount: number;
-  ordered_count: number;
-  ordered_amount: number;
-  total_deal_count: number;
-  total_deal_amount: number;
-  closed_count: number;
-  closed_amount: number;
-  closing_rate: number | null;
+  // 成約件数（「受注」「注文」「納品」「完了」）
+  contracted_count: number;
+  // 成約額
+  contracted_amount: number;
+  // 成約率（成約額 / 取扱額 × 100）
+  contract_rate: number | null;
+  // 粗利額（成約データの粗利総額）
   gross_profit_total: number;
+  // 平均粗利率（成約データの平均粗利率 × 100）
   avg_gross_margin: number | null;
 };
 
@@ -86,7 +93,34 @@ export default function StaffPlanPage() {
         setRows([]);
       } else {
         console.log('取得データ件数:', data?.length);
-        setRows((data as StaffSummary[]) || []);
+        
+        // ★ RPC応答をフロントエンドの新しい型に変換
+        const transformed = (data || []).map((row: any) => {
+          // 旧フィールド名から新フィールド名へマッピング
+          const total_count = row.total_deal_count ?? 0;
+          const total_amount = row.total_deal_amount ?? 0;
+          const negotiating_count = row.negotiating_count ?? 0;
+          const negotiating_amount = row.negotiating_amount ?? 0;
+          const contracted_count = row.ordered_count ?? 0; // 旧: ordered_count
+          const contracted_amount = row.ordered_amount ?? 0; // 旧: ordered_amount
+          const gross_profit_total = row.gross_profit_total ?? 0;
+          
+          return {
+            staff_id: row.staff_id,
+            staff_name: row.staff_name,
+            total_count,
+            total_amount,
+            negotiating_count,
+            negotiating_amount,
+            contracted_count,
+            contracted_amount,
+            gross_profit_total,
+            contract_rate: null, // フロントエンドで計算
+            avg_gross_margin: null, // フロントエンドで計算
+          } as StaffSummary;
+        });
+        
+        setRows(transformed);
       }
     } catch (err) {
       console.error('予期しないエラー:', err);
@@ -111,7 +145,23 @@ export default function StaffPlanPage() {
 
   // ★ ソート機能付き表示行
   const displayRows = useMemo(() => {
-    let sorted = [...filteredRows];
+    let sorted = [...filteredRows].map(r => {
+      // 個別行でも成約率と平均粗利率を計算
+      const contract_rate = r.total_amount > 0
+        ? (r.contracted_amount / r.total_amount) * 100
+        : null;
+      
+      const avg_gross_margin = r.contracted_amount > 0
+        ? (r.gross_profit_total / r.contracted_amount) * 100
+        : null;
+      
+      return {
+        ...r,
+        contract_rate,
+        avg_gross_margin,
+      };
+    });
+
     if (sortKey) {
       sorted.sort((a, b) => {
         const aVal = a[sortKey];
@@ -137,42 +187,38 @@ export default function StaffPlanPage() {
   // ★ 合計行を計算
   const totalRow = useMemo(() => {
     const total = {
+      total_count: 0,
+      total_amount: 0,
       negotiating_count: 0,
       negotiating_amount: 0,
-      ordered_count: 0,
-      ordered_amount: 0,
-      total_deal_count: 0,
-      total_deal_amount: 0,
-      closed_count: 0,
-      closed_amount: 0,
+      contracted_count: 0,
+      contracted_amount: 0,
       gross_profit_total: 0,
     };
 
     displayRows.forEach(r => {
+      total.total_count += r.total_count;
+      total.total_amount += r.total_amount;
       total.negotiating_count += r.negotiating_count;
       total.negotiating_amount += r.negotiating_amount;
-      total.ordered_count += r.ordered_count;
-      total.ordered_amount += r.ordered_amount;
-      total.total_deal_count += r.total_deal_count;
-      total.total_deal_amount += r.total_deal_amount;
-      total.closed_count += r.closed_count;
-      total.closed_amount += r.closed_amount;
+      total.contracted_count += r.contracted_count;
+      total.contracted_amount += r.contracted_amount;
       total.gross_profit_total += r.gross_profit_total;
     });
 
-    // 成約率（件数ベース）
-    const closing_rate = total.total_deal_count > 0
-      ? (total.ordered_count / total.total_deal_count) * 100
+    // 成約率（成約額 / 取扱額）
+    const contract_rate = total.total_amount > 0
+      ? (total.contracted_amount / total.total_amount) * 100
       : null;
 
-    // ★ 平均粗利率：受注額 + 成約額 をベースに計算
-    const avg_gross_margin = (total.ordered_amount + total.closed_amount) > 0
-      ? (total.gross_profit_total / (total.ordered_amount + total.closed_amount)) * 100
+    // 平均粗利率（粗利総額 / 成約額）
+    const avg_gross_margin = total.contracted_amount > 0
+      ? (total.gross_profit_total / total.contracted_amount) * 100
       : null;
 
     return {
       ...total,
-      closing_rate,
+      contract_rate,
       avg_gross_margin,
     };
   }, [displayRows]);
@@ -315,7 +361,13 @@ export default function StaffPlanPage() {
           <thead>
             <tr>
               <th style={thStyle('staff_name')} onClick={() => handleHeaderClick('staff_name')}>
-                担当者{getSortMark('staff_name')}
+                担当者名{getSortMark('staff_name')}
+              </th>
+              <th style={thStyle('total_count')} onClick={() => handleHeaderClick('total_count')}>
+                取扱件数{getSortMark('total_count')}
+              </th>
+              <th style={thStyle('total_amount')} onClick={() => handleHeaderClick('total_amount')}>
+                取扱額{getSortMark('total_amount')}
               </th>
               <th style={thStyle('negotiating_count')} onClick={() => handleHeaderClick('negotiating_count')}>
                 商談中件数{getSortMark('negotiating_count')}
@@ -323,29 +375,17 @@ export default function StaffPlanPage() {
               <th style={thStyle('negotiating_amount')} onClick={() => handleHeaderClick('negotiating_amount')}>
                 商談中金額{getSortMark('negotiating_amount')}
               </th>
-              <th style={thStyle('ordered_count')} onClick={() => handleHeaderClick('ordered_count')}>
-                受注件数{getSortMark('ordered_count')}
+              <th style={thStyle('contracted_count')} onClick={() => handleHeaderClick('contracted_count')}>
+                成約件数{getSortMark('contracted_count')}
               </th>
-              <th style={thStyle('ordered_amount')} onClick={() => handleHeaderClick('ordered_amount')}>
-                受注額{getSortMark('ordered_amount')}
+              <th style={thStyle('contracted_amount')} onClick={() => handleHeaderClick('contracted_amount')}>
+                成約額{getSortMark('contracted_amount')}
               </th>
-              <th style={thStyle('total_deal_count')} onClick={() => handleHeaderClick('total_deal_count')}>
-                取引総件数{getSortMark('total_deal_count')}
-              </th>
-              <th style={thStyle('total_deal_amount')} onClick={() => handleHeaderClick('total_deal_amount')}>
-                取引総額{getSortMark('total_deal_amount')}
-              </th>
-              <th style={thStyle('closed_count')} onClick={() => handleHeaderClick('closed_count')}>
-                成約件数{getSortMark('closed_count')}
-              </th>
-              <th style={thStyle('closed_amount')} onClick={() => handleHeaderClick('closed_amount')}>
-                成約額{getSortMark('closed_amount')}
-              </th>
-              <th style={thStyle('closing_rate')} onClick={() => handleHeaderClick('closing_rate')}>
-                成約率(件数)%{getSortMark('closing_rate')}
+              <th style={thStyle('contract_rate')} onClick={() => handleHeaderClick('contract_rate')}>
+                成約率(%)%{getSortMark('contract_rate')}
               </th>
               <th style={thStyle('gross_profit_total')} onClick={() => handleHeaderClick('gross_profit_total')}>
-                粗利総額{getSortMark('gross_profit_total')}
+                粗利額{getSortMark('gross_profit_total')}
               </th>
               <th style={thStyle('avg_gross_margin')} onClick={() => handleHeaderClick('avg_gross_margin')}>
                 平均粗利率%{getSortMark('avg_gross_margin')}
@@ -359,31 +399,25 @@ export default function StaffPlanPage() {
                   {r.staff_name ?? '(未設定)'}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
+                  {r.total_count}
+                </td>
+                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
+                  {r.total_amount.toLocaleString()}
+                </td>
+                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
                   {r.negotiating_count}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
                   {r.negotiating_amount.toLocaleString()}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {r.ordered_count}
+                  {r.contracted_count}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {r.ordered_amount.toLocaleString()}
+                  {r.contracted_amount.toLocaleString()}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {r.total_deal_count}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {r.total_deal_amount.toLocaleString()}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {r.closed_count}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {r.closed_amount.toLocaleString()}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {r.closing_rate != null ? r.closing_rate.toFixed(1) : '-'}
+                  {r.contract_rate != null ? r.contract_rate.toFixed(1) : '-'}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
                   {r.gross_profit_total.toLocaleString()}
@@ -399,31 +433,25 @@ export default function StaffPlanPage() {
               <tr style={{ backgroundColor: '#fffacd', fontWeight: 'bold', color: '#000' }}>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>合計</td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
+                  {totalRow.total_count}
+                </td>
+                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
+                  {totalRow.total_amount.toLocaleString()}
+                </td>
+                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
                   {totalRow.negotiating_count}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
                   {totalRow.negotiating_amount.toLocaleString()}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {totalRow.ordered_count}
+                  {totalRow.contracted_count}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {totalRow.ordered_amount.toLocaleString()}
+                  {totalRow.contracted_amount.toLocaleString()}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {totalRow.total_deal_count}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {totalRow.total_deal_amount.toLocaleString()}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {totalRow.closed_count}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {totalRow.closed_amount.toLocaleString()}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
-                  {totalRow.closing_rate != null ? totalRow.closing_rate.toFixed(1) : '-'}
+                  {totalRow.contract_rate != null ? totalRow.contract_rate.toFixed(1) : '-'}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, textAlign: 'right' }}>
                   {totalRow.gross_profit_total.toLocaleString()}
@@ -437,7 +465,7 @@ export default function StaffPlanPage() {
             {displayRows.length === 0 && !loading && (
               <tr>
                 <td
-                  colSpan={12}
+                  colSpan={10}
                   style={{ textAlign: 'center', padding: 8, color: '#666' }}
                 >
                   該当するデータがありません

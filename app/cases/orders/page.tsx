@@ -16,6 +16,9 @@ interface CaseRow {
   staff_id: string | null
   department: string | null
   purchaser_name: string | null
+  coreplus_no?: string | null
+  source_warehouse_name?: string | null
+  destination_warehouse_name?: string | null
 }
 
 interface DetailRow {
@@ -65,6 +68,11 @@ export default function OrderListPage() {
   const [staffs, setStaffs] = useState<Array<{ id: string; name: string; stamp_path: string | null }>>([])
   const [branchManagers, setBranchManagers] = useState<Map<string, string>>(new Map())
   const [finalApprovers, setFinalApprovers] = useState<Map<string, string>>(new Map())
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [staffFilter, setStaffFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [exporting, setExporting] = useState(false)
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
@@ -74,6 +82,10 @@ export default function OrderListPage() {
     fetchStaffs()
     fetchOrders()
   }, [])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [startDate, endDate, statusFilter, staffFilter])
 
   const fetchStaffs = async () => {
     const { data, error } = await supabase
@@ -89,11 +101,22 @@ export default function OrderListPage() {
   const fetchOrders = async () => {
     setLoading(true)
     try {
-      const { data: casesData, error: casesError } = await supabase
+      let query = supabase
         .from("cases")
         .select("*")
         .in("status", ["受注", "注文", "倉庫移動"])
-        .order("created_date", { ascending: false })
+
+      if (startDate) {
+        query = query.gte("created_date", startDate)
+      }
+      if (endDate) {
+        query = query.lte("created_date", endDate)
+      }
+      if (statusFilter) {
+        query = query.eq("status", statusFilter)
+      }
+
+      const { data: casesData, error: casesError } = await query.order("created_date", { ascending: false })
 
       if (casesError) {
         console.error("案件取得エラー", casesError)
@@ -174,7 +197,7 @@ export default function OrderListPage() {
         groupedDetails.set(d.case_id, list)
       })
 
-      const enriched: EnrichedCase[] = (casesData || []).map((c: any) => ({
+      let enriched: EnrichedCase[] = (casesData || []).map((c: any) => ({
         case_id: c.case_id,
         case_no: c.case_no || null,
         subject: c.subject || "(件名未入力)",
@@ -184,12 +207,24 @@ export default function OrderListPage() {
         staff_id: c.staff_id || null,
         department: c.department || "",
         purchaser_name: c.purchaser_name || "",
+        coreplus_no: c.coreplus_no || null,
+        source_warehouse_name: c.source_warehouse_name || null,
+        destination_warehouse_name: c.destination_warehouse_name || null,
         customer_name: customerMap.get(c.customer_id) || c.customer_id || "-",
         staff_name: staffMap.get(String(c.staff_id)) || c.staff_id || "-",
         details: groupedDetails.get(c.case_id) || [],
         discount: c.discount || 0,
         tax_rate: c.tax_rate || 0.1,
       }))
+
+      if (staffFilter.trim()) {
+        const keyword = staffFilter.trim().toLowerCase()
+        enriched = enriched.filter((c) => {
+          const name = (c.staff_name || "").toLowerCase()
+          const sid = c.staff_id ? String(c.staff_id).toLowerCase() : ""
+          return name.includes(keyword) || sid.includes(keyword)
+        })
+      }
 
       setOrders(enriched)
 
@@ -251,6 +286,183 @@ export default function OrderListPage() {
     }
   }
 
+  const escapeCsv = (value: unknown) => {
+    if (value === null || value === undefined) return "\"\""
+    const stringValue = String(value).replace(/"/g, '""')
+    return `"${stringValue}"`
+  }
+
+  const handleExportCsv = async () => {
+    if (!startDate || !endDate) {
+      alert("開始日と終了日を入力してください")
+      return
+    }
+    if (startDate > endDate) {
+      alert("開始日は終了日以前に設定してください")
+      return
+    }
+
+    setExporting(true)
+    try {
+      const startDateTime = `${startDate}T00:00:00`
+      const endDateTime = `${endDate}T23:59:59.999`
+
+      const { data: casesData, error: casesError } = await supabase
+        .from("cases")
+        .select("*")
+        .in("status", ["受注", "注文", "倉庫移動"])
+        .gte("created_date", startDateTime)
+        .lte("created_date", endDateTime)
+        .order("created_date", { ascending: true })
+
+      if (casesError) {
+        console.error("案件取得エラー", casesError)
+        alert("案件の取得に失敗しました")
+        return
+      }
+
+      if (!casesData || casesData.length === 0) {
+        alert("指定期間に該当する案件がありません")
+        return
+      }
+
+      const caseIds = casesData.map((c: any) => c.case_id)
+      const staffIds = Array.from(new Set(casesData.map((c: any) => c.staff_id).filter(Boolean))) as string[]
+      const customerIds = Array.from(new Set(casesData.map((c: any) => c.customer_id).filter(Boolean))) as string[]
+
+      const staffPromise = staffIds.length
+        ? supabase.from("staffs").select("id, name").in("id", staffIds)
+        : Promise.resolve({ data: [], error: null })
+
+      const customerPromise = customerIds.length
+        ? supabase.from("customers").select("id, name").in("id", customerIds)
+        : Promise.resolve({ data: [], error: null })
+
+      const detailPromise = caseIds.length
+        ? supabase
+            .from("case_details")
+            .select("case_id, product_id, spec, unit, quantity, unit_price, amount, remarks, unregistered_product")
+            .in("case_id", caseIds)
+        : Promise.resolve({ data: [], error: null })
+
+      const [{ data: staffData }, { data: customerData }, { data: detailData }] = await Promise.all([
+        staffPromise,
+        customerPromise,
+        detailPromise,
+      ])
+
+      const staffMap = new Map((staffData || []).map((s: any) => [String(s.id), s.name]))
+      const customerMap = new Map((customerData || []).map((c: any) => [c.id, c.name]))
+
+      const productIds = Array.from(new Set((detailData || []).map((d: any) => d.product_id).filter(Boolean)))
+      const productMap = new Map<string, string>()
+      if (productIds.length > 0) {
+        const { data: productsData } = await supabase
+          .from("products")
+          .select("id, name")
+          .in("id", productIds)
+
+        if (productsData) {
+          productsData.forEach((p: any) => {
+            productMap.set(p.id, p.name)
+          })
+        }
+      }
+
+      const groupedDetails = new Map<string, DetailRow[]>()
+      ;(detailData || []).forEach((d: any) => {
+        const list = groupedDetails.get(d.case_id) || []
+        const productName = productMap.get(d.product_id)
+        list.push({
+          case_id: d.case_id,
+          product_id: d.product_id,
+          item_name: d.unregistered_product || productName || d.product_id || "(無題)",
+          spec: d.spec || "",
+          unit: d.unit || "",
+          quantity: d.quantity || 0,
+          unit_price: d.unit_price || 0,
+          amount: d.amount || 0,
+          remarks: d.remarks || null,
+        })
+        groupedDetails.set(d.case_id, list)
+      })
+
+      const rows: (string | number | null)[][] = []
+      rows.push([
+        "created_date",
+        "case_id",
+        "case_no",
+        "subject",
+        "status",
+        "customer_name",
+        "staff_name",
+        "department",
+        "purchaser_name",
+        "discount",
+        "tax_rate",
+        "detail_product_id",
+        "detail_item_name",
+        "detail_spec",
+        "detail_unit",
+        "detail_quantity",
+        "detail_unit_price",
+        "detail_amount",
+        "detail_remarks",
+      ])
+
+      casesData.forEach((c: any) => {
+        const base = [
+          c.created_date,
+          c.case_id,
+          c.case_no || null,
+          c.subject || "",
+          c.status,
+          customerMap.get(c.customer_id) || c.customer_id || "",
+          staffMap.get(String(c.staff_id)) || c.staff_id || "",
+          c.department || "",
+          c.purchaser_name || "",
+          c.discount || 0,
+          c.tax_rate || 0,
+        ]
+
+        const details = groupedDetails.get(c.case_id) || []
+        if (details.length === 0) {
+          rows.push([...base, "", "", "", "", "", "", ""])
+          return
+        }
+
+        details.forEach((d) => {
+          rows.push([
+            ...base,
+            d.product_id || "",
+            d.item_name,
+            d.spec,
+            d.unit,
+            d.quantity,
+            d.unit_price,
+            d.amount,
+            d.remarks || "",
+          ])
+        })
+      })
+
+      const csvContent = rows
+        .map((row) => row.map(escapeCsv).join(","))
+        .join("\r\n")
+
+      const bom = "\ufeff" // UTF-8 BOM to avoid garbled characters in Excel
+      const blob = new Blob([bom, csvContent], { type: "text/csv;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `orders_${startDate}_${endDate}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const getStaffStamp = (staffId: string | null) => {
     if (!staffId) return null
     const staff = staffs.find((s) => s.id === staffId)
@@ -265,16 +477,135 @@ export default function OrderListPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1400, margin: "0 auto", background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" }}>
+      <style>{`
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          filter: invert(1);
+          cursor: pointer;
+          opacity: 0.9;
+        }
+        input[type="date"] {
+          color-scheme: dark;
+          cursor: pointer;
+        }
+      `}</style>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h1 style={{ margin: 0, color: "#93c5fd" }}>受注・注文・倉庫移動一覧</h1>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{ color: "#94a3b8", fontSize: 13 }}>ステータスが「受注」「注文」「倉庫移動」の案件を表示</div>
+          <Link href="/cases/warehouse-moves">
+            <button className="btn-3d btn-search" style={{ padding: "8px 16px", backgroundColor: "#0ea5e9", border: "1px solid #0284c7", color: "#fff" }}>
+              倉庫移動一覧
+            </button>
+          </Link>
           <Link href="/selectors">
             <button className="btn-3d btn-reset" style={{ padding: "8px 16px", backgroundColor: "#16a34a", border: "1px solid #15803d", color: "#fff" }}>
               ← メニューに戻る
             </button>
           </Link>
         </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", flexDirection: "column", color: "#cbd5e1", fontSize: 12 }}>
+          開始日
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 6, padding: "6px 10px", minWidth: 160 }}
+          />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", color: "#cbd5e1", fontSize: 12 }}>
+          終了日
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 6, padding: "6px 10px", minWidth: 160 }}
+          />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", color: "#cbd5e1", fontSize: 12 }}>
+          担当者
+          <input
+            type="text"
+            list="staff-options"
+            placeholder="idまたは名前で検索"
+            value={staffFilter}
+            onChange={(e) => setStaffFilter(e.target.value)}
+            style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 6, padding: "6px 10px", minWidth: 200 }}
+          />
+          <datalist id="staff-options">
+            {staffs.map((s) => (
+              <option key={`id-${s.id}`} value={String(s.id)}>{`${s.id}: ${s.name}`}</option>
+            ))}
+            {staffs.map((s) => (
+              <option key={`name-${s.id}`} value={s.name}>{`${s.id}: ${s.name}`}</option>
+            ))}
+          </datalist>
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", color: "#cbd5e1", fontSize: 12 }}>
+          伝票種別
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #334155", borderRadius: 6, padding: "6px 10px", minWidth: 160 }}
+          >
+            <option value="">すべて</option>
+            <option value="受注">受注</option>
+            <option value="注文">注文</option>
+            <option value="倉庫移動">倉庫移動</option>
+          </select>
+        </label>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => {
+              const today = new Date().toISOString().split("T")[0]
+              setStartDate(today)
+              setEndDate(today)
+            }}
+            className="btn-3d btn-reset"
+            style={{ padding: "6px 10px", fontSize: 12 }}
+          >
+            今日
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const now = new Date()
+              const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0]
+              const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0]
+              setStartDate(start)
+              setEndDate(end)
+            }}
+            className="btn-3d btn-reset"
+            style={{ padding: "6px 10px", fontSize: 12 }}
+          >
+            今月
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setStartDate("")
+              setEndDate("")
+              setStaffFilter("")
+              setStatusFilter("")
+            }}
+            className="btn-3d btn-reset"
+            style={{ padding: "6px 10px", fontSize: 12 }}
+          >
+            クリア
+          </button>
+        </div>
+        <button
+          onClick={handleExportCsv}
+          disabled={exporting}
+          className="btn-3d btn-search"
+          style={{ padding: "10px 18px", opacity: exporting ? 0.6 : 1 }}
+        >
+          {exporting ? "CSV出力中..." : "案件・明細をCSV出力"}
+        </button>
+        <span style={{ color: "#94a3b8", fontSize: 12 }}>作成日を含めて指定期間内の案件・明細をダウンロード</span>
       </div>
 
       {loading && <p>読み込み中...</p>}
@@ -297,6 +628,7 @@ export default function OrderListPage() {
               <th style={{ ...thStyle, width: 100 }}>ステータス</th>
               <th style={{ ...thStyle, width: 110 }}>部門</th>
               <th style={{ ...thStyle, width: 140 }}>発注者</th>
+              <th style={{ ...thStyle, width: 220 }}>移動元→移動先</th>
               <th style={{ ...thStyle, width: 110 }}>営業所確認</th>
               <th style={{ ...thStyle, width: 110 }}>最終確認</th>
               <th style={{ ...thStyle, width: 90 }}>明細</th>
@@ -311,7 +643,7 @@ export default function OrderListPage() {
                     {o.status === '注文' ? (
                       <span style={{ color: '#60a5fa', fontWeight: 'bold' }}>発注書作成</span>
                     ) : o.status === '倉庫移動' ? (
-                      <span style={{ color: '#a78bfa', fontWeight: 'bold' }}>倉庫移動</span>
+                      <span style={{ color: '#ef4444', fontWeight: 'bold' }}>倉庫移動</span>
                     ) : o.status === '受注' ? (
                       <span style={{ color: '#34d399', fontWeight: 'bold' }}>移動伝票作成</span>
                     ) : (
@@ -326,6 +658,15 @@ export default function OrderListPage() {
                   <td style={tdStyle}>{o.status}</td>
                   <td style={tdStyle}>{o.department || "-"}</td>
                   <td style={tdStyle}>{o.purchaser_name || "-"}</td>
+                  <td style={tdStyle}>
+                    {o.status === '倉庫移動' ? (
+                      <span>
+                        {(o.source_warehouse_name || '-') + ' → ' + (o.destination_warehouse_name || '-')}
+                      </span>
+                    ) : (
+                      <span>-</span>
+                    )}
+                  </td>
                   <td style={{ ...tdStyle, backgroundColor: "#fff", color: "#000" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
                       <select
@@ -416,16 +757,34 @@ export default function OrderListPage() {
                 </tr>
                 {expanded.has(o.case_id) && (
                   <tr>
-                    <td colSpan={13} style={{ background: "#1e293b", padding: 12, borderColor: "#334155" }}>
+                    <td colSpan={14} style={{ background: "#1e293b", padding: 12, borderColor: "#334155" }}>
                       <div style={{ fontWeight: "bold", marginBottom: 8, color: "#93c5fd", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span>明細</span>
-                        <button
-                          onClick={() => openPrintModal(o)}
-                          className="btn-3d btn-search"
-                          style={{ fontSize: 11, padding: "4px 10px", marginBottom: 0 }}
-                        >
-                          📄 PDF印刷
-                        </button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span>明細</span>
+                          <span style={{ fontSize: 12, color: "#e2e8f0" }}>
+                            COREPLUS №: {o.coreplus_no || "-"}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <Link
+                            href={`/cases/new/order?id=${o.case_id}&mode=${
+                              o.status === '注文' ? 'order' : 
+                              o.status === '受注' ? 'transfer-slip' : 
+                              o.status === '倉庫移動' ? 'warehouse-move' : 'order'
+                            }&returnTo=%2Fcases%2Forders`}
+                            className="btn-3d btn-search"
+                            style={{ fontSize: 11, padding: "4px 10px", marginBottom: 0, textDecoration: "none" }}
+                          >
+                            ✏️ 編集
+                          </Link>
+                          <button
+                            onClick={() => openPrintModal(o)}
+                            className="btn-3d btn-search"
+                            style={{ fontSize: 11, padding: "4px 10px", marginBottom: 0 }}
+                          >
+                            📄 PDF印刷
+                          </button>
+                        </div>
                       </div>
                       {o.details.length === 0 ? (
                         <div style={{ color: "#64748b" }}>明細がありません。</div>

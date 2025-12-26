@@ -7,10 +7,11 @@ import { useReactToPrint } from 'react-to-print'
 import PrintPurchaseOrder from './PrintPurchaseOrder'
 import PrintWarehouseMove from './PrintWarehouseMove'
 
+// case_id が整数カラム環境でも通るよう、数値文字列を生成
 function generateOrderId(): string {
-  const timestamp = Date.now().toString(16)
-  const randomPart = Math.random().toString(16).substring(2, 10)
-  return `${timestamp}${randomPart}`.substring(0, 16)
+  const ts = Date.now() // 13桁
+  const rand = Math.floor(Math.random() * 1000) // 0-999
+  return `${ts}${rand.toString().padStart(3, '0')}` // 最大16桁の数値文字列
 }
 
 type Product = { 
@@ -45,6 +46,7 @@ function PurchaseOrderPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const printRef = useRef<HTMLDivElement>(null)
+  const returnTo = searchParams.get('returnTo')
 
   const [supplierId, setSupplierId] = useState<string>('')
   const [supplierName, setSupplierName] = useState<string>('')
@@ -118,6 +120,7 @@ function PurchaseOrderPageContent() {
   const [priceModalRate, setPriceModalRate] = useState<number | null>(null)
   const [priceModalCalculatedPrice, setPriceModalCalculatedPrice] = useState<number | null>(null)
   const [priceModalMode, setPriceModalMode] = useState<'direct' | 'calculate'>('calculate')
+  // 倉庫移動一覧への導線
 
   // 表題モード: 注文書作成 / 移動伝票作成 / 倉庫移動
   const [titleMode, setTitleMode] = useState<'order' | 'transfer-slip' | 'warehouse-move'>('order')
@@ -128,6 +131,8 @@ function PurchaseOrderPageContent() {
   const [warehouses, setWarehouses] = useState<Array<{id: string; name: string}>>([])
   const [transferSourceWarehouseId, setTransferSourceWarehouseId] = useState<string>('')
   const [transferSourceWarehouseName, setTransferSourceWarehouseName] = useState<string>('')
+  const [warehouseMoveStaffId, setWarehouseMoveStaffId] = useState<string>('')
+  const [coreplusNo, setCoreplusNo] = useState<string>('')
 
   const thStyle: React.CSSProperties = {
     border: '1px solid #334155',
@@ -208,8 +213,14 @@ function PurchaseOrderPageContent() {
     fetchProducts(0)
     fetchWarehouses()
     
-    // URLパラメータから見積IDを取得して読み込む
-    const caseId = searchParams.get('caseId')
+    // URLパラメータからモードを取得して設定
+    const modeParam = searchParams.get('mode')
+    if (modeParam === 'order' || modeParam === 'transfer-slip' || modeParam === 'warehouse-move') {
+      setTitleMode(modeParam)
+    }
+    
+    // URLパラメータから見積ID/注文IDを取得して読み込む
+    const caseId = searchParams.get('caseId') || searchParams.get('id')
     if (caseId) {
       handleLoadEstimate(caseId)
     }
@@ -230,6 +241,32 @@ function PurchaseOrderPageContent() {
       .order('name')
 
     if (!error) setSuppliers(data || [])
+  }
+
+  // 次の発注番号を取得（cases.order_noの最大+1、数値のみ対象）
+  const fetchNextOrderNo = async (): Promise<number> => {
+    try {
+      const { data, error } = await supabase
+        .from('cases')
+        .select('order_no, created_date')
+        .not('order_no', 'is', null)
+        .order('created_date', { ascending: false })
+        .limit(200)
+
+      if (error) throw error
+      const nums = (data || [])
+        .map((r: any) => {
+          const val = String(r.order_no || r.case_no || '')
+          const parsed = parseInt(val, 10)
+          return Number.isFinite(parsed) ? parsed : 0
+        })
+        .filter((n: number) => n > 0)
+      const next = (nums.length ? Math.max(...nums) : 0) + 1
+      return next
+    } catch (e) {
+      console.warn('次の発注番号取得に失敗:', (e as any)?.message)
+      return 1
+    }
   }
 
   const fetchStaffs = async () => {
@@ -361,8 +398,12 @@ function PurchaseOrderPageContent() {
       if (error) throw error
 
       const nums = (data || [])
-        .map((r: any) => parseInt(String(r.order_no), 10))
-        .filter((n: number) => !isNaN(n))
+        .map((r: any) => {
+          const val = String(r.order_no || r.case_no || '')
+          const parsed = parseInt(val, 10)
+          return !isNaN(parsed) ? parsed : 0
+        })
+        .filter((n: number) => n > 0)
 
       const next = (nums.length ? Math.max(...nums) : 0) + 1
       setOrderNo(String(next))
@@ -428,7 +469,7 @@ function PurchaseOrderPageContent() {
   }
 
   const handleSelectSupplier = (supplier: Supplier) => {
-    setSupplierId(supplier.name)
+    setSupplierId(String(supplier.id))
     setSupplierName(supplier.name)
     setIsNewSupplier(false)
     setShowSupplierModal(false)
@@ -439,9 +480,8 @@ function PurchaseOrderPageContent() {
       alert('発注先名を入力してください')
       return
     }
-    // 直接入力時はID未採番でも印刷/保存のチェックを通すため、IDにも名称を入れておく
     const name = newSupplierName.trim()
-    setSupplierId(name)
+    setSupplierId('') // 後でDB採番IDを取得
     setSupplierName(name)
     setIsNewSupplier(true)
     setNewSupplierName('')
@@ -589,8 +629,19 @@ function PurchaseOrderPageContent() {
       }
     })
 
-    setSupplierId(caseData.customer_name || caseData.customer_id || '')
-    setSupplierName(caseData.customer_name || caseData.customer_id || '')
+    // 倉庫移動案件の場合は、移動元/移動先倉庫情報を復元
+    if (caseData.status === '倉庫移動') {
+      setTitleMode('warehouse-move')
+      setDestinationWarehouseId(caseData.destination_warehouse_id || '')
+      setDestinationWarehouseName(caseData.destination_warehouse_name || '')
+      setSupplierId(caseData.source_warehouse_id || '')
+      setSupplierName(caseData.source_warehouse_name || '')
+      setWarehouseMoveStaffId(caseData.staff_id ? String(caseData.staff_id) : '')
+    } else {
+      // それ以外（見積・注文）は従来通り発注先（顧客）を復元
+      setSupplierId(caseData.customer_name || caseData.customer_id || '')
+      setSupplierName(caseData.customer_name || caseData.customer_id || '')
+    }
     setStaffId(staffData?.id || null)
     setStaffName(staffData?.name || '')
     setStaffStampUrl(staffData?.stamp_path || null)
@@ -599,13 +650,18 @@ function PurchaseOrderPageContent() {
     setTaxRate(0.1)
     setLayoutType(caseData.layout_type || 'vertical')
 
-    setOrderNo(caseData.order_no || '')
+    const loadedOrderNo = caseData.order_no
+    const safeOrderNo = loadedOrderNo && /^\d+$/.test(String(loadedOrderNo))
+      ? String(loadedOrderNo)
+      : ''
+    setOrderNo(safeOrderNo)
     setOrderDate(
       caseData.created_date || new Date().toISOString().split('T')[0]
     )
     setDepartment(caseData.department || '')
     setPurchaserName(caseData.purchaser_name || '')
     setNote(caseData.note || '')
+    setCoreplusNo(caseData.coreplus_no || '')
 
     if (caseData.layout_type === 'horizontal') {
       const { data: sectionsData, error: sectionsError } = await supabase
@@ -636,6 +692,14 @@ function PurchaseOrderPageContent() {
         `注文「${caseData.subject}」を読み込みました（更新モード）\n発注先: ${
           caseData.customer_id || '不明'
         }\n担当者: ${staffData?.name || '不明'}`
+      )
+    } else if (caseData.status === '倉庫移動') {
+      setLoadedOrderId(caseId)
+      console.log('✓ 倉庫移動読込：loadedOrderIdをセット:', caseId)
+      alert(
+        `倉庫移動「${caseData.subject}」を読み込みました\n移動元: ${
+          caseData.source_warehouse_name || caseData.source_warehouse_id || '不明'
+        }\n移動先: ${caseData.destination_warehouse_name || caseData.destination_warehouse_id || '不明'}`
       )
     } else {
       alert(
@@ -799,14 +863,21 @@ function PurchaseOrderPageContent() {
     setOrderNo('')
     setOrderDate(new Date().toISOString().split('T')[0])
     setNote('')
+    setWarehouseMoveStaffId('')
+    setCoreplusNo('')
     // 支払条件は入力欄削除に伴い初期化不要
 
     alert('入力内容をクリアしました')
   }
 
+  // 保存ボタンは一つに戻し、更新フローは既存の保存モーダルで選択させる
+
   const handleSave = async () => {
+    console.log('保存開始：titleMode=', titleMode, 'loadedOrderId=', loadedOrderId)
+    
     // 倉庫移動モード時のバリデーション
     if (titleMode === 'warehouse-move') {
+      console.log('✓ 倉庫移動モード検出')
       if (!destinationWarehouseId) {
         alert('移動先倉庫を選択してください')
         return
@@ -815,13 +886,22 @@ function PurchaseOrderPageContent() {
         alert('移動元倉庫を選択してください')
         return
       }
+      if (!warehouseMoveStaffId.trim()) {
+        alert('担当者IDを入力してください')
+        return
+      }
       // 発注者は任意のため、未選択でも続行
       if (rows.length === 0) {
         alert('明細を1件以上追加してください')
         return
       }
-      // 倉庫移動専用の保存処理
-      await performWarehouseMoveSave()
+      // 過去案件を読み込んでいる場合は保存モーダルで更新/新規を選択
+      if (loadedOrderId) {
+        setShowSaveModal(true)
+        return
+      }
+      // 新規の倉庫移動は直接保存
+      await performWarehouseMoveSave('new')
       return
     }
 
@@ -833,6 +913,10 @@ function PurchaseOrderPageContent() {
       }
       if (rows.length === 0) {
         alert('明細を1件以上追加してください')
+        return
+      }
+      if (!warehouseMoveStaffId.trim()) {
+        alert('担当者IDを入力してください')
         return
       }
       await performTransferSlipSave()
@@ -914,10 +998,66 @@ function PurchaseOrderPageContent() {
             .insert(outboundRecords)
 
           if (outboundInsertError) {
-            console.error('出庫記録のエラー:', outboundInsertError.message)
-            errorMessages.push('出庫記録: ' + outboundInsertError.message)
+            console.error('出庫記録のエラー:', outboundInsertError)
+            const detail = (outboundInsertError as any)?.details || ''
+            const hint = (outboundInsertError as any)?.hint || ''
+            const code = (outboundInsertError as any)?.code || ''
+            errorMessages.push(
+              `出庫記録: ${outboundInsertError.message}` +
+              (detail ? `\n詳細: ${detail}` : '') +
+              (hint ? `\nヒント: ${hint}` : '') +
+              (code ? `\nコード: ${code}` : '')
+            )
           } else {
             successOutboundCount += outboundRecords.length
+            // 履歴記録
+            try {
+              // 現在の在庫を取得
+              const productIds = outboundRecords.map((r: any) => String(r.product_id))
+              const { data: currentStocks } = await supabase
+                .from('warehouse_stocks')
+                .select('warehouse_id, product_id, stock_qty')
+                .eq('warehouse_id', transferSourceWarehouseId)
+                .in('product_id', productIds)
+              
+              const { data: products } = await supabase
+                .from('products')
+                .select('id, name')
+                .in('id', productIds)
+              
+              const stockMap = new Map<string, number>()
+              ;(currentStocks || []).forEach((s: any) => {
+                stockMap.set(`${s.warehouse_id}__${s.product_id}`, Number(s.stock_qty || 0))
+              })
+              
+              const productsMap = new Map<string, string>()
+              ;(products || []).forEach((p: any) => {
+                productsMap.set(String(p.id), p.name || '')
+              })
+              
+              const historyRecords = outboundRecords.map((rec: any) => {
+                const productId = String(rec.product_id)
+                const productName = productsMap.get(productId) || productId
+                const stockKey = `${rec.warehouse_id}__${productId}`
+                const currentStock = stockMap.get(stockKey) ?? 0
+                return {
+                  warehouse_id: rec.warehouse_id,
+                  product_id: productId,
+                  product_name: productName,
+                  movement_date: new Date().toISOString().split('T')[0],
+                  status: '移動伝票',
+                  outbound_qty: rec.quantity,
+                  inbound_qty: 0,
+                  stock_qty_after: Math.max(0, currentStock - rec.quantity),
+                }
+              })
+              const { error: histErr } = await supabase
+                .from('warehouse_stocks_history')
+                .insert(historyRecords)
+              if (histErr) console.warn('履歴記録エラー:', histErr.message)
+            } catch (e: any) {
+              console.warn('履歴記録例外:', e?.message)
+            }
           }
         } else {
           console.log('⚠️ product_idがある出庫レコードがないため、スキップします')
@@ -1000,20 +1140,48 @@ function PurchaseOrderPageContent() {
       }
 
       alert(message)
-      handleClear()
     } catch (error) {
       console.error('移動伝票保存エラー:', error)
       alert(`移動伝票保存に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`)
     }
   }
 
-  const performWarehouseMoveSave = async () => {
+  const performWarehouseMoveSave = async (mode?: 'new' | 'update') => {
     try {
       let successInboundCount = 0
       let successOutboundCount = 0
       let errorMessages: string[] = []
 
+      // 更新モード判定：明示指定優先、なければloadedOrderIdのDB存在で判定
+      let isUpdate = false
+      let targetCaseId: string | null = null
+
+      if (mode === 'update' && loadedOrderId) {
+        isUpdate = true
+        targetCaseId = loadedOrderId
+        console.log('✓ 明示更新モード')
+      } else if (loadedOrderId) {
+        const { data: existingCase, error: checkError } = await supabase
+          .from('cases')
+          .select('case_id')
+          .eq('case_id', loadedOrderId)
+          .maybeSingle()
+
+        console.log('既存ケース確認:', { loadedOrderId, existingCase, error: checkError?.message })
+
+        if (!checkError && existingCase?.case_id) {
+          isUpdate = true
+          targetCaseId = loadedOrderId
+          console.log('✓ 既存ケースを検出しました（更新モード）')
+        } else {
+          console.log('⚠️ 既存ケースが見つかりません、またはエラーが発生しました（新規作成モード）', checkError?.message)
+        }
+      } else {
+        console.log('⚠️ loadedOrderIdが未設定です')
+      }
+
       console.log('=== 倉庫移動保存開始 ===')
+      console.log('モード:', isUpdate ? '更新' : '新規')
       console.log('移動先倉庫ID:', destinationWarehouseId)
       console.log('移動品目数:', rows.length)
       console.log('rows:', rows)
@@ -1062,8 +1230,16 @@ function PurchaseOrderPageContent() {
             .select()
           
           if (inboundInsertError) {
-            console.error('入庫記録のエラー:', inboundInsertError.message)
-            errorMessages.push('入庫記録: ' + inboundInsertError.message)
+            console.error('入庫記録のエラー:', inboundInsertError)
+            const detail = (inboundInsertError as any)?.details || ''
+            const hint = (inboundInsertError as any)?.hint || ''
+            const code = (inboundInsertError as any)?.code || ''
+            errorMessages.push(
+              `入庫記録: ${inboundInsertError.message}` +
+              (detail ? `\n詳細: ${detail}` : '') +
+              (hint ? `\nヒント: ${hint}` : '') +
+              (code ? `\nコード: ${code}` : '')
+            )
           } else {
             console.log(`✓ 入庫記録を登録しました(${inboundRecords.length}件)`, inboundData)
             console.log('※ トリガー関数により warehouse_stocks は自動更新されます')
@@ -1127,6 +1303,83 @@ function PurchaseOrderPageContent() {
             console.log(`✓ 出庫記録を登録しました(${outboundRecords.length}件)`, outboundData)
             console.log('※ トリガー関数により warehouse_stocks は自動更新されます')
             successOutboundCount += outboundRecords.length
+            // 履歴記録（倉庫移動）- 移動元と移動先の2レコードを作成
+            try {
+              const productIds = outboundRecords.map((r: any) => String(r.product_id))
+              
+              // 移動元と移動先の両方の在庫を取得
+              const { data: sourceStocks } = await supabase
+                .from('warehouse_stocks')
+                .select('warehouse_id, product_id, stock_qty')
+                .eq('warehouse_id', supplierId)
+                .in('product_id', productIds)
+              
+              const { data: destStocks } = await supabase
+                .from('warehouse_stocks')
+                .select('warehouse_id, product_id, stock_qty')
+                .eq('warehouse_id', destinationWarehouseId)
+                .in('product_id', productIds)
+              
+              const { data: products } = await supabase
+                .from('products')
+                .select('id, name')
+                .in('id', productIds)
+              
+              const sourceStockMap = new Map<string, number>()
+              ;(sourceStocks || []).forEach((s: any) => {
+                sourceStockMap.set(String(s.product_id), Number(s.stock_qty || 0))
+              })
+              
+              const destStockMap = new Map<string, number>()
+              ;(destStocks || []).forEach((s: any) => {
+                destStockMap.set(String(s.product_id), Number(s.stock_qty || 0))
+              })
+              
+              const productsMap = new Map<string, string>()
+              ;(products || []).forEach((p: any) => {
+                productsMap.set(String(p.id), p.name || '')
+              })
+              
+              const historyRecords: any[] = []
+              
+              outboundRecords.forEach((rec: any) => {
+                const productId = String(rec.product_id)
+                const productName = productsMap.get(productId) || productId
+                const sourceCurrentStock = sourceStockMap.get(productId) ?? 0
+                const destCurrentStock = destStockMap.get(productId) ?? 0
+                
+                // 移動元の履歴（出庫）
+                historyRecords.push({
+                  warehouse_id: supplierId,
+                  product_id: productId,
+                  product_name: productName,
+                  movement_date: new Date().toISOString().split('T')[0],
+                  status: '倉庫移動',
+                  outbound_qty: rec.quantity,
+                  inbound_qty: 0,
+                  stock_qty_after: Math.max(0, sourceCurrentStock - rec.quantity),
+                })
+                
+                // 移動先の履歴（入庫）
+                historyRecords.push({
+                  warehouse_id: destinationWarehouseId,
+                  product_id: productId,
+                  product_name: productName,
+                  movement_date: new Date().toISOString().split('T')[0],
+                  status: '倉庫移動',
+                  outbound_qty: 0,
+                  inbound_qty: rec.quantity,
+                  stock_qty_after: destCurrentStock + rec.quantity,
+                })
+              })
+              
+              const { error: histErr } = await supabase
+                .from('warehouse_stocks_history')
+                .insert(historyRecords)
+              if (histErr) console.warn('履歴記録エラー:', histErr.message)
+            } catch (e: any) {
+              console.warn('履歴記録例外:', e?.message)
+            }
           }
         } else {
           console.log('⚠️ product_idがある出庫レコードがないため、スキップします')
@@ -1146,33 +1399,126 @@ function PurchaseOrderPageContent() {
         message += `\n\n⚠️ エラー:\n${errorMessages.join('\n')}`
       }
 
-      // 倉庫移動ケースレコードの保存
+      // 倉庫移動ケースレコードの保存（新規採番ルールに従い case_no/order_no を採番）
+      let newCaseId: string | null = null
       try {
-        const caseId = generateOrderId()
-        const { error: caseError } = await supabase.from('cases').insert({
-          case_id: caseId,
-          subject: subject || '倉庫移動',
-          created_date: orderDate,
-          status: '倉庫移動',
-          source_warehouse_id: supplierId,
-          source_warehouse_name: supplierName,
-          destination_warehouse_id: destinationWarehouseId,
-          destination_warehouse_name: destinationWarehouseName,
-          note: note || null,
-        })
+        const formattedDate = orderDate.replace(/-/g, '/')
+        const customerIdForMove = `移動伝票${formattedDate}`
+        const subjectForMove = `${supplierName || ''}➡${destinationWarehouseName || ''}`
+        const staffIdForMove = warehouseMoveStaffId.trim() ? Number(warehouseMoveStaffId.trim()) : null
+        const staffNameForMove = staffs.find(s => String(s.id) === warehouseMoveStaffId)?.name || null
 
-        if (caseError) {
-          console.warn('ケース記録警告:', caseError.message)
+        if (isUpdate && targetCaseId) {
+          // 更新モード：既存ケースを上書き
+          const { error: caseUpdateError } = await supabase
+            .from('cases')
+            .update({
+              subject: subjectForMove || '倉庫移動',
+              created_date: orderDate,
+              status: '倉庫移動',
+              customer_id: customerIdForMove,
+              staff_id: staffIdForMove,
+              coreplus_no: coreplusNo || null,
+              purchaser_name: staffNameForMove,
+              source_warehouse_id: supplierId,
+              source_warehouse_name: supplierName,
+              destination_warehouse_id: destinationWarehouseId,
+              destination_warehouse_name: destinationWarehouseName,
+              note: note || null,
+            })
+            .eq('case_id', targetCaseId)
+
+          if (caseUpdateError) {
+            console.warn('倉庫移動ケース更新警告:', caseUpdateError.message)
+            errorMessages.push('ケース更新: ' + caseUpdateError.message)
+          } else {
+            console.log('✓ 倉庫移動ケースを更新しました')
+            newCaseId = targetCaseId
+            // 既存の明細を削除
+            const { error: detailsDelError } = await supabase
+              .from('case_details')
+              .delete()
+              .eq('case_id', targetCaseId)
+            if (detailsDelError) console.warn('既存明細削除警告:', detailsDelError.message)
+          }
+        } else {
+          // 新規作成モード
+          const caseIdForMove = generateOrderId()
+          const nextNo = await fetchNextOrderNo()
+
+          const { data: caseInsertData, error: caseError } = await supabase
+            .from('cases')
+            .insert({
+              case_id: caseIdForMove,
+              case_no: nextNo,
+              order_no: nextNo,
+              subject: subjectForMove || '倉庫移動',
+              created_date: orderDate,
+              status: '倉庫移動',
+              customer_id: customerIdForMove,
+              staff_id: staffIdForMove,
+              coreplus_no: coreplusNo || null,
+              purchaser_name: staffNameForMove,
+              source_warehouse_id: supplierId,
+              source_warehouse_name: supplierName,
+              destination_warehouse_id: destinationWarehouseId,
+              destination_warehouse_name: destinationWarehouseName,
+              note: note || null,
+            })
+            .select('case_id')
+            .single()
+
+          if (caseError) {
+            console.warn('ケース記録警告:', caseError.message)
+          } else {
+            newCaseId = caseInsertData?.case_id || caseIdForMove
+          }
         }
       } catch (e: any) {
         console.warn('ケース記録の例外:', e?.message)
       }
+
+      // 倉庫移動の明細をcase_detailsへ登録
+      if (newCaseId) {
+        try {
+          const detailsToInsert = rows.map((row) => ({
+            case_id: newCaseId,
+            coreplus_no: coreplusNo || null,
+            product_id: row.product_id || null,
+            spec: row.spec,
+            unit: row.unit,
+            quantity: row.quantity,
+            unit_price: row.unit_price,
+            amount: row.amount,
+            cost_unit_price: row.cost_price,
+            section_id: row.section_id,
+            unregistered_product: row.unregistered_product || null,
+            remarks: row.remarks || null,
+          }))
+
+          const { error: detailsError } = await supabase
+            .from('case_details')
+            .insert(detailsToInsert)
+
+          if (detailsError) {
+            console.warn('倉庫移動明細登録警告:', detailsError.message)
+          }
+        } catch (e: any) {
+          console.warn('倉庫移動明細登録例外:', e?.message)
+        }
+      } else {
+        console.warn('case_idが取得できなかったため、明細登録をスキップしました')
+      }
       
       console.log('=== 倉庫移動保存完了 ===')
       alert(message)
-      
-      // フォームをクリア
-      handleClear()
+      if (returnTo) {
+        try {
+          router.push(returnTo)
+        } catch (e) {
+          console.warn('戻り先への遷移に失敗:', (e as any)?.message)
+        }
+      }
     } catch (error) {
       console.error('倉庫移動保存エラー:', error)
       alert(
@@ -1189,44 +1535,77 @@ function PurchaseOrderPageContent() {
     try {
       let finalSupplierId = supplierId
 
-      // 新規発注先の場合、customersテーブルに登録
+      // 新規発注先の場合、customersテーブルに登録（DB採番IDを使用）
       if (isNewSupplier && supplierName) {
-        const newCustomerId = `CUST_${Date.now()}`
-        const { error: customerError } = await supabase
+        const { data: insertedCustomer, error: customerError } = await supabase
           .from('customers')
-          .insert({ id: newCustomerId, name: supplierName })
+          .insert({ name: supplierName })
+          .select('id, name')
+          .single()
 
         if (customerError) {
           throw new Error(`発注先登録エラー: ${customerError.message}`)
         }
 
-        finalSupplierId = supplierName
+        finalSupplierId = insertedCustomer?.id ? String(insertedCustomer.id) : ''
+        setSupplierId(finalSupplierId)
+        setSupplierName(insertedCustomer?.name || supplierName)
         setIsNewSupplier(false)
-        alert(`新規発注先「${supplierName}」を登録しました`)
+        alert(`新規発注先「${insertedCustomer?.name || supplierName}」を登録しました`)
       }
 
       let targetOrderId: string
 
+      // customer_idが数値型の環境でUUID等を入れないようガード
+      const normalizeCustomerId = (val: string | null) => {
+        if (!val) return null
+        return /^\d+$/.test(val) ? Number(val) : null
+      }
+
+      const normalizeIntVal = (val: string | number | null) => {
+        if (val === null || val === undefined || val === '') return null
+        const num = Number(val)
+        return Number.isFinite(num) ? num : null
+      }
+
+      // order_no/case_no が整数カラムの場合に備え、数字以外は null に落とす
+      const normalizeOrderNo = (val: string | null) => {
+        if (!val) return null
+        return /^\d+$/.test(val) ? Number(val) : null
+      }
+
+      let normalizedOrderNo = normalizeOrderNo(orderNo)
+
+      let orderPayloadBase = {
+        case_no: normalizedOrderNo,
+        order_no: normalizedOrderNo,
+        subject: subject,
+        created_date: orderDate,
+        customer_id: normalizeCustomerId(finalSupplierId),
+        staff_id: normalizeIntVal(staffId),
+        coreplus_no: coreplusNo || null,
+        status: '注文',
+        department: department || null,
+        special_discount: discount,
+        layout_type: layoutType,
+        purchaser_name: purchaserName || null,
+        note: note || null,
+        approve_staff: null,
+        approve_manager: null,
+        approve_director: null,
+        approve_president: null,
+      }
+
       if (mode === 'update' && loadedOrderId) {
         targetOrderId = loadedOrderId
+        const normalizedCaseId = normalizeIntVal(targetOrderId)
 
         const { error: orderError } = await supabase
           .from('cases')
           .update({
-            case_no: orderNo ? parseInt(orderNo) : null,
-            order_no: orderNo || null,
-            subject: subject,
-            created_date: orderDate,
-            customer_id: finalSupplierId,
-            staff_id: staffId,
-            status: '注文',
-            department: department || null,
-            special_discount: discount,
-            layout_type: layoutType,
-            purchaser_name: purchaserName || null,
-            note: note || null,
+            ...orderPayloadBase,
           })
-          .eq('case_id', loadedOrderId)
+          .eq('case_id', normalizedCaseId ?? loadedOrderId)
 
         if (orderError) {
           throw new Error(`発注書更新エラー: ${orderError.message}`)
@@ -1237,28 +1616,24 @@ function PurchaseOrderPageContent() {
 
       } else {
         targetOrderId = generateOrderId()
+        const normalizedCaseId = normalizeIntVal(targetOrderId)
+
+        // 新規保存時は必ず新規採番ルールに従って order_no/case_no を再採番
+        const nextNo = await fetchNextOrderNo()
+        normalizedOrderNo = normalizeOrderNo(String(nextNo))
+        orderPayloadBase = {
+          ...orderPayloadBase,
+          case_no: normalizedOrderNo,
+          order_no: normalizedOrderNo,
+        }
 
         const { error: orderError } = await supabase.from('cases').insert({
-          case_id: targetOrderId,
-          case_no: orderNo ? parseInt(orderNo) : null,
-          order_no: orderNo || null,
-          subject: subject,
-          created_date: orderDate,
-          customer_id: finalSupplierId,
-          staff_id: staffId,
-          status: '注文',
-          department: department || null,
-          special_discount: discount,
-          layout_type: layoutType,
-          purchaser_name: purchaserName || null,
-          note: note || null,
-          approve_staff: null,
-          approve_manager: null,
-          approve_director: null,
-          approve_president: null,
+          case_id: normalizedCaseId,
+          ...orderPayloadBase,
         })
 
         if (orderError) {
+          console.error('cases insert payload:', { case_id: normalizedCaseId, ...orderPayloadBase })
           throw new Error(`発注書登録エラー: ${orderError.message}`)
         }
       }
@@ -1284,6 +1659,7 @@ function PurchaseOrderPageContent() {
 
       const detailsToInsert = rows.map((row) => ({
         case_id: targetOrderId,
+        coreplus_no: coreplusNo || null,
         product_id: row.product_id || null,
         spec: row.spec,
         unit: row.unit,
@@ -1316,6 +1692,13 @@ function PurchaseOrderPageContent() {
       if (mode === 'update') {
         setIsUpdateMode(false)
         setLoadedOrderId(null)
+        if (returnTo) {
+          try {
+            router.push(returnTo)
+          } catch (e) {
+            console.warn('戻り先への遷移に失敗:', (e as any)?.message)
+          }
+        }
       }
     } catch (error) {
       console.error('保存エラー:', error)
@@ -1408,21 +1791,40 @@ function PurchaseOrderPageContent() {
               })}
             </div>
           </div>
-          <Link
-            href="/selectors"
-            className="selector-button"
-            style={{
-              textDecoration: 'none',
-              backgroundColor: '#16a34a',
-              border: '1px solid #15803d',
-              color: '#fff',
-              padding: '10px 16px',
-              flex: '0 0 auto',
-              width: 'fit-content',
-            }}
-          >
-            ← メニューに戻る
-          </Link>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Link
+              href="/selectors"
+              className="selector-button"
+              style={{
+                textDecoration: 'none',
+                backgroundColor: '#16a34a',
+                border: '1px solid #15803d',
+                color: '#fff',
+                padding: '10px 16px',
+                flex: '0 0 auto',
+                width: 'fit-content',
+              }}
+            >
+              ← メニューに戻る
+            </Link>
+            <Link
+              href="/cases/warehouse-moves"
+              className="selector-button"
+              style={{
+                textDecoration: 'none',
+                backgroundColor: '#0ea5e9',
+                border: '1px solid #0284c7',
+                color: '#fff',
+                padding: '10px 16px',
+                flex: '0 0 auto',
+                width: 'fit-content',
+                borderRadius: 8,
+                fontWeight: 700,
+              }}
+            >
+              倉庫移動一覧
+            </Link>
+          </div>
         </div>
 
         {/* 付帯情報 */}
@@ -1497,6 +1899,17 @@ function PurchaseOrderPageContent() {
               />
             </div>
 
+            <div>
+              <label style={labelStyle}>COREPLUS №:</label>
+              <input
+                type="text"
+                value={coreplusNo}
+                onChange={(e) => setCoreplusNo(e.target.value)}
+                style={{ ...inputStyle, width: '100%' }}
+                placeholder="例: CP-2025-0001"
+              />
+            </div>
+
             {titleMode !== 'warehouse-move' && (
               <div>
                 <label style={labelStyle}>
@@ -1552,6 +1965,21 @@ function PurchaseOrderPageContent() {
                   {warehouses.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.id} - {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>担当者:</label>
+                <select
+                  value={warehouseMoveStaffId}
+                  onChange={(e) => setWarehouseMoveStaffId(e.target.value)}
+                  style={{ ...inputStyle, width: '100%', maxWidth: 400 }}
+                >
+                  <option value="">選択してください</option>
+                  {staffs.map((s) => (
+                    <option key={s.id} value={String(s.id)}>
+                      {s.id} - {s.name}
                     </option>
                   ))}
                 </select>
@@ -1626,28 +2054,6 @@ function PurchaseOrderPageContent() {
             </div>
           </div>
         </div>
-        )}
-
-        {/* 倉庫移動モード: 納品先名 */}
-        {titleMode === 'warehouse-move' && (
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>納品先名:</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                value={staffName}
-                readOnly
-                style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
-                placeholder="納品先名を選択してください"
-              />
-              <button
-                onClick={() => setShowStaffModal(true)}
-                className="selector-button primary"
-              >
-                納品先名選択
-              </button>
-            </div>
-          </div>
         )}
 
         {/* 件名・備考 (倉庫移動では非表示) */}
@@ -2886,7 +3292,14 @@ function PurchaseOrderPageContent() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <button
-                  onClick={() => performSave('update')}
+                  onClick={() => {
+                    if (titleMode === 'warehouse-move') {
+                      setShowSaveModal(false)
+                      performWarehouseMoveSave('update')
+                    } else {
+                      performSave('update')
+                    }
+                  }}
                   className="selector-button primary"
                   style={{
                     padding: '16px 24px',
@@ -2894,18 +3307,25 @@ function PurchaseOrderPageContent() {
                     backgroundColor: '#16a34a',
                   }}
                 >
-                  既存発注書を更新する
+                  {titleMode === 'warehouse-move' ? '既存倉庫移動を更新する' : '既存発注書を更新する'}
                 </button>
 
                 <button
-                  onClick={() => performSave('new')}
+                  onClick={() => {
+                    if (titleMode === 'warehouse-move') {
+                      setShowSaveModal(false)
+                      performWarehouseMoveSave('new')
+                    } else {
+                      performSave('new')
+                    }
+                  }}
                   className="selector-button primary"
                   style={{
                     padding: '16px 24px',
                     fontSize: 18,
                   }}
                 >
-                  新しい発注書として登録する
+                  {titleMode === 'warehouse-move' ? '新しい倉庫移動として登録する' : '新しい発注書として登録する'}
                 </button>
 
                 <button

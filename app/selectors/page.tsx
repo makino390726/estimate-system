@@ -11,6 +11,7 @@ import {
   FiTrendingUp,
   FiShoppingCart,
   FiHome,
+  FiLink,
 } from 'react-icons/fi'
 
 export default function MasterSelectorPage() {
@@ -167,6 +168,20 @@ export default function MasterSelectorPage() {
               </Link>
               <Link href="/plan/staff_performance" className="selector-button primary">
                 担当者別実績表
+              </Link>
+            </div>
+          </div>
+
+          {/* 外部連携設定 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiLink className="icon" />
+              <h2>外部連携設定</h2>
+            </div>
+            <p>コード置換のマッピング設定を行います。未登録品の一括コード置換はこちらから。</p>
+            <div className="selector-card-buttons">
+              <Link href="/cases/code-mapping" className="selector-button primary">
+                コード置換設定
               </Link>
             </div>
           </div>

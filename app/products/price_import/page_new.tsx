@@ -160,8 +160,13 @@ const ProductPriceImportPage: React.FC = () => {
 
       setRows(finalized)
 
+      // 既存IDと新規IDを分類
+      const existingCount = finalized.filter((p) => p.created_at !== null).length
+      const newCount = finalized.length - existingCount
+
       setMessage(
-        `解析完了：Excel 行数 ${raw.length} 件中、${finalized.length} 件を更新対象として読み込みました。`
+        `解析完了：Excel 行数 ${raw.length} 件中、${finalized.length} 件を読み込みました。\n` +
+        `（更新対象: ${existingCount} 件、新規追加: ${newCount} 件）`
       )
       setShowColumnMapping(false)
     } catch (error) {
@@ -190,7 +195,13 @@ const ProductPriceImportPage: React.FC = () => {
     setMessage('Supabase（products）を更新中です…')
 
     try {
-      const payload = rows.map((r) => {
+      // 既存IDと新規IDを分類
+      const existingIds = new Set(rows.filter((p) => p.created_at !== null).map((p) => p.id))
+      const updatePayload: any[] = []
+      const insertPayload: any[] = []
+      const now = new Date().toISOString()
+
+      rows.forEach((r) => {
         const record: any = { id: r.id }
 
         record.name = r.name
@@ -203,16 +214,51 @@ const ProductPriceImportPage: React.FC = () => {
           record.retail_price = r.retail_price
         }
 
-        record.created_at = new Date().toISOString()
-
-        return record
+        if (existingIds.has(r.id)) {
+          // 既存商品：created_atは保持（上書きしない）
+          record.created_at = r.created_at
+          updatePayload.push(record)
+        } else {
+          // 新規商品：created_atを現在時刻で設定
+          record.created_at = now
+          insertPayload.push(record)
+        }
       })
 
-      const { data, error, status, statusText } = await supabase
-        .from('products')
-        .upsert(payload, {
-          onConflict: 'id'
-        })
+      let totalProcessed = 0
+      let error: any = null
+      let status: number | null = null
+      let statusText: string | null = null
+
+      // 更新処理
+      if (updatePayload.length > 0) {
+        const { error: updateError, status: updateStatus, statusText: updateStatusText } = await supabase
+          .from('products')
+          .upsert(updatePayload, { onConflict: 'id' })
+        
+        if (updateError) {
+          error = updateError
+          status = updateStatus
+          statusText = updateStatusText
+        } else {
+          totalProcessed += updatePayload.length
+        }
+      }
+
+      // 新規追加処理
+      if (!error && insertPayload.length > 0) {
+        const { error: insertError, status: insertStatus, statusText: insertStatusText } = await supabase
+          .from('products')
+          .insert(insertPayload)
+        
+        if (insertError) {
+          error = insertError
+          status = insertStatus
+          statusText = insertStatusText
+        } else {
+          totalProcessed += insertPayload.length
+        }
+      }
 
       if (error) {
         const errorInfo = {
@@ -222,16 +268,17 @@ const ProductPriceImportPage: React.FC = () => {
           code: (error as any)?.code,
           raw: JSON.stringify(error)
         }
-        console.error('Supabase upsert error detail:', {
+        console.error('Supabase operation error detail:', {
           status,
           statusText,
           errorInfo,
-          sample: payload.slice(0, 3)
+          updatePayloadSample: updatePayload.slice(0, 2),
+          insertPayloadSample: insertPayload.slice(0, 2)
         })
         const errorMessage =
           errorInfo.message || errorInfo.details || errorInfo.hint || errorInfo.code || errorInfo.raw
         setMessage(
-          `Supabase 更新中にエラーが発生しました: ${errorMessage}\nstatus: ${status} ${statusText}`
+          `Supabase 操作中にエラーが発生しました: ${errorMessage}\nstatus: ${status} ${statusText}`
         )
         return
       }
@@ -239,8 +286,10 @@ const ProductPriceImportPage: React.FC = () => {
       alert('完了しました')
       setLastUpdateTime(new Date().toLocaleString('ja-JP'))
       setMessage(
-        `更新完了：products テーブルに ${payload.length} 件の upsert を行いました。\n` +
-          '※既存idは更新／存在しないidは新規追加されています。'
+        `更新完了：products テーブルを操作しました。\n` +
+          `✓ 既存商品更新: ${updatePayload.length} 件\n` +
+          `✓ 新規商品追加: ${insertPayload.length} 件\n` +
+          `合計: ${totalProcessed} 件`
       )
     } catch (error) {
       console.error('Unexpected error in handleUpdateSupabase:', error)
