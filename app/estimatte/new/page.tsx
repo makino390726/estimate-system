@@ -223,6 +223,9 @@ export default function EstimateNewPage() {
           approve_manager: null,
           approve_director: null,
           approve_president: null,
+          oral_request_manager: null,
+          oral_request_director: null,
+          oral_request_president: null,
         })
         .select()
         .single()

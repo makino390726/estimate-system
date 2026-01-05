@@ -47,6 +47,7 @@ export default function CaseApprovalPage() {
   const [sectionsData, setSectionsData] = useState<any[]>([])  // ★ セクションステートを追加
   const [staffName, setStaffName] = useState<string>('担当者不明')
   const [customerName, setCustomerName] = useState<string>('')
+  const [approvalHistory, setApprovalHistory] = useState<any[]>([])  // ★ 承認履歴
   
   // ★ approversステートを追加
   const [approvers, setApprovers] = useState<{
@@ -283,6 +284,17 @@ export default function CaseApprovalPage() {
 
       // ★ モーダル状態をリセット（ホワイトアウト対策）
       setShowPrintPreview(false)
+
+      // ★ 承認履歴を取得
+      const { data: historyData, error: historyError } = await supabase
+        .from('approval_history')
+        .select('*')
+        .eq('case_id', caseId)
+        .order('created_at', { ascending: true })
+
+      if (!historyError && historyData) {
+        setApprovalHistory(historyData)
+      }
     }
   }
 
@@ -342,8 +354,24 @@ export default function CaseApprovalPage() {
       alert('承認に失敗しました')
     } else {
       setMsg('承認しました（メール送信なし）')
+      await recordApprovalHistory(role, '承認')
       fetchCaseData()
       setTimeout(() => setMsg(null), 2000)
+    }
+  }
+
+  // ★ 承認履歴を記録
+  const recordApprovalHistory = async (role: string, action: string) => {
+    const { error } = await supabase
+      .from('approval_history')
+      .insert({
+        case_id: caseId,
+        role: role,
+        action: action,
+      })
+    
+    if (error) {
+      console.error('履歴記録エラー:', error)
     }
   }
 
@@ -422,6 +450,7 @@ export default function CaseApprovalPage() {
       alert('承認に失敗しました')
     } else {
       setMsg('承認しました')
+      await recordApprovalHistory(role, '承認して次へ送信')
       fetchCaseData()
 
       if (nextApproverEmail) {
@@ -429,6 +458,76 @@ export default function CaseApprovalPage() {
       }
 
       setTimeout(() => setMsg(null), 2000)
+    }
+  }
+
+  // ★ 承認して口頭で承認依頼
+  const handleApproveWithOralRequest = async (role: string) => {
+    if (role !== 'staff' && caseData?.skip_higher_approval) {
+      alert('申請不要モードのため、他の承認は無効です')
+      return
+    }
+    if (!currentUser) {
+      alert('ログインしてください')
+      return
+    }
+
+    const now = new Date().toISOString()
+    let updateData: any = {}
+
+    switch (role) {
+      case 'staff':
+        updateData = { 
+          approve_staff: now,
+          oral_request_manager: now
+        }
+        if (canSkipHigherApproval) {
+          updateData.skip_higher_approval = false
+        }
+        break
+      case 'manager':
+        if (!caseData?.approve_staff) {
+          alert('申請者の承認が必要です')
+          return
+        }
+        updateData = { 
+          approve_manager: now,
+          oral_request_director: now
+        }
+        break
+      case 'director':
+        if (!caseData?.approve_manager) {
+          alert('所長の承認が必要です')
+          return
+        }
+        updateData = { 
+          approve_director: now,
+          oral_request_president: now
+        }
+        break
+      case 'president':
+        if (!caseData?.approve_director) {
+          alert('専務の承認が必要です')
+          return
+        }
+        updateData = { approve_president: now }
+        break
+    }
+
+    const { error } = await supabase
+      .from('cases')
+      .update(updateData)
+      .eq('case_id', caseId)
+
+    if (error) {
+      console.error('承認エラー:', error)
+      console.error('エラー詳細:', error?.message, error?.details, error?.hint)
+      alert(`承認に失敗しました: ${error?.message || error}`)
+    } else {
+      setMsg('承認しました（次の承認者に口頭で連絡してください）')
+      await recordApprovalHistory(role, '承認して口頭で承認依頼')
+      fetchCaseData()
+      setTimeout(() => setMsg(null), 3000)
     }
   }
 
@@ -476,6 +575,7 @@ export default function CaseApprovalPage() {
     if (error) {
       setMsg('差し戻しに失敗しました')
     } else {
+      await recordApprovalHistory(role, '差戻')
       await sendRejectEmail(rejectEmail, caseId, roleNames[role])
       setMsg('差し戻しました。差し戻しメールを送信しました。')
       fetchCaseData()
@@ -533,6 +633,7 @@ export default function CaseApprovalPage() {
       alert('承認取消に失敗しました')
     } else {
       setMsg('承認を取り消しました')
+      await recordApprovalHistory('staff', '承認取消')
       fetchCaseData()
       setTimeout(() => setMsg(null), 2000)
     }
@@ -892,16 +993,18 @@ export default function CaseApprovalPage() {
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>申請者</div>
                 <div style={{ fontWeight: 'bold', fontSize: 16, color: '#fff' }}>{approvers.applicant?.name ?? '-'}</div>
                 <div style={{ fontSize: 11, color: '#cbd5e1' }}>{approvers.applicant?.email ?? '-'}</div>
+                {caseData?.oral_request_manager && !caseData?.approve_staff && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
               </div>
 
               {approvers.sectionHead && (
                 <>
                   <span style={{ fontSize: 24, color: '#999' }}>→</span>
-                  <div style={{ padding: '12px 20px', backgroundColor: caseData?.approve_manager ? '#d4edda' : '#fff', border: `2px solid ${caseData?.approve_manager ? '#28a745' : '#ddd'}`, borderRadius: 8, minWidth: 160 }}>
+                  <div style={{ padding: '12px 20px', backgroundColor: caseData?.approve_manager ? '#d4edda' : (caseData?.oral_request_director ? '#fff3cd' : '#fff'), border: `2px solid ${caseData?.approve_manager ? '#28a745' : (caseData?.oral_request_director ? '#ffc107' : '#ddd')}`, borderRadius: 8, minWidth: 160 }}>
                     <div style={{ fontSize: 12, color: '#666' }}>所長</div>
                     <div style={{ fontWeight: 'bold', fontSize: 16 }}>{approvers.sectionHead.name}</div>
                     <div style={{ fontSize: 11, color: '#555' }}>{approvers.sectionHead.email ?? '-'}</div>
                     {caseData?.approve_manager && <div style={{ fontSize: 11, color: '#28a745' }}>✓ 承認済</div>}
+                    {caseData?.oral_request_director && !caseData?.approve_manager && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
                   </div>
                 </>
               )}
@@ -909,11 +1012,12 @@ export default function CaseApprovalPage() {
               {approvers.senmu && (
                 <>
                   <span style={{ fontSize: 24, color: '#999' }}>→</span>
-                  <div style={{ padding: '12px 20px', backgroundColor: caseData?.approve_director ? '#d4edda' : '#fff', border: `2px solid ${caseData?.approve_director ? '#28a745' : '#ddd'}`, borderRadius: 8, minWidth: 160 }}>
+                  <div style={{ padding: '12px 20px', backgroundColor: caseData?.approve_director ? '#d4edda' : (caseData?.oral_request_president ? '#fff3cd' : '#fff'), border: `2px solid ${caseData?.approve_director ? '#28a745' : (caseData?.oral_request_president ? '#ffc107' : '#ddd')}`, borderRadius: 8, minWidth: 160 }}>
                     <div style={{ fontSize: 12, color: '#666' }}>専務</div>
                     <div style={{ fontWeight: 'bold', fontSize: 16 }}>{approvers.senmu.name}</div>
                     <div style={{ fontSize: 11, color: '#555' }}>{approvers.senmu.email ?? '-'}</div>
                     {caseData?.approve_director && <div style={{ fontSize: 11, color: '#28a745' }}>✓ 承認済</div>}
+                    {caseData?.oral_request_president && !caseData?.approve_director && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
                   </div>
                 </>
               )}
@@ -933,11 +1037,49 @@ export default function CaseApprovalPage() {
 
             <div style={{ marginTop: 16, fontSize: 13 }}>
               <strong>現在の状態:</strong>{' '}
-              {!caseData?.approval_section_head && approvalFlow.sectionHead && `${approvalFlow.sectionHead}の承認待ち`}
-              {caseData?.approval_section_head && !caseData?.approval_senmu && approvalFlow.senmu && `${approvalFlow.senmu}の承認待ち`}
-              {caseData?.approval_senmu && !caseData?.approval_shacho && approvalFlow.shacho && `${approvalFlow.shacho}の承認待ち`}
+              {!caseData?.approval_section_head && !caseData?.oral_request_manager && approvalFlow.sectionHead && `${approvalFlow.sectionHead}の承認待ち`}
+              {caseData?.oral_request_manager && !caseData?.approve_staff && '申請者が口頭で所長に承認依頼予定'}
+              {!caseData?.approval_section_head && !caseData?.approval_senmu && caseData?.oral_request_director && !caseData?.approve_manager && approvalFlow.senmu && `所長が口頭で${approvalFlow.senmu}に承認依頼予定`}
+              {caseData?.approval_section_head && !caseData?.approval_senmu && !caseData?.oral_request_director && approvalFlow.senmu && `${approvalFlow.senmu}の承認待ち`}
+              {!caseData?.approval_senmu && !caseData?.approval_shacho && caseData?.oral_request_president && !caseData?.approve_director && approvalFlow.shacho && `専務が口頭で${approvalFlow.shacho}に承認依頼予定`}
+              {caseData?.approval_senmu && !caseData?.approval_shacho && !caseData?.oral_request_president && approvalFlow.shacho && `${approvalFlow.shacho}の承認待ち`}
               {caseData?.approval_shacho && '全承認完了'}
             </div>
+          </div>
+
+          {/* 承認履歴 */}
+          <div style={{ marginBottom: 24, padding: 16, border: '1px solid #334155', borderRadius: 8, backgroundColor: '#1e293b' }}>
+            <h3 style={{ marginTop: 0, color: '#93c5fd' }}>承認履歴</h3>
+            {approvalHistory.length === 0 ? (
+              <p style={{ color: '#64748b', fontStyle: 'italic' }}>承認アクションはまだありません</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>役割</th>
+                    <th style={thStyle}>アクション</th>
+                    <th style={thStyle}>実行日時</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvalHistory.map((history, index) => {
+                    const roleLabel: { [key: string]: string } = {
+                      'staff': '申請者',
+                      'manager': '所長',
+                      'director': '専務',
+                      'president': '社長',
+                    }
+                    return (
+                      <tr key={index}>
+                        <td style={tdStyle}>{roleLabel[history.role] || history.role}</td>
+                        <td style={tdStyle}>{history.action}</td>
+                        <td style={tdStyle}>{new Date(history.created_at).toLocaleString('ja-JP')}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
 
           {/* 承認操作 */}
@@ -968,6 +1110,7 @@ export default function CaseApprovalPage() {
                   承認取消
                 </button>
                 <button onClick={() => handleApprove('staff')} className="btn-3d" disabled={!!caseData?.approve_staff} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
+                <button onClick={() => handleApproveWithOralRequest('staff')} className="btn-3d" disabled={!!caseData?.approve_staff} style={{ backgroundColor: '#6f42c1', color: '#fff' }}>📞 口頭で承認依頼</button>
                 <button onClick={() => openPrintPreview('staff')} className="btn-3d" style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1006,6 +1149,7 @@ export default function CaseApprovalPage() {
                 />
                 <button onClick={() => handleApproveOnly('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
                 <button onClick={() => handleApprove('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
+                <button onClick={() => handleApproveWithOralRequest('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#6f42c1', color: '#fff' }}>📞 口頭で承認依頼</button>
                 <button onClick={() => handleResendEmail('manager')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
                 <button onClick={() => openPrintPreview('manager')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
@@ -1048,6 +1192,7 @@ export default function CaseApprovalPage() {
                 />
                 <button onClick={() => handleApproveOnly('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
                 <button onClick={() => handleApprove('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
+                <button onClick={() => handleApproveWithOralRequest('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#6f42c1', color: '#fff' }}>📞 口頭で承認依頼</button>
                 <button onClick={() => handleResendEmail('director')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
                 <button onClick={() => openPrintPreview('director')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
