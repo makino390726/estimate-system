@@ -126,6 +126,8 @@ function PurchaseOrderPageContent() {
   const [titleMode, setTitleMode] = useState<'order' | 'transfer-slip' | 'warehouse-move'>('order')
   const titleText = (m: typeof titleMode) =>
     m === 'order' ? '注文書作成' : m === 'transfer-slip' ? '移動伝票作成' : '倉庫移動'
+  const [modeAlert, setModeAlert] = useState<{ visible: boolean; text: string }>({ visible: false, text: '' })
+  const modeAlertTimer = useRef<number | null>(null)
   const [destinationWarehouseId, setDestinationWarehouseId] = useState<string>('')
   const [destinationWarehouseName, setDestinationWarehouseName] = useState<string>('')
   const [warehouses, setWarehouses] = useState<Array<{id: string; name: string}>>([])
@@ -232,6 +234,23 @@ function PurchaseOrderPageContent() {
       allocateOrderNo()
     }
   }, [isUpdateMode, orderNo])
+
+  // モード変更時に一時的なアラートを表示
+  useEffect(() => {
+    if (modeAlertTimer.current) {
+      window.clearTimeout(modeAlertTimer.current)
+    }
+    setModeAlert({ visible: true, text: `${titleText(titleMode)}モード` })
+    modeAlertTimer.current = window.setTimeout(() => {
+      setModeAlert((prev) => ({ ...prev, visible: false }))
+    }, 2000)
+
+    return () => {
+      if (modeAlertTimer.current) {
+        window.clearTimeout(modeAlertTimer.current)
+      }
+    }
+  }, [titleMode])
 
 
   const fetchSuppliers = async () => {
@@ -1753,6 +1772,27 @@ function PurchaseOrderPageContent() {
   return (
     <>
       <div style={{ padding: 24, maxWidth: 1400, margin: '0 auto' }}>
+        {modeAlert.visible && (
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: '#facc15',
+              color: '#1f2937',
+              padding: '26px 56px',
+              borderRadius: 16,
+              boxShadow: '0 18px 55px rgba(0,0,0,0.45)',
+              fontSize: 36,
+              fontWeight: 900,
+              letterSpacing: 1.4,
+              zIndex: 2000,
+            }}
+          >
+            {modeAlert.text}
+          </div>
+        )}
         <div
           style={{
             display: 'flex',

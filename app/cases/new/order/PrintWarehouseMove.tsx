@@ -52,6 +52,7 @@ const PrintWarehouseMove = forwardRef<HTMLDivElement, PrintWarehouseMoveProps>(
             padding: '20mm',
             fontFamily: 'Arial, sans-serif',
             fontSize: '12px',
+            color: '#000',
             width: '210mm',
             minHeight: '297mm',
             margin: '0 auto',

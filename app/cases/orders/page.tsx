@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { useReactToPrint } from "react-to-print"
 import PrintPurchaseOrder from "../new/order/PrintPurchaseOrder"
+import PrintWarehouseMove from "../new/order/PrintWarehouseMove"
 import Link from "next/link"
 
 interface CaseRow {
@@ -94,7 +95,8 @@ export default function OrderListPage() {
       .order("name")
 
     if (!error && data) {
-      setStaffs(data)
+      // Normalize to strings to avoid type mismatch when comparing staff IDs
+      setStaffs(data.map((s) => ({ ...s, id: String(s.id) })))
     }
   }
 
@@ -204,7 +206,7 @@ export default function OrderListPage() {
         created_date: c.created_date,
         status: c.status,
         customer_id: c.customer_id || null,
-        staff_id: c.staff_id || null,
+        staff_id: c.staff_id ? String(c.staff_id) : null,
         department: c.department || "",
         purchaser_name: c.purchaser_name || "",
         coreplus_no: c.coreplus_no || null,
@@ -828,7 +830,9 @@ export default function OrderListPage() {
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.8)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={closePrintModal}>
           <div style={{ backgroundColor: "#1e293b", padding: 24, borderRadius: 12, maxWidth: "95vw", maxHeight: "95vh", overflow: "auto", border: "1px solid #334155" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-              <h2 style={{ color: "#fff", margin: 0 }}>注文書PDF</h2>
+              <h2 style={{ color: "#fff", margin: 0 }}>
+                {printCaseData.status === "倉庫移動" ? "倉庫移動伝票PDF" : "注文書PDF"}
+              </h2>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={handlePrint} className="selector-button primary" style={{ padding: "8px 16px", color: "#fff" }}>🖨️ 印刷</button>
                 <button onClick={closePrintModal} className="selector-button" style={{ padding: "8px 16px", color: "#fff" }}>✕ 閉じる</button>
@@ -836,6 +840,34 @@ export default function OrderListPage() {
             </div>
             <div ref={printRef}>
               {(() => {
+                if (printCaseData.status === "倉庫移動") {
+                  return (
+                    <PrintWarehouseMove
+                      printRef={printRef}
+                      orderNo={String(printCaseData.case_no || "")}
+                      orderDate={printCaseData.created_date}
+                      department={printCaseData.department || ""}
+                      subject={printCaseData.subject}
+                      purchaserName={printCaseData.purchaser_name || ""}
+                      rows={printCaseData.details.map((d) => ({
+                        product_id: d.product_id || "",
+                        item_name: d.item_name,
+                        spec: d.spec,
+                        unit: d.unit,
+                        quantity: d.quantity,
+                        unit_price: d.unit_price,
+                        amount: d.amount,
+                        cost_price: 0,
+                        section_id: null,
+                        remarks: d.remarks || "",
+                      }))}
+                      warehouseName={printCaseData.source_warehouse_name || ""}
+                      destinationWarehouse={printCaseData.destination_warehouse_name || ""}
+                      staffStampUrl={getStaffStamp(printCaseData.staff_id) || undefined}
+                    />
+                  )
+                }
+
                 const subtotal = printCaseData.details.reduce((sum, d) => sum + (d.amount || 0), 0)
                 const subtotalAfterDiscount = subtotal * (1 - (printCaseData.discount || 0) / 100)
                 const taxAmount = subtotalAfterDiscount * (printCaseData.tax_rate || 0.1)
