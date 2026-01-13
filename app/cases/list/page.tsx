@@ -237,32 +237,51 @@ export default function CaseListPage() {
   }
 
   const handleDelete = async (caseId: string) => {
-    if (!confirm(`案件を削除してもよろしいですか？\n関連する明細データも削除されます。`)) {
+    if (!confirm(`案件を削除してもよろしいですか？\n関連する承認履歴、明細データも削除されます。`)) {
       return
     }
 
-    const { error: detailError } = await supabase
-      .from('case_details')
-      .delete()
-      .eq('case_id', caseId)
+    try {
+      // 承認履歴を削除
+      const { error: approvalError } = await supabase
+        .from('approval_history')
+        .delete()
+        .eq('case_id', caseId)
 
-    if (detailError) {
-      console.error('明細削除エラー:', detailError)
-      alert('明細データの削除に失敗しました')
-      return
-    }
+      if (approvalError) {
+        console.error('承認履歴削除エラー:', approvalError)
+        alert('承認履歴の削除に失敗しました')
+        return
+      }
 
-    const { error: caseError } = await supabase
-      .from('cases')
-      .delete()
-      .eq('case_id', caseId)
+      // 明細を削除
+      const { error: detailError } = await supabase
+        .from('case_details')
+        .delete()
+        .eq('case_id', caseId)
 
-    if (caseError) {
-      console.error('案件削除エラー:', caseError)
-      alert('案件の削除に失敗しました')
-    } else {
-      alert('削除しました')
-      fetchCases()
+      if (detailError) {
+        console.error('明細削除エラー:', detailError)
+        alert('明細データの削除に失敗しました')
+        return
+      }
+
+      // 案件を削除
+      const { error: caseError } = await supabase
+        .from('cases')
+        .delete()
+        .eq('case_id', caseId)
+
+      if (caseError) {
+        console.error('案件削除エラー:', caseError)
+        alert('案件の削除に失敗しました')
+      } else {
+        alert('削除しました')
+        fetchCases()
+      }
+    } catch (err: any) {
+      console.error('削除処理エラー:', err)
+      alert('削除中にエラーが発生しました')
     }
   }
 
