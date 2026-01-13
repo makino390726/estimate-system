@@ -50,6 +50,7 @@ export default function ConfirmImportPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [specialDiscount, setSpecialDiscount] = useState<number>(0)
+  const [taxRate, setTaxRate] = useState<number>(0.1)
   const [calculatedTaxAmount, setCalculatedTaxAmount] = useState<number>(0)
   const [calculatedTotalAmount, setCalculatedTotalAmount] = useState<number>(0)
   const pageSize = 20
@@ -84,18 +85,18 @@ export default function ConfirmImportPage() {
     })
   }, [details.length, productList])
 
-  // 出精値引きに基づいて消費税と合計を計算
+  // 出精値引きと消費税率に基づいて消費税と合計を計算
   useEffect(() => {
     if (!importData) return
     
     const subtotal = importData.subtotal || 0
     const discountedSubtotal = subtotal - specialDiscount
-    const taxAmount = Math.round(discountedSubtotal * 0.1)
+    const taxAmount = Math.round(discountedSubtotal * taxRate)
     const totalAmount = discountedSubtotal + taxAmount
     
     setCalculatedTaxAmount(taxAmount)
     setCalculatedTotalAmount(totalAmount)
-  }, [importData, specialDiscount])
+  }, [importData, specialDiscount, taxRate])
 
   useEffect(() => {
     loadData()
@@ -500,7 +501,31 @@ export default function ConfirmImportPage() {
               </td>
             </tr>
             <tr style={{ backgroundColor: '#e3f2fd' }}>
-              <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>消費税 (10%):</td>
+              <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>消費税率:</td>
+              <td style={{ padding: '10px', fontSize: '15px' }}>
+                <input
+                  type="number"
+                  value={taxRate * 100}
+                  onChange={(e) => setTaxRate(Math.max(0, Math.min(100, Number(e.target.value) || 0)) / 100)}
+                  style={{
+                    padding: '8px',
+                    fontSize: '15px',
+                    border: '2px solid #1565c0',
+                    borderRadius: '4px',
+                    width: '80px',
+                    textAlign: 'right',
+                    fontWeight: 'bold',
+                    color: '#1565c0'
+                  }}
+                  step="0.1"
+                  min="0"
+                  max="100"
+                />
+                <span style={{ marginLeft: '10px', color: '#1565c0', fontWeight: 'bold' }}>%</span>
+              </td>
+            </tr>
+            <tr style={{ backgroundColor: '#e3f2fd' }}>
+              <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>消費税 ({(taxRate * 100).toFixed(1)}%):</td>
               <td style={{ padding: '10px', color: '#424242', fontSize: '15px', fontWeight: 'bold' }}>
                 ¥{calculatedTaxAmount.toLocaleString('ja-JP')}
               </td>

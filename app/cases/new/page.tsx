@@ -1483,8 +1483,23 @@ export default function CaseNewPage() {
             <span>値引後小計</span>
             <span>{subtotalAfterDiscount.toLocaleString()} 円</span>
           </div>
+          <div style={{...sumRowStyle, padding: '10px'}}>
+            <span>消費税率</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="number"
+                value={taxRate * 100}
+                onChange={(e) => setTaxRate(Math.max(0, Math.min(100, Number(e.target.value) || 0)) / 100)}
+                style={{ ...inputStyle, width: 80, textAlign: 'right' }}
+                step="0.1"
+                min="0"
+                max="100"
+              />
+              <span>%</span>
+            </div>
+          </div>
           <div style={sumRowStyle}>
-            <span>消費税 ({(taxRate * 100).toFixed(0)}%)</span>
+            <span>消費税 ({(taxRate * 100).toFixed(1)}%)</span>
             <span>{taxAmount.toLocaleString()} 円</span>
           </div>
           <div
