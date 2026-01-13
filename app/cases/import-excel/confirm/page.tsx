@@ -88,15 +88,19 @@ export default function ConfirmImportPage() {
   // 出精値引きと消費税率に基づいて消費税と合計を計算
   useEffect(() => {
     if (!importData) return
-    
-    const subtotal = importData.subtotal || 0
-    const discountedSubtotal = subtotal - specialDiscount
+
+    // 明細変更にも追従するよう、明細合計を優先
+    const subtotal = details.length > 0
+      ? details.reduce((sum, d) => sum + d.amount, 0)
+      : importData.subtotal || 0
+
+    const discountedSubtotal = Math.max(0, subtotal - specialDiscount)
     const taxAmount = Math.round(discountedSubtotal * taxRate)
     const totalAmount = discountedSubtotal + taxAmount
     
     setCalculatedTaxAmount(taxAmount)
     setCalculatedTotalAmount(totalAmount)
-  }, [importData, specialDiscount, taxRate])
+  }, [importData, details, specialDiscount, taxRate])
 
   useEffect(() => {
     loadData()
@@ -120,6 +124,13 @@ export default function ConfirmImportPage() {
         taxAmount: data.taxAmount,
         totalAmount: data.totalAmount
       })
+      setSpecialDiscount(Number(data.specialDiscount) || 0)
+      // Excel側の消費税から税率を推定して初期反映
+      const baseForTax = (data.subtotal || 0) - (data.specialDiscount || 0)
+      if (baseForTax > 0 && data.taxAmount != null) {
+        const inferredRate = data.taxAmount / baseForTax
+        if (Number.isFinite(inferredRate)) setTaxRate(inferredRate)
+      }
       setStampImage(data.stampImage || null)
       setEditEstimateNo(data.estimateNo || '')
       setEditEstimateDate(data.estimateDate || '')
@@ -248,6 +259,14 @@ export default function ConfirmImportPage() {
       if (!Number.isFinite(staffIdNum)) {
         throw new Error('担当者IDの形式が不正です')
       }
+
+      // 金額系をフロントで確定計算（ケースに書き込む）
+      const subtotal = details.reduce((sum, d) => sum + d.amount, 0)
+      const discountedSubtotal = Math.max(0, subtotal - specialDiscount)
+      const taxAmount = Math.round(discountedSubtotal * taxRate)
+      const totalAmount = discountedSubtotal + taxAmount
+      const grossProfitTotal = details.reduce((sum, d) => sum + (d.amount - (d.cost_amount || 0)), 0)
+      const grossMargin = totalAmount > 0 ? grossProfitTotal / totalAmount : null
       // ★★★ 顧客を確保（新規 or 既存） ★★★
       let customerId = importData.customerId
       
@@ -292,6 +311,10 @@ export default function ConfirmImportPage() {
         customer_id: customerId,
         subject: importData.subject || null,
         special_discount: specialDiscount,
+        tax_amount: taxAmount,
+        total_amount: totalAmount,
+        gross_profit: grossProfitTotal,
+        gross_margin: grossMargin,
         // 取扱状況を新規作成と同様に「商談中」で登録
         status: '商談中',
         note: `Excel取込: ${importData.fileName}${(editEstimateNo || importData.estimateNo) ? ` / 見積番号: ${editEstimateNo || importData.estimateNo}` : ''}`,
