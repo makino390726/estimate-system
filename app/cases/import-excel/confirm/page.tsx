@@ -243,6 +243,11 @@ export default function ConfirmImportPage() {
 
     setSaving(true)
     try {
+      // 数値IDに正規化（staffs.id が数値のため）
+      const staffIdNum = Number(selectedStaffId)
+      if (!Number.isFinite(staffIdNum)) {
+        throw new Error('担当者IDの形式が不正です')
+      }
       // ★★★ 顧客を確保（新規 or 既存） ★★★
       let customerId = importData.customerId
       
@@ -275,7 +280,7 @@ export default function ConfirmImportPage() {
       // ★★★ cases テーブルに登録 ★★★
       const { error: caseErr } = await supabase.from('cases').insert({
         case_id,
-        staff_id: selectedStaffId,
+        staff_id: staffIdNum,
         case_no: (editEstimateNo || importData.estimateNo)
           ? (() => {
               const src = (editEstimateNo || importData.estimateNo) as string
@@ -287,7 +292,8 @@ export default function ConfirmImportPage() {
         customer_id: customerId,
         subject: importData.subject || null,
         special_discount: specialDiscount,
-        status: 'confirmed',
+        // 取扱状況を新規作成と同様に「商談中」で登録
+        status: '商談中',
         note: `Excel取込: ${importData.fileName}${(editEstimateNo || importData.estimateNo) ? ` / 見積番号: ${editEstimateNo || importData.estimateNo}` : ''}`,
         delivery_place: importData.deliveryPlace || null,
         delivery_deadline: importData.deliveryDeadline || null,
@@ -307,7 +313,7 @@ export default function ConfirmImportPage() {
         
         return {
           case_id,
-          staff_id: selectedStaffId,
+          staff_id: staffIdNum,
           product_id: d.product_id,
           unregistered_product: d.item_name,
           spec: combinedSpec,
