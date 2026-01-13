@@ -567,6 +567,7 @@ function parseDetails(ws: XLSX.WorkSheet): { details: ParsedDetail[], lastDataRo
 // ================================
 function findSummaryAmounts(ws: XLSX.WorkSheet, lastDetailRow: number) {
   let subtotal: number | null = null
+  let specialDiscount: number | null = null
   let taxAmount: number | null = null
   let totalAmount: number | null = null
 
@@ -577,11 +578,17 @@ function findSummaryAmounts(ws: XLSX.WorkSheet, lastDetailRow: number) {
   ]
 
   // 探索対象列（金額が入っていそうな列）
-  const amountCols = ['AJ', 'AI', 'AH', 'AG', 'AK', 'AL']
+  const amountCols = ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM']
+
+  console.log(`[Excel Parse] findSummaryAmounts start. lastDetailRow=${lastDetailRow}, searchRanges:`, searchRanges)
 
   for (const range of searchRanges) {
     for (let r = range.start; r <= range.end; r++) {
       const dVal = normalizeText(getCell(ws, colRow('D', r)))
+      
+      if (dVal) {
+        console.log(`[Excel Parse] D${r}="${dVal}"`)
+      }
       
       // 小計を探す
       if (!subtotal && (dVal === '小計' || dVal.includes('小計'))) {
@@ -590,6 +597,19 @@ function findSummaryAmounts(ws: XLSX.WorkSheet, lastDetailRow: number) {
           if (val !== null && val > 0) {
             subtotal = val
             console.log(`[Excel Parse] 小計発見: D${r}="${dVal}", ${col}${r}=${val}`)
+            break
+          }
+        }
+      }
+
+      // 出精値引きを探す
+      if (!specialDiscount && dVal.includes('出精')) {
+        for (const col of amountCols) {
+          const val = toNumber(getCell(ws, colRow(col, r)))
+          if (val !== null) {
+            // 負数の場合は絶対値を取る
+            specialDiscount = Math.abs(val)
+            console.log(`[Excel Parse] 出精値引き発見: D${r}="${dVal}", ${col}${r}=${val} → ${specialDiscount}`)
             break
           }
         }
@@ -629,7 +649,7 @@ function findSummaryAmounts(ws: XLSX.WorkSheet, lastDetailRow: number) {
     }
   }
 
-  return { subtotal, taxAmount, totalAmount }
+  return { subtotal, specialDiscount, taxAmount, totalAmount }
 }
 
 // ================================
@@ -717,11 +737,13 @@ export async function POST(req: Request) {
     // 見つからない場合は明細合計から計算
     const detailsSum = details.reduce((sum, d) => sum + d.amount, 0)
     const finalSubtotal = summary.subtotal ?? detailsSum
-    const finalTaxAmount = summary.taxAmount ?? Math.round(detailsSum * 0.1)
-    const finalTotalAmount = summary.totalAmount ?? (finalSubtotal + finalTaxAmount)
+    const finalSpecialDiscount = summary.specialDiscount ?? 0
+    const finalTaxAmount = summary.taxAmount ?? Math.round((finalSubtotal - finalSpecialDiscount) * 0.1)
+    const finalTotalAmount = summary.totalAmount ?? (finalSubtotal - finalSpecialDiscount + finalTaxAmount)
 
     console.log('[Excel Parse] 最終金額情報:', {
       '小計': finalSubtotal,
+      '出精値引き': finalSpecialDiscount,
       '消費税': finalTaxAmount,
       '合計': finalTotalAmount,
       '明細合計': detailsSum
@@ -768,6 +790,7 @@ export async function POST(req: Request) {
       validityText,
       paymentTerms,
       subtotal: finalSubtotal,
+      specialDiscount: finalSpecialDiscount,
       taxAmount: finalTaxAmount,
       totalAmount: finalTotalAmount,
       details: details,

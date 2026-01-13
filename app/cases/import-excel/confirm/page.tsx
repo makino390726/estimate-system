@@ -49,6 +49,9 @@ export default function ConfirmImportPage() {
   const [stampImage, setStampImage] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [specialDiscount, setSpecialDiscount] = useState<number>(0)
+  const [calculatedTaxAmount, setCalculatedTaxAmount] = useState<number>(0)
+  const [calculatedTotalAmount, setCalculatedTotalAmount] = useState<number>(0)
   const pageSize = 20
 
   // 明細数変化時に補助状態を同期
@@ -81,6 +84,19 @@ export default function ConfirmImportPage() {
     })
   }, [details.length, productList])
 
+  // 出精値引きに基づいて消費税と合計を計算
+  useEffect(() => {
+    if (!importData) return
+    
+    const subtotal = importData.subtotal || 0
+    const discountedSubtotal = subtotal - specialDiscount
+    const taxAmount = Math.round(discountedSubtotal * 0.1)
+    const totalAmount = discountedSubtotal + taxAmount
+    
+    setCalculatedTaxAmount(taxAmount)
+    setCalculatedTotalAmount(totalAmount)
+  }, [importData, specialDiscount])
+
   useEffect(() => {
     loadData()
   }, [])
@@ -97,6 +113,12 @@ export default function ConfirmImportPage() {
 
       const data = JSON.parse(dataStr)
       setImportData(data)
+      console.log('[ConfirmPage] Imported data:', {
+        subtotal: data.subtotal,
+        specialDiscount: data.specialDiscount,
+        taxAmount: data.taxAmount,
+        totalAmount: data.totalAmount
+      })
       setStampImage(data.stampImage || null)
       setEditEstimateNo(data.estimateNo || '')
       setEditEstimateDate(data.estimateDate || '')
@@ -263,7 +285,7 @@ export default function ConfirmImportPage() {
         created_date,
         customer_id: customerId,
         subject: importData.subject || null,
-        special_discount: 0,
+        special_discount: specialDiscount,
         status: 'confirmed',
         note: `Excel取込: ${importData.fileName}${(editEstimateNo || importData.estimateNo) ? ` / 見積番号: ${editEstimateNo || importData.estimateNo}` : ''}`,
         delivery_place: importData.deliveryPlace || null,
@@ -450,16 +472,43 @@ export default function ConfirmImportPage() {
                 ¥{(importData.subtotal || 0).toLocaleString('ja-JP')}
               </td>
             </tr>
+            <tr style={{ backgroundColor: '#fff3e0' }}>
+              <td style={{ padding: '10px', fontWeight: 'bold', color: '#e65100' }}>出精値引き:</td>
+              <td style={{ padding: '10px', fontSize: '15px' }}>
+                <input
+                  type="number"
+                  value={specialDiscount}
+                  onChange={(e) => setSpecialDiscount(Math.max(0, Number(e.target.value) || 0))}
+                  style={{
+                    padding: '8px',
+                    fontSize: '15px',
+                    border: '2px solid #e65100',
+                    borderRadius: '4px',
+                    width: '150px',
+                    textAlign: 'right',
+                    fontWeight: 'bold',
+                    color: '#e65100'
+                  }}
+                />
+                <span style={{ marginLeft: '10px', color: '#e65100', fontWeight: 'bold' }}>円</span>
+              </td>
+            </tr>
+            <tr style={{ backgroundColor: '#f3e5f5' }}>
+              <td style={{ padding: '10px', fontWeight: 'bold', color: '#7b1fa2' }}>値引後小計:</td>
+              <td style={{ padding: '10px', color: '#7b1fa2', fontSize: '15px', fontWeight: 'bold' }}>
+                ¥{((importData.subtotal || 0) - specialDiscount).toLocaleString('ja-JP')}
+              </td>
+            </tr>
             <tr style={{ backgroundColor: '#e3f2fd' }}>
-              <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>消費税:</td>
-              <td style={{ padding: '10px', color: '#424242', fontSize: '15px' }}>
-                ¥{(importData.taxAmount || 0).toLocaleString('ja-JP')}
+              <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>消費税 (10%):</td>
+              <td style={{ padding: '10px', color: '#424242', fontSize: '15px', fontWeight: 'bold' }}>
+                ¥{calculatedTaxAmount.toLocaleString('ja-JP')}
               </td>
             </tr>
             <tr style={{ backgroundColor: '#bbdefb' }}>
               <td style={{ padding: '12px', fontWeight: 'bold', color: '#0d47a1', fontSize: '16px' }}>合計金額:</td>
               <td style={{ padding: '12px', fontSize: '24px', fontWeight: 'bold', color: '#d32f2f' }}>
-                ¥{(importData.totalAmount || 0).toLocaleString('ja-JP')}
+                ¥{calculatedTotalAmount.toLocaleString('ja-JP')}
               </td>
             </tr>
           </tbody>

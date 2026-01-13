@@ -298,17 +298,30 @@ export default function CaseNewPage() {
             .filter(Boolean)
         ),
       ]
+      const customerIds = [
+        ...new Set(
+          data
+            .map((c) => c.customer_id)
+            .filter(Boolean)
+        ),
+      ]
 
       const { data: staffsData } = await supabase
         .from('staffs')
         .select('id, name')
         .in('id', staffIds)
 
+      const { data: customersData } = await supabase
+        .from('customers')
+        .select('id, name')
+        .in('id', customerIds)
+
       const staffMap = new Map(staffsData?.map((s) => [s.id, s.name]))
+      const customerMap = new Map(customersData?.map((c) => [c.id, c.name]))
 
       const enrichedCases = data.map((c) => ({
         ...c,
-        customer_name: c.customer_id || '-',
+        customer_name: customerMap.get(c.customer_id) || '-',
         staff_name: staffMap.get(c.staff_id) || '-',
       }))
 
