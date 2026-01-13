@@ -148,9 +148,23 @@ export default function CaseApprovalPage() {
     if (caseDataResult) {
       setCaseData(caseDataResult)
 
-      // ★ customer_idに得意先名が直接保存されている仕様に対応
-      // customer_idが得意先名を保持しているため直接表示
-      setCustomerName(caseDataResult.customer_id || caseDataResult.customer_name || '-')
+      // ★ 顧客名を取得（customer_idから顧客マスタを参照）
+      if (caseDataResult.customer_id) {
+        const { data: customerData, error: customerError } = await supabase
+          .from('customers')
+          .select('name')
+          .eq('id', caseDataResult.customer_id)
+          .single()
+
+        if (!customerError && customerData) {
+          setCustomerName(customerData.name)
+        } else {
+          // フォールバック：IDをそのまま表示
+          setCustomerName(caseDataResult.customer_id)
+        }
+      } else {
+        setCustomerName('-')
+      }
 
       // ★ セクションデータ取得を追加
       const { data: caseSections, error: sectionsError } = await supabase
@@ -799,7 +813,7 @@ export default function CaseApprovalPage() {
                   layoutType={caseData?.layout_type || 'vertical'}
                   estimateNo={caseData?.case_no || ''}
                   estimateDate={caseData?.created_date || ''}
-                  customerName={caseData?.customer?.name || customerName}
+                  customerName={customerName}
                   subject={caseData?.subject || ''}
                   deliveryDeadline={caseData?.delivery_deadline || ''}
                   deliveryPlace={caseData?.delivery_place || ''}
@@ -865,7 +879,7 @@ export default function CaseApprovalPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, color: '#cbd5e1' }}>
               <div><strong>見積番号:</strong> {caseData.case_no}</div>
               <div><strong>作成日:</strong> {caseData.created_date}</div>
-              <div><strong>得意先名:</strong> {caseData?.customer_id || caseData?.customer_name || '-'}</div>
+              <div><strong>得意先名:</strong> {customerName}</div>
               <div><strong>担当者:</strong> {staffName}</div>
               <div><strong>件名:</strong> {caseData.subject}</div>
               <div><strong>ステータス:</strong> {getStatusText(caseData.status)}</div>

@@ -59,6 +59,9 @@ export default function MasterSelectorPage() {
               <Link href="/cases/new" className="selector-button primary">
                 見積書作成
               </Link>
+              <Link href="/cases/import-excel" className="selector-button primary">
+                Excel取込
+              </Link>
             </div>
           </div>
 

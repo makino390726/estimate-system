@@ -71,6 +71,13 @@ export default function CaseListPage() {
 
       console.log('担当者ID一覧:', staffIds)
 
+      // ★ 顧客IDのリストを取得
+      const customerIds = casesData
+        ?.map((c: any) => c.customer_id)
+        .filter((id: any) => id) || []
+
+      console.log('顧客ID一覧:', customerIds)
+
       // ★ 担当者マスタ（staffsテーブル）から名前を取得
       let staffMap: { [key: string]: string } = {}
 
@@ -92,6 +99,27 @@ export default function CaseListPage() {
 
       console.log('担当者マップ:', staffMap)
 
+      // ★ 顧客マスタ（customersテーブル）から名前を取得
+      let customerMap: { [key: string]: string } = {}
+
+      if (customerIds.length > 0) {
+        const { data: customerData, error: customerError } = await supabase
+          .from('customers')
+          .select('id, name')
+          .in('id', customerIds)
+
+        console.log('取得した顧客データ:', customerData)
+        console.log('顧客取得エラー:', customerError)
+
+        if (!customerError && customerData) {
+          customerData.forEach((customer: any) => {
+            customerMap[customer.id] = customer.name
+          })
+        }
+      }
+
+      console.log('顧客マップ:', customerMap)
+
       // データを整形
       const formattedCases: CaseWithDetails[] = casesData.map((c: any) => {
         let approvalStatus = 'pending'
@@ -112,7 +140,7 @@ export default function CaseListPage() {
           subject: c.subject,
           created_date: c.created_date,
           status: c.status,
-          customer_name: c.customer_id || '不明',
+          customer_name: customerMap[c.customer_id] || c.customer_id || '不明',  // ★ 顧客名を表示
           staff_name: staffMap[c.staff_id] || c.staff_id || '不明',  // ★ 担当者名を表示
           approve_staff: c.approve_staff,
           approve_manager: c.approve_manager,

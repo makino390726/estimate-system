@@ -123,6 +123,75 @@ export default function HomePage() {
                 </p>
               </div>
             </Link>
+
+            <Link href="/cases/import-excel" className="selector-card">
+              <div>
+                <h4
+                  style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 600,
+                  }}
+                >
+                  📥 Excel見積インポート
+                </h4>
+                <p
+                  style={{
+                    margin: "4px 0 0 0",
+                    fontSize: 13,
+                    color: "#777",
+                  }}
+                >
+                  Excelファイルから見積書を取込
+                </p>
+              </div>
+            </Link>
+
+            <Link href="/cases/list" className="selector-card">
+              <div>
+                <h4
+                  style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 600,
+                  }}
+                >
+                  見積一覧
+                </h4>
+                <p
+                  style={{
+                    margin: "4px 0 0 0",
+                    fontSize: 13,
+                    color: "#777",
+                  }}
+                >
+                  作成済み見積の確認・管理
+                </p>
+              </div>
+            </Link>
+
+            <Link href="/cases/new" className="selector-card">
+              <div>
+                <h4
+                  style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 600,
+                  }}
+                >
+                  見積新規作成
+                </h4>
+                <p
+                  style={{
+                    margin: "4px 0 0 0",
+                    fontSize: 13,
+                    color: "#777",
+                  }}
+                >
+                  新しい見積書を手作業で作成
+                </p>
+              </div>
+            </Link>
           </div>
         </div>
       </main>
