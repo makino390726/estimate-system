@@ -142,7 +142,7 @@ export default function ConfirmImportPage() {
         total_amount: importData.totalAmount,
         gross_profit: null,
         gross_margin: null,
-        status: 'confirmed',
+        status: '商談中',
         note: `Excel取込: ${importData.fileName}`,
         delivery_place: importData.deliveryPlace || null,
         delivery_deadline: importData.deliveryDeadline || null,
