@@ -119,7 +119,7 @@ export default function ImportExcelPage() {
               width: '100%'
             }}
           />
-          {file && <p style={{ marginTop: '8px', color: '#666' }}>📁 {file.name} ({(file.size / 1024).toFixed(2)} KB)</p>}
+          {file && <p style={{ marginTop: '8px', color: '#333', fontWeight: '500' }}>📁 {file.name} ({(file.size / 1024).toFixed(2)} KB)</p>}
         </div>
 
         <button
@@ -294,14 +294,15 @@ export default function ImportExcelPage() {
           backgroundColor: '#f0f0f0',
           borderRadius: '4px',
           fontSize: '14px',
-          lineHeight: '1.6'
+          lineHeight: '1.6',
+          color: '#111'
         }}
       >
-        <h3 style={{ margin: '0 0 12px 0' }}>📝 使用方法</h3>
-        <ol style={{ margin: '0', paddingLeft: '20px' }}>
+        <h3 style={{ margin: '0 0 12px 0', color: '#000' }}>📝 使用方法</h3>
+        <ol style={{ margin: '0', paddingLeft: '20px', color: '#222' }}>
           <li>縦見積書形式のExcelファイル（.xlsx）を用意</li>
           <li>下記のセル配置に従ってデータを入力：
-            <ul style={{ marginTop: '8px' }}>
+            <ul style={{ marginTop: '8px', color: '#222' }}>
               <li>D8: 顧客名</li>
               <li>K27: 件名</li>
               <li>K29: 納入場所</li>
