@@ -202,6 +202,7 @@ export default function CaseNewPage() {
   }
 
   // 次の案件番号を取得（cases.case_noの最大+1、数値のみ対象）
+  // 文字列番号の場合は最新の数値部分を抽出して+1
   const fetchNextCaseNo = async (): Promise<number> => {
     try {
       const { data, error } = await supabase
@@ -215,7 +216,9 @@ export default function CaseNewPage() {
       const nums = (data || [])
         .map((r: any) => {
           const val = String(r.case_no || '')
-          const parsed = parseInt(val, 10)
+          // 文字列に数字が含まれていれば抽出
+          const digits = val.replace(/\D+/g, '')
+          const parsed = parseInt(digits, 10)
           return Number.isFinite(parsed) ? parsed : 0
         })
         .filter((n: number) => n > 0)
@@ -791,7 +794,7 @@ export default function CaseNewPage() {
         const { error: caseError } = await supabase
           .from('cases')
           .update({
-            case_no: estimateNo ? parseInt(estimateNo) : null,
+            case_no: estimateNo || null,
             subject: subject,
             created_date: estimateDate,
             // ★ customer_idには得意先名を保存する仕様

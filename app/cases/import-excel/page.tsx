@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 export default function ImportExcelPage() {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
+  const [layoutType, setLayoutType] = useState<'auto' | 'vertical' | 'horizontal'>('auto')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -33,6 +34,7 @@ export default function ImportExcelPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
+      formData.append('layoutType', layoutType)  // レイアウトタイプを送信
 
       const response = await fetch('/api/send-approval-email/import_estimate_excel', {
         method: 'POST',
@@ -66,6 +68,13 @@ export default function ImportExcelPage() {
 
       // ✅ 解析成功 → 確認画面へデータを渡して遷移
       if (data.parsed) {
+        console.log('[ImportPage] API returned data:', {
+          sections: data.sections,
+          detailsCount: data.details?.length,
+          firstDetail: data.details?.[0],
+          secondDetail: data.details?.[1],
+          thirdDetail: data.details?.[2]
+        })
         // sessionStorageに解析データを保存
         sessionStorage.setItem('excel_import_data', JSON.stringify(data))
         router.push('/cases/import-excel/confirm')
@@ -122,12 +131,57 @@ export default function ImportExcelPage() {
           {file && <p style={{ marginTop: '8px', color: '#333', fontWeight: '500' }}>📁 {file.name} ({(file.size / 1024).toFixed(2)} KB)</p>}
         </div>
 
+        <div style={{ marginTop: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#333' }}>
+            見積書レイアウト:
+          </label>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="layoutType"
+                value="auto"
+                checked={layoutType === 'auto'}
+                onChange={(e) => setLayoutType(e.target.value as 'auto')}
+                style={{ marginRight: '6px' }}
+              />
+              <span>自動判定（推奨）</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="layoutType"
+                value="vertical"
+                checked={layoutType === 'vertical'}
+                onChange={(e) => setLayoutType(e.target.value as 'vertical')}
+                style={{ marginRight: '6px' }}
+              />
+              <span>縦見積（表紙・明細シート分割）</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="layoutType"
+                value="horizontal"
+                checked={layoutType === 'horizontal'}
+                onChange={(e) => setLayoutType(e.target.value as 'horizontal')}
+                style={{ marginRight: '6px' }}
+              />
+              <span>横見積（単一シート）</span>
+            </label>
+          </div>
+          <p style={{ fontSize: '12px', color: '#666', marginTop: '6px' }}>
+            💡 自動判定: シート名に「表紙」「明細」があれば縦見積、なければ横見積として処理します
+          </p>
+        </div>
+
         <button
           type="submit"
           disabled={!file || loading}
           style={{
             padding: '12px 24px',
             fontSize: '16px',
+            marginTop: '20px',
             backgroundColor: loading || !file ? '#ccc' : '#0070f3',
             color: 'white',
             border: 'none',

@@ -15,6 +15,8 @@ type Detail = {
   cost_price?: number | null
   cost_amount?: number | null
   gross_margin?: number | null
+  section_name?: string
+  wholesale_price?: number | null
 }
 
 type Staff = {
@@ -32,10 +34,18 @@ type Product = {
   cost_price: number | null
 }
 
+type SectionDef = {
+  order: number
+  name: string
+  amount: number
+  wholesaleAmount?: number
+}
+
 export default function ConfirmImportPage() {
   const router = useRouter()
   const [importData, setImportData] = useState<any>(null)
   const [details, setDetails] = useState<Detail[]>([])
+  const [sections, setSections] = useState<SectionDef[]>([])
   const [editEstimateNo, setEditEstimateNo] = useState<string>('')
   const [editEstimateDate, setEditEstimateDate] = useState<string>('')
   const [staffList, setStaffList] = useState<Staff[]>([])
@@ -122,7 +132,9 @@ export default function ConfirmImportPage() {
         subtotal: data.subtotal,
         specialDiscount: data.specialDiscount,
         taxAmount: data.taxAmount,
-        totalAmount: data.totalAmount
+        totalAmount: data.totalAmount,
+        sections: data.sections,
+        details: data.details?.slice(0, 3) // 最初の3件を表示
       })
       setSpecialDiscount(Number(data.specialDiscount) || 0)
       // Excel側の消費税から税率を推定して初期反映
@@ -134,6 +146,12 @@ export default function ConfirmImportPage() {
       setStampImage(data.stampImage || null)
       setEditEstimateNo(data.estimateNo || '')
       setEditEstimateDate(data.estimateDate || '')
+      
+      // セクション定義を設定
+      if (data.sections) {
+        setSections(data.sections)
+        console.log('[ConfirmPage] Sections:', data.sections)
+      }
       
       // 明細に product_id フィールドを追加
       setDetails(data.details.map((d: any) => ({ ...d, product_id: null })))
@@ -300,13 +318,7 @@ export default function ConfirmImportPage() {
       const { error: caseErr } = await supabase.from('cases').insert({
         case_id,
         staff_id: staffIdNum,
-        case_no: (editEstimateNo || importData.estimateNo)
-          ? (() => {
-              const src = (editEstimateNo || importData.estimateNo) as string
-              const digits = src.replace(/\D+/g, '')
-              return digits ? Number(digits) : null
-            })()
-          : null,
+        case_no: (editEstimateNo || importData.estimateNo) || null,
         created_date,
         customer_id: customerId,
         subject: importData.subject || null,
@@ -569,6 +581,45 @@ export default function ConfirmImportPage() {
         </table>
       </div>
 
+      {/* セクション一覧表示 */}
+      {sections.length > 0 && (
+        <div style={{ 
+          marginTop: '30px', 
+          padding: '20px', 
+          border: '2px solid #1976d2',
+          borderRadius: '8px',
+          backgroundColor: '#e3f2fd'
+        }}>
+          <h3 style={{ color: '#0d47a1', marginBottom: '15px', fontSize: '16px', fontWeight: 'bold' }}>
+            📋 セクション一覧（{sections.length}件）
+          </h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#1976d2', color: '#fff' }}>
+                <th style={{ padding: '10px', textAlign: 'left', fontWeight: 'bold', width: '60px' }}>順番</th>
+                <th style={{ padding: '10px', textAlign: 'left', fontWeight: 'bold' }}>セクション名</th>
+                <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', width: '150px' }}>金額</th>
+                <th style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', width: '150px' }}>卸価格</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sections.map((sec) => (
+                <tr key={sec.order} style={{ borderBottom: '1px solid #90caf9', backgroundColor: '#f5f5f5' }}>
+                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>{sec.order}</td>
+                  <td style={{ padding: '10px', color: '#424242' }}>{sec.name}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#1565c0', fontWeight: 'bold' }}>
+                    ¥{sec.amount.toLocaleString('ja-JP')}
+                  </td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#388e3c', fontWeight: 'bold' }}>
+                    {sec.wholesaleAmount ? `¥${sec.wholesaleAmount.toLocaleString('ja-JP')}` : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* 担当者選択 */}
       <div style={{ 
         marginTop: '24px', 
@@ -651,6 +702,7 @@ export default function ConfirmImportPage() {
             <thead>
               <tr style={{ backgroundColor: '#1976d2', borderBottom: '3px solid #0d47a1' }}>
                 <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '50px' }}>No.</th>
+                <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '120px' }}>セクション</th>
                 <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '180px' }}>Excel品名</th>
                 <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '140px' }}>規格</th>
                 <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '320px' }}>商品マスタ</th>
@@ -671,6 +723,9 @@ export default function ConfirmImportPage() {
                   backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f5f5f5'
                 }}>
                   <td style={{ padding: '10px', color: '#424242', fontWeight: 'bold', width: '50px' }}>{idx + 1}</td>
+                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#e65100', width: '120px', backgroundColor: '#fff3e0' }}>
+                    {detail.section_name || '-'}
+                  </td>
                   <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0', width: '180px' }}>{detail.item_name}</td>
                   <td style={{ padding: '10px', fontSize: '13px', color: '#616161', width: '140px' }}>{detail.spec || '-'}</td>
                   <td style={{ padding: '10px', minWidth: '320px', width: '320px' }}>

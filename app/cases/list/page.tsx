@@ -7,7 +7,7 @@ import { supabase } from '../../../lib/supabaseClient'
 
 type CaseWithDetails = {
   case_id: string
-  case_no: number | null
+  case_no: string | number | null
   subject: string
   created_date: string
   status: string
