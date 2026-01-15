@@ -305,6 +305,52 @@ function findSubject(ws: XLSX.WorkSheet): string | null {
   return null
 }
 
+// ================================
+// ラベル付き値を探索（「受渡場所」「納期」など）
+// - ラベルが見つかったら、右側の複数列を探索して値を見つける
+// - 見積書フォーマットでは D列にラベル、K列に値というパターンが多い
+// ================================
+function findLabelValue(ws: XLSX.WorkSheet, labelKeywords: string[]): string {
+  const allCols = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+  const extendedCols: string[] = [...allCols]
+  for (const first of ['A', 'B', 'C']) {
+    for (const second of allCols) {
+      extendedCols.push(first + second)
+    }
+  }
+
+  // 対象範囲を広めに設定（15〜40行目あたり）
+  for (let row = 15; row <= 40; row++) {
+    for (let colIdx = 0; colIdx < extendedCols.length; colIdx++) {
+      const col = extendedCols[colIdx]
+      const label = normalizeText(getCell(ws, `${col}${row}`))
+      
+      // ラベルがキーワードのいずれかに一致するか
+      if (labelKeywords.some(kw => label.includes(kw))) {
+        // 右側の最大10列まで探索して、最初に見つかった非空セルを返す
+        for (let offset = 1; offset <= 10 && colIdx + offset < extendedCols.length; offset++) {
+          const targetCol = extendedCols[colIdx + offset]
+          const val = normalizeText(getCell(ws, `${targetCol}${row}`))
+          if (val) {
+            console.log(`[Excel Parse] ${labelKeywords[0]}検出: ${col}${row}="${label}", ${targetCol}${row}="${val}" (offset=${offset})`)
+            return val
+          }
+        }
+        
+        // 右側に値が見つからない場合、同じ列の次の行を確認
+        const valBelow = normalizeText(getCell(ws, `${col}${row + 1}`))
+        if (valBelow) {
+          console.log(`[Excel Parse] ${labelKeywords[0]}検出(下): ${col}${row}="${label}", ${col}${row + 1}="${valBelow}"`)
+          return valBelow
+        }
+      }
+    }
+  }
+
+  console.log(`[Excel Parse] ${labelKeywords[0]}が見つかりませんでした`)
+  return ''
+}
+
 function findEstimateDate(ws: XLSX.WorkSheet): string | null {
   const colNames = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
   const allCols: string[] = []
@@ -315,9 +361,47 @@ function findEstimateDate(ws: XLSX.WorkSheet): string | null {
     }
   }
 
-  const targetRows = Array.from({ length: 56 }, (_, i) => i + 5) // 5〜60行目あたりを探索
-
   console.log('[Excel Parse] 見積日の探索を開始します...')
+
+  // ★優先パターン: 5行目のAN/AR/AU列（年/月/日が分かれている場合）
+  const an5 = normalizeText(getCell(ws, 'AN5'))
+  const ar5 = normalizeText(getCell(ws, 'AR5'))
+  const au5 = normalizeText(getCell(ws, 'AU5'))
+
+  if (an5 || ar5 || au5) {
+    console.log(`[Excel Parse] 5行目の日付セルをチェック: AN5="${an5}", AR5="${ar5}", AU5="${au5}"`)
+    
+    // 年の解析（令和または数値）
+    let year: number | null = null
+    if (an5) {
+      const reiwaMatch = an5.match(/令和\s*(\d+)/)
+      const numMatch = an5.match(/(\d+)/)
+      if (reiwaMatch) {
+        year = 2018 + Number(reiwaMatch[1]) // 令和1年 = 2019年
+      } else if (numMatch) {
+        const n = Number(numMatch[1])
+        if (n >= 1 && n <= 20) {
+          year = 2018 + n // 令和年号として扱う
+        } else if (n >= 1900 && n <= 2100) {
+          year = n // 西暦として扱う
+        }
+      }
+    }
+
+    // 月・日の解析
+    const monthMatch = ar5.match(/(\d{1,2})/)
+    const dayMatch = au5.match(/(\d{1,2})/)
+    const month = monthMatch ? Number(monthMatch[1]) : null
+    const day = dayMatch ? Number(dayMatch[1]) : null
+
+    if (year && month && day) {
+      const result = `${year}-${pad2(month)}-${pad2(day)}`
+      console.log(`[Excel Parse] ✓ 見積日検出成功(5行目): AN5="${an5}" → year=${year}, AR5="${ar5}" → month=${month}, AU5="${au5}" → day=${day} → ${result}`)
+      return result
+    }
+  }
+
+  const targetRows = Array.from({ length: 56 }, (_, i) => i + 5) // 5〜60行目あたりを探索
 
   // ★パターン追加: K7(令和) L7(9月) M7(3日) のように年月日が分かれているケース
   // 令和 or 西暦 が含まれる行を探す
@@ -1537,11 +1621,11 @@ export async function POST(req: Request) {
 
       const customerName = findCustomerName(ws) ?? ''
       const subject = findSubject(ws) ?? normalizeText(getCell(ws, CELL.subject))
-      const deliveryPlace = normalizeText(getCell(ws, CELL.deliveryPlace))
-      const deliveryDeadline = normalizeText(getCell(ws, CELL.deliveryDeadline))
-      const deliveryTerms = normalizeText(getCell(ws, CELL.deliveryTerms))
-      const validityText = normalizeText(getCell(ws, CELL.validityText))
-      const paymentTerms = normalizeText(getCell(ws, CELL.paymentTerms))
+      const deliveryPlace = findLabelValue(ws, ['受渡場所', '納入場所', '受渡し場所'])
+      const deliveryDeadline = findLabelValue(ws, ['受渡期限', '納期', '納入期限', '受渡し期限'])
+      const deliveryTerms = findLabelValue(ws, ['受渡条件', '納入条件', '受渡し条件'])
+      const validityText = findLabelValue(ws, ['有効期限', '本書有効期限', '見積有効期限'])
+      const paymentTerms = findLabelValue(ws, ['支払条件', '支払方法', '決済条件'])
       const estimateDate = findEstimateDate(ws)
       const estimateNo = findEstimateNo(ws)
 

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
+import { sanitizeDateString, getFirstValidDate, getTodayDateString, debugDateValue } from '@/lib/dateValidator'
 
 type Detail = {
   item_name: string
@@ -145,7 +146,11 @@ export default function ConfirmImportPage() {
       }
       setStampImage(data.stampImage || null)
       setEditEstimateNo(data.estimateNo || '')
-      setEditEstimateDate(data.estimateDate || '')
+      
+      // 日付のサニタイズとバリデーション
+      debugDateValue('[loadData] data.estimateDate', data.estimateDate)
+      const sanitizedDate = sanitizeDateString(data.estimateDate)
+      setEditEstimateDate(sanitizedDate || '')
       
       // セクション定義を設定
       if (data.sections) {
@@ -308,11 +313,15 @@ export default function ConfirmImportPage() {
       }
       
       const case_id = generateCaseId()
-      const today = new Date()
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
-        today.getDate()
-      ).padStart(2, '0')}`
-      const created_date = editEstimateDate || importData.estimateDate || todayStr
+      const todayStr = getTodayDateString()
+      
+      // 日付のサニタイズ（複数候補から最初の有効な値を使用）
+      debugDateValue('[handleSave] editEstimateDate', editEstimateDate)
+      debugDateValue('[handleSave] importData.estimateDate', importData.estimateDate)
+      
+      const created_date = getFirstValidDate(editEstimateDate, importData.estimateDate) || todayStr
+      
+      console.log('[handleSave] created_date resolved to:', created_date)
 
       // ★★★ cases テーブルに登録 ★★★
       const { error: caseErr } = await supabase.from('cases').insert({
