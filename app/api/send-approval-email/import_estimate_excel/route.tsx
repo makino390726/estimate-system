@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { createClient } from '@supabase/supabase-js'
+import { 
+  type ExcelFormatPreset, 
+  getPresetById, 
+  detectPreset, 
+  DEFAULT_PRESET 
+} from '@/lib/excelFormatPresets'
 
 export const runtime = 'nodejs'
 
@@ -162,6 +168,21 @@ function generateCaseId16(): string {
   const ts = Date.now().toString(16)
   const rnd = Math.random().toString(16).slice(2, 10)
   return (ts + rnd).slice(0, 16)
+}
+
+/**
+ * プリセットのセル候補リストから値を探索
+ */
+function findValueFromCells(ws: XLSX.WorkSheet, cells: string[]): string {
+  for (const cell of cells) {
+    const value = normalizeText(getCell(ws, cell))
+    if (value) {
+      console.log(`[Excel Parse] Found value in cell ${cell}: "${value}"`)
+      return value
+    }
+  }
+  console.log(`[Excel Parse] No value found in cells: ${cells.join(', ')}`)
+  return ''
 }
 
 // ExcelからAU33の画像を抽出（Base64）
@@ -601,7 +622,24 @@ function findEstimateNo(ws: XLSX.WorkSheet): string | null {
     }
   }
 
-  // 上部エリアを優先的に探索（3〜12行）
+  // パターン1: 分散型（AM1="第", AO1="Ｒ8-ＳO", AS1=連番, AV1="号"）
+  const am1Raw = getCell(ws, 'AM1')
+  const ao1Raw = getCell(ws, 'AO1')  // RO1ではなくAO1
+  const as1Raw = getCell(ws, 'AS1')
+  const av1Raw = getCell(ws, 'AV1')
+  
+  const am1 = normalizeText(am1Raw)
+  const ao1 = normalizeText(ao1Raw)
+  const as1 = normalizeText(as1Raw)
+  const av1 = normalizeText(av1Raw)
+  
+  if (am1 && ao1 && as1 && av1) {
+    const combined = am1 + ao1 + as1 + av1
+    console.log(`[Excel Parse] 見積番号検出（分散型）: AM1="${am1}" + AO1="${ao1}" + AS1="${as1}" + AV1="${av1}" => "${combined}"`)
+    return combined
+  }
+
+  // パターン2: 集約型（Row3～12の上部エリア）
   const targetRows = Array.from({ length: 10 }, (_, i) => i + 3)
 
   const testPatterns = (s: string) => {
@@ -625,7 +663,7 @@ function findEstimateNo(ws: XLSX.WorkSheet): string | null {
         if (t) buffer += (buffer ? ' ' : '') + t
         const candidate = buffer
         if (candidate && candidate.length <= 40 && testPatterns(candidate)) {
-          console.log(`[Excel Parse] 見積番号検出: Row${row} ${allCols[start]}~${allCols[start+width-1]} => "${candidate}"`)
+          console.log(`[Excel Parse] 見積番号検出（集約型）: Row${row} ${allCols[start]}~${allCols[start+width-1]} => "${candidate}"`)
           return candidate
         }
       }
@@ -1170,7 +1208,8 @@ interface SheetProcessResult {
 function processMultiSheetWorkbook(
   wb: XLSX.WorkBook,
   fileName: string,
-  stampImage: string | null
+  stampImage: string | null,
+  preset: ExcelFormatPreset = DEFAULT_PRESET
 ): SheetProcessResult {
   // ★表紙シート処理
   console.log('[Excel Parse] All sheets:', wb.SheetNames)
@@ -1184,15 +1223,16 @@ function processMultiSheetWorkbook(
   console.log(`[Excel Parse] Found cover sheet: "${coverSheetName}"`)
   const coverWs = wb.Sheets[coverSheetName]
   
-  // 表紙から見積情報を抽出
-  const customerName = findCustomerName(coverWs) ?? ''
+  // 表紙から見積情報を抽出（プリセット設定を使用）
+  console.log(`[Excel Parse] Using preset: ${preset.name}`)
+  const customerName = findValueFromCells(coverWs, preset.cover.customerName) || findCustomerName(coverWs) || ''
   console.log('[Excel Parse] cover.customerName:', customerName)
-  const subject = findSubject(coverWs) ?? normalizeText(getCell(coverWs, CELL.subject))
-  const deliveryPlace = normalizeText(getCell(coverWs, CELL.deliveryPlace))
-  const deliveryDeadline = normalizeText(getCell(coverWs, CELL.deliveryDeadline))
-  const deliveryTerms = normalizeText(getCell(coverWs, CELL.deliveryTerms))
-  const validityText = normalizeText(getCell(coverWs, CELL.validityText))
-  const paymentTerms = normalizeText(getCell(coverWs, CELL.paymentTerms))
+  const subject = findValueFromCells(coverWs, preset.cover.subject) || findSubject(coverWs) || ''
+  const deliveryPlace = findValueFromCells(coverWs, preset.cover.deliveryPlace)
+  const deliveryDeadline = findValueFromCells(coverWs, preset.cover.deliveryDeadline)
+  const deliveryTerms = findValueFromCells(coverWs, preset.cover.deliveryTerms)
+  const validityText = findValueFromCells(coverWs, preset.cover.validityText)
+  const paymentTerms = findValueFromCells(coverWs, preset.cover.paymentTerms)
   const estimateDate = findEstimateDate(coverWs)
   const estimateNo = findEstimateNo(coverWs)
   
@@ -1230,19 +1270,20 @@ function processMultiSheetWorkbook(
   }
 
   // ★明細シート処理
+  const detailSheetNames = Array.isArray(preset.details.sheetName) ? preset.details.sheetName : [preset.details.sheetName]
   const detailSheetName = wb.SheetNames.find(name => {
     const normalized = normalizeText(name)
-    return normalized === SHEET_NAMES.details || normalized.includes(SHEET_NAMES.details)
+    return detailSheetNames.some(targetName => normalized === targetName || normalized.includes(targetName))
   })
   if (!detailSheetName) {
-    throw new Error(`【エラー】「${SHEET_NAMES.details}」シートが見つかりません。利用可能なシート: ${wb.SheetNames.join(', ')}`)
+    throw new Error(`【エラー】明細シートが見つかりません。期待するシート名: ${detailSheetNames.join(', ')}\n利用可能なシート: ${wb.SheetNames.join(', ')}`)
   }
-  console.log(`[Excel Parse] Found detail sheet: "${detailSheetName}"`)
+  console.log(`[Excel Parse] Found detail sheet: "${detailSheetName}" (using preset: ${preset.name})`)
   const detailWs = wb.Sheets[detailSheetName]
   
-  // 明細シートから自動でヘッダー行を検出してパース
+  // 明細シートから自動でヘッダー行を検出してパース（プリセット情報を渡す）
   // ★セクション定義を渡してセクション数分の合計を検出
-  const parseResult = parseDetailsFromHeaderDetectionSimple(detailWs, sections)
+  const parseResult = parseDetailsFromHeaderDetectionWithPreset(detailWs, preset, sections)
   const details = parseResult.details
 
   if (details.length === 0) {
@@ -1329,6 +1370,175 @@ function processMultiSheetWorkbook(
 // - ヘッダー行を探してそこから下をパース
 // - セクションマーカー（小計・合計）を検出
 // ================================
+/**
+ * プリセット情報を使用して明細をパースする関数
+ */
+function parseDetailsFromHeaderDetectionWithPreset(
+  ws: XLSX.WorkSheet,
+  preset: ExcelFormatPreset,
+  sections?: SectionDef[]
+): { details: ParsedDetail[], lastDataRow: number } {
+  const rows: ParsedDetail[] = []
+  let lastDataRow = 1
+
+  const allCols: string[] = []
+  const colNames = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+  allCols.push(...colNames)
+  for (const first of ['A', 'B', 'C']) {
+    for (const second of colNames) {
+      allCols.push(first + second)
+    }
+  }
+
+  console.log(`[Excel Parse] === Header Detection with Preset: ${preset.name} ===`)
+  console.log(`[Excel Parse] Expected header row: ${preset.details.headerRow}`)
+  console.log(`[Excel Parse] Expected start row: ${preset.details.startRow}`)
+
+  // プリセットで指定されたヘッダー行を使用
+  const headerRow = preset.details.headerRow
+  const rowContent: { [key: string]: string } = {}
+  for (const col of allCols.slice(0, 20)) {  // A-T列まで確認
+    const v = normalizeText(getCell(ws, `${col}${headerRow}`))
+    if (v) {
+      rowContent[col] = v
+      console.log(`[Excel Parse] Header cell ${col}${headerRow}: "${v}"`)
+    }
+  }
+
+  // ヘッダーキーワードに基づいて列を特定
+  let colItemName = '', colSpec = '', colQty = '', colUnit = '', colPrice = '', colAmount = ''
+  let colWholesale = '', colCostPrice = ''
+
+  for (const [col, val] of Object.entries(rowContent)) {
+    // 品名列
+    if (!colItemName && preset.details.columns.productName.some(keyword => val.includes(keyword))) {
+      colItemName = col
+      console.log(`[Excel Parse] Found productName column: ${col} (keyword matched in "${val}")`)
+    }
+    // 規格列
+    if (!colSpec && preset.details.columns.spec.some(keyword => val.includes(keyword))) {
+      colSpec = col
+      console.log(`[Excel Parse] Found spec column: ${col}`)
+    }
+    // 数量列
+    if (!colQty && preset.details.columns.quantity.some(keyword => val.includes(keyword))) {
+      colQty = col
+      console.log(`[Excel Parse] Found quantity column: ${col}`)
+    }
+    // 単位列
+    if (!colUnit && preset.details.columns.unit.some(keyword => val.includes(keyword))) {
+      colUnit = col
+      console.log(`[Excel Parse] Found unit column: ${col}`)
+    }
+    // 単価列
+    if (!colPrice && preset.details.columns.unitPrice.some(keyword => val.includes(keyword))) {
+      colPrice = col
+      console.log(`[Excel Parse] Found unitPrice column: ${col}`)
+    }
+    // 金額列
+    if (!colAmount && preset.details.columns.amount.some(keyword => val.includes(keyword))) {
+      colAmount = col
+      console.log(`[Excel Parse] Found amount column: ${col}`)
+    }
+    // 仕切金額列（オプション）
+    if (!colWholesale && preset.details.columns.wholesalePrice && 
+        preset.details.columns.wholesalePrice.some(keyword => val.includes(keyword))) {
+      colWholesale = col
+      console.log(`[Excel Parse] Found wholesalePrice column: ${col}`)
+    }
+    // 原価列（オプション）
+    if (!colCostPrice && preset.details.columns.costPrice && 
+        preset.details.columns.costPrice.some(keyword => val.includes(keyword))) {
+      colCostPrice = col
+      console.log(`[Excel Parse] Found costPrice column: ${col}`)
+    }
+  }
+
+  console.log(`[Excel Parse] Column mapping: itemName=${colItemName}, spec=${colSpec}, qty=${colQty}, unit=${colUnit}, price=${colPrice}, amount=${colAmount}, wholesale=${colWholesale}`)
+
+  if (!colItemName || !colQty || !colPrice || !colAmount) {
+    console.error('[Excel Parse] Required columns not found!', { colItemName, colQty, colPrice, colAmount })
+    throw new Error(`ヘッダー行 ${headerRow} に必要な列が見つかりません。品名・数量・単価・金額の列が必要です。`)
+  }
+
+  // データパース開始
+  let currentRow = preset.details.startRow
+  let currentSectionName = ''
+  let subtotalCount = 0
+
+  console.log(`[Excel Parse] Starting parse from row ${currentRow}`)
+
+  while (currentRow <= preset.details.maxRow) {
+    const itemName = normalizeText(getCell(ws, `${colItemName}${currentRow}`))
+    const spec = normalizeText(getCell(ws, `${colSpec}${currentRow}`))
+    const qty = toNumber(getCell(ws, `${colQty}${currentRow}`))
+    const unit = normalizeText(getCell(ws, `${colUnit}${currentRow}`))
+    const unitPriceRaw = toNumber(getCell(ws, `${colPrice}${currentRow}`))
+    const amountRaw = toNumber(getCell(ws, `${colAmount}${currentRow}`))
+    const wholesaleRaw = colWholesale ? toNumber(getCell(ws, `${colWholesale}${currentRow}`)) : null
+
+    // 終了条件チェック
+    const shouldStop = preset.details.stopWords.some(word => itemName.includes(word))
+    if (shouldStop) {
+      console.log(`[Excel Parse] Stop word detected at row ${currentRow}: "${itemName}"`)
+      if (itemName.includes('小計') || itemName.includes('小　') || itemName.includes('合計') || itemName.includes('合　')) {
+        subtotalCount++
+        if (sections && subtotalCount >= sections.length) {
+          console.log(`[Excel Parse] All section subtotals detected (${subtotalCount}), stopping parse`)
+          lastDataRow = currentRow
+          break
+        }
+      }
+      currentRow++
+      continue
+    }
+
+    // 空行スキップ
+    if (!itemName && !spec && qty === null && unitPriceRaw === null) {
+      currentRow++
+      continue
+    }
+
+    // セクション判定（数字+ピリオドで始まる = セクションヘッダー）
+    const sectionMatch = itemName.match(/^[0-9０-９]+[.．。]/)
+    if (sectionMatch && !qty && !unitPriceRaw) {
+      currentSectionName = itemName.replace(sectionMatch[0], '').trim()
+      console.log(`[Excel Parse] Section header detected at row ${currentRow}: "${currentSectionName}"`)
+      currentRow++
+      continue
+    }
+
+    // 有効なデータ行
+    if (itemName && qty !== null && unitPriceRaw !== null) {
+      const unitPrice = unitPriceRaw || 0
+      const amount = amountRaw || (qty * unitPrice)
+
+      rows.push({
+        item_name: itemName,
+        spec,
+        quantity: qty,
+        unit: unit || '式',
+        unit_price: unitPrice,
+        amount,
+        cost_price: null,
+        wholesale_price: wholesaleRaw || null,
+        section_name: currentSectionName || undefined
+      })
+
+      lastDataRow = currentRow
+      console.log(`[Excel Parse] Row${currentRow}: ${itemName} | qty=${qty} | price=${unitPrice} | amount=${amount} | wholesale=${wholesaleRaw} | section="${currentSectionName}"`)
+    }
+
+    currentRow++
+  }
+
+  console.log(`[Excel Parse] Parsing complete. Found ${rows.length} detail rows. Last data row: ${lastDataRow}`)
+  return { details: rows, lastDataRow }
+}
+
+/**
+ * 既存の自動検出関数（後方互換性のため残す）
+ */
 function parseDetailsFromHeaderDetectionSimple(ws: XLSX.WorkSheet, sections?: SectionDef[]): { details: ParsedDetail[], lastDataRow: number } {
   const rows: ParsedDetail[] = []
   let lastDataRow = 1
@@ -1564,6 +1774,8 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData()
     const file = form.get('file')
+    const presetId = form.get('presetId') as string | null
+    
     if (!(file instanceof File)) {
       return NextResponse.json({ ok: false, message: 'file がありません' }, { status: 400 })
     }
@@ -1572,16 +1784,26 @@ export async function POST(req: Request) {
     const buf = Buffer.from(await file.arrayBuffer())
     const wb = XLSX.read(buf, { type: 'buffer', cellFormula: false, cellStyles: false })
 
+    // ★プリセット決定
+    let preset: ExcelFormatPreset
+    if (presetId && presetId !== 'auto') {
+      preset = getPresetById(presetId) || DEFAULT_PRESET
+      console.log(`[Import Excel] 手動プリセット選択: ${preset.name}`)
+    } else {
+      preset = detectPreset(wb)
+      console.log(`[Import Excel] 自動プリセット判定: ${preset.name}`)
+    }
+
     // 印章画像を抽出
     const stampImage = extractStampImage(wb)
 
-    // ★複数シート処理を実行
+    // ★複数シート処理を実行（プリセット情報を渡す）
     console.log('[Import Excel] Sheet names:', wb.SheetNames)
     let processResult: SheetProcessResult
     
     try {
       // 表紙・明細の複数シート構成に対応
-      processResult = processMultiSheetWorkbook(wb, file.name, stampImage)
+      processResult = processMultiSheetWorkbook(wb, file.name, stampImage, preset)
       console.log('[Import Excel] Multi-sheet processing succeeded')
     } catch (multiSheetErr: any) {
       console.error('[Import Excel] Multi-sheet processing failed:', multiSheetErr)
@@ -1589,29 +1811,39 @@ export async function POST(req: Request) {
       console.log('[Import Excel] Sheet name details:', wb.SheetNames.map((n, i) => `Sheet[${i}]="${n}"`))
       console.log('[Import Excel] Falling back to single sheet processing...')
       
-      // フォールバック：単一シート処理（従来のやり方）
+      // フォールバック：単一シート処理（プリセット対応）
       const sheetName = wb.SheetNames[0]
       if (!sheetName) throw new Error('シートが見つかりません')
-      console.log(`[Import Excel] Using fallback with sheet: "${sheetName}"`)
+      console.log(`[Import Excel] Using fallback (single sheet) with preset: ${preset.name}`)
       const ws = wb.Sheets[sheetName]
 
-      // ★まずシンプルな新ヘッダー検出版をトライ
+      // ★プリセット対応のパース関数を使用
       let details: ParsedDetail[] = []
       let lastDetailRow = 1
       
       try {
-        const parseResult = parseDetailsFromHeaderDetectionSimple(ws)
+        const parseResult = parseDetailsFromHeaderDetectionWithPreset(ws, preset)
         details = parseResult.details
         lastDetailRow = parseResult.lastDataRow
-        console.log(`[Import Excel] Simple header detection returned ${details.length} items`)
-      } catch (simpleErr) {
-        console.error('[Import Excel] Simple header detection failed:', simpleErr)
-        console.log('[Import Excel] Falling back to fixed position parsing...')
-        // 固定位置パースにフォールバック
-        const parseResult = parseDetails(ws)
-        details = parseResult.details
-        lastDetailRow = parseResult.lastDataRow
-        console.log(`[Import Excel] Fixed position parseDetails returned ${details.length} items`)
+        console.log(`[Import Excel] Preset-based parsing returned ${details.length} items`)
+      } catch (presetErr) {
+        console.error('[Import Excel] Preset-based parsing failed:', presetErr)
+        console.log('[Import Excel] Trying old simple header detection...')
+        // 旧関数にフォールバック
+        try {
+          const parseResult = parseDetailsFromHeaderDetectionSimple(ws)
+          details = parseResult.details
+          lastDetailRow = parseResult.lastDataRow
+          console.log(`[Import Excel] Simple header detection returned ${details.length} items`)
+        } catch (simpleErr) {
+          console.error('[Import Excel] Simple header detection also failed:', simpleErr)
+          console.log('[Import Excel] Falling back to fixed position parsing...')
+          // 固定位置パースにフォールバック
+          const parseResult = parseDetails(ws)
+          details = parseResult.details
+          lastDetailRow = parseResult.lastDataRow
+          console.log(`[Import Excel] Fixed position parseDetails returned ${details.length} items`)
+        }
       }
       
       if (details.length === 0) {
@@ -1619,13 +1851,13 @@ export async function POST(req: Request) {
         throw new Error(errMsg)
       }
 
-      const customerName = findCustomerName(ws) ?? ''
-      const subject = findSubject(ws) ?? normalizeText(getCell(ws, CELL.subject))
-      const deliveryPlace = findLabelValue(ws, ['受渡場所', '納入場所', '受渡し場所'])
-      const deliveryDeadline = findLabelValue(ws, ['受渡期限', '納期', '納入期限', '受渡し期限'])
-      const deliveryTerms = findLabelValue(ws, ['受渡条件', '納入条件', '受渡し条件'])
-      const validityText = findLabelValue(ws, ['有効期限', '本書有効期限', '見積有効期限'])
-      const paymentTerms = findLabelValue(ws, ['支払条件', '支払方法', '決済条件'])
+      const customerName = findValueFromCells(ws, preset.cover.customerName) || findCustomerName(ws) || ''
+      const subject = findValueFromCells(ws, preset.cover.subject) || findSubject(ws) || ''
+      const deliveryPlace = findValueFromCells(ws, preset.cover.deliveryPlace) || findLabelValue(ws, ['受渡場所', '納入場所', '受渡し場所'])
+      const deliveryDeadline = findValueFromCells(ws, preset.cover.deliveryDeadline) || findLabelValue(ws, ['受渡期限', '納期', '納入期限', '受渡し期限'])
+      const deliveryTerms = findValueFromCells(ws, preset.cover.deliveryTerms) || findLabelValue(ws, ['受渡条件', '納入条件', '受渡し条件'])
+      const validityText = findValueFromCells(ws, preset.cover.validityText) || findLabelValue(ws, ['有効期限', '本書有効期限', '見積有効期限'])
+      const paymentTerms = findValueFromCells(ws, preset.cover.paymentTerms) || findLabelValue(ws, ['支払条件', '支払方法', '決済条件'])
       const estimateDate = findEstimateDate(ws)
       const estimateNo = findEstimateNo(ws)
 

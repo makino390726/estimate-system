@@ -2,11 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ALL_PRESETS, type ExcelFormatPreset } from '@/lib/excelFormatPresets'
 
 export default function ImportExcelPage() {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [layoutType, setLayoutType] = useState<'auto' | 'vertical' | 'horizontal'>('auto')
+  const [selectedPreset, setSelectedPreset] = useState<string>('auto')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -34,9 +36,19 @@ export default function ImportExcelPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('layoutType', layoutType)  // レイアウトタイプを送信
+      
+      // PDFかExcelかを判定してAPIを切り替え
+      const isPdf = file.name.toLowerCase().endsWith('.pdf')
+      const apiUrl = isPdf 
+        ? '/api/send-approval-email/import_estimate_pdf'
+        : '/api/send-approval-email/import_estimate_excel'
+      
+      if (!isPdf) {
+        formData.append('layoutType', layoutType)  // レイアウトタイプを送信
+        formData.append('presetId', selectedPreset)  // プリセットIDを送信
+      }
 
-      const response = await fetch('/api/send-approval-email/import_estimate_excel', {
+      const response = await fetch(apiUrl, {
         method: 'POST',
         body: formData
       })
@@ -107,17 +119,17 @@ export default function ImportExcelPage() {
         ← メニューに戻る
       </button>
 
-      <h1>Excel見積書のインポート</h1>
+      <h1>見積書のインポート（Excel / PDF対応）</h1>
 
       <form onSubmit={handleSubmit} style={{ marginTop: '30px' }}>
         <div style={{ marginBottom: '20px' }}>
           <label htmlFor="file" style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>
-            Excelファイル（.xlsx）を選択:
+            見積書ファイル（Excel .xlsx または PDF .pdf）を選択:
           </label>
           <input
             id="file"
             type="file"
-            accept=".xlsx,.xls"
+            accept=".xlsx,.xls,.pdf"
             onChange={handleFileChange}
             disabled={loading}
             style={{
@@ -128,7 +140,52 @@ export default function ImportExcelPage() {
               width: '100%'
             }}
           />
-          {file && <p style={{ marginTop: '8px', color: '#333', fontWeight: '500' }}>📁 {file.name} ({(file.size / 1024).toFixed(2)} KB)</p>}
+          {file && (
+            <p style={{ marginTop: '8px', color: '#333', fontWeight: '500' }}>
+              {file.name.toLowerCase().endsWith('.pdf') ? '📄' : '📁'} {file.name} ({(file.size / 1024).toFixed(2)} KB)
+              {file.name.toLowerCase().endsWith('.pdf') && (
+                <span style={{ marginLeft: '8px', color: '#ff6b00', fontSize: '12px' }}>※ PDF形式</span>
+              )}
+            </p>
+          )}
+        </div>
+
+        <div style={{ marginTop: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#333' }}>
+            📋 Excelフォーマット設定:
+          </label>
+          <select
+            value={selectedPreset}
+            onChange={(e) => setSelectedPreset(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px',
+              fontSize: '14px',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              backgroundColor: 'white',
+              marginBottom: '10px'
+            }}
+          >
+            <option value="auto">🔍 自動判定（推奨）</option>
+            <option value="default">📄 標準縦見積書（表紙・目次・明細シート分割型）</option>
+            <option value="horizontal">📊 横見積書（単一シート型）</option>
+            <option value="simple">📝 シンプル見積書（最小限の項目）</option>
+          </select>
+          
+          {selectedPreset !== 'auto' && (
+            <div style={{ 
+              padding: '12px', 
+              backgroundColor: '#f0f7ff', 
+              border: '1px solid #b3d9ff',
+              borderRadius: '4px',
+              fontSize: '13px',
+              marginBottom: '10px'
+            }}>
+              <strong>選択中: </strong>
+              {ALL_PRESETS.find(p => p.id === selectedPreset)?.description || ''}
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: '20px' }}>
@@ -354,23 +411,67 @@ export default function ImportExcelPage() {
       >
         <h3 style={{ margin: '0 0 12px 0', color: '#000' }}>📝 使用方法</h3>
         <ol style={{ margin: '0', paddingLeft: '20px', color: '#222' }}>
-          <li>縦見積書形式のExcelファイル（.xlsx）を用意</li>
-          <li>下記のセル配置に従ってデータを入力：
-            <ul style={{ marginTop: '8px', color: '#222' }}>
-              <li>D8: 顧客名</li>
-              <li>K27: 件名</li>
-              <li>K29: 納入場所</li>
-              <li>K31: 納期</li>
-              <li>K33: 納期条件</li>
-              <li>K35: 有効期限</li>
-              <li>K37: 支払条件</li>
-              <li>AJ78/80/82: 小計／消費税／合計</li>
-              <li>41行目以降: 明細（D=品名, N=規格, X=数量, AB=単位, AE=単価, AJ=金額）</li>
+          <li style={{ marginBottom: '12px' }}>
+            <strong>ファイルを準備</strong>
+            <ul style={{ marginTop: '4px', color: '#444', fontSize: '13px' }}>
+              <li>📄 <strong>Excelファイル (.xlsx)</strong>
+                <ul style={{ marginTop: '4px' }}>
+                  <li>標準フォーマット: 表紙・目次・明細シートに分かれた縦見積書</li>
+                  <li>横見積書: 単一シートに全情報が含まれる見積書</li>
+                  <li>シンプル見積書: 最小限の項目で構成された簡易見積書</li>
+                </ul>
+              </li>
+              <li style={{ marginTop: '8px' }}>📑 <strong>PDFファイル (.pdf)</strong>
+                <ul style={{ marginTop: '4px' }}>
+                  <li>テキストベースのPDF（コピー可能なテキストを含む）</li>
+                  <li>見積書フォーマット（件名、顧客名、明細テーブルなど）</li>
+                  <li>※ 画像スキャンPDFは非対応</li>
+                </ul>
+              </li>
             </ul>
           </li>
-          <li>ファイルを選択してインポート</li>
-          <li>成功するとcase_idが発行され、DBに登録される</li>
+          <li style={{ marginBottom: '12px' }}>
+            <strong>フォーマット設定を選択（Excelのみ）</strong>
+            <ul style={{ marginTop: '4px', color: '#444', fontSize: '13px' }}>
+              <li>🔍 自動判定: システムがシート構造から最適なフォーマットを判定（推奨）</li>
+              <li>📋 手動選択: フォーマットが分かっている場合は直接指定可能</li>
+              <li>※ PDFの場合は自動的にテキスト解析を実行</li>
+            </ul>
+          </li>
+          <li style={{ marginBottom: '12px' }}>
+            <strong>柔軟な読み取り機能</strong>
+            <ul style={{ marginTop: '4px', color: '#444', fontSize: '13px' }}>
+              <li>✅ セル位置のずれに自動対応（複数候補から検索）</li>
+              <li>✅ ラベル名から動的に値を検索（「件名」「受渡場所」など）</li>
+              <li>✅ セル結合や縦横レイアウトの違いに対応</li>
+              <li>✅ 明細列の順序変更にも対応</li>
+              <li>✅ PDF内のテキストパターンマッチング</li>
+            </ul>
+          </li>
+          <li style={{ marginBottom: '12px' }}>
+            <strong>新しいフォーマットへの対応</strong>
+            <ul style={{ marginTop: '4px', color: '#444', fontSize: '13px' }}>
+              <li>Excelカスタムプリセットの追加が可能</li>
+              <li>PDFパース処理のカスタマイズが可能</li>
+              <li>詳細は <code style={{ backgroundColor: '#e0e0e0', padding: '2px 6px' }}>EXCEL_FORMAT_FLEXIBILITY.md</code> を参照</li>
+            </ul>
+          </li>
         </ol>
+        
+        <div style={{ 
+          marginTop: '16px', 
+          padding: '12px', 
+          backgroundColor: '#fff3cd', 
+          border: '1px solid #ffc107',
+          borderRadius: '4px'
+        }}>
+          <strong>💡 ヒント:</strong>
+          <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px', fontSize: '13px' }}>
+            <li>Excel: フォーマットが不明な場合は「自動判定」を選択</li>
+            <li>PDF: テキストがコピーできるPDFであることを確認</li>
+            <li>どちらも確認画面で内容を確認してから保存できます</li>
+          </ul>
+        </div>
       </div>
     </div>
   )
