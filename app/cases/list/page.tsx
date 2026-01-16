@@ -213,9 +213,8 @@ export default function CaseListPage() {
     const statusStyles: { [key: string]: React.CSSProperties } = {
       '商談中': { backgroundColor: '#007bff', color: '#000' },   // 青背景・黒文字
       '受注': { backgroundColor: '#dc3545', color: '#fff' },     // 赤背景・白文字
-      '注文': { backgroundColor: '#6f42c1', color: '#fff' },     // 紫背景・白文字
-      '納品': { backgroundColor: '#28a745', color: '#000' },     // 緑背景・黒文字
       '倉庫移動': { backgroundColor: '#f97316', color: '#000' }, // 倉庫移動も移動色で表示
+      '失注': { backgroundColor: '#000000', color: '#fff' },     // 黒背景・白文字
       '完了': { backgroundColor: '#6c757d', color: '#fff' },     // グレー背景・白文字
     }
 
@@ -403,9 +402,8 @@ export default function CaseListPage() {
                 >
                   <option value="商談中">商談中</option>
                   <option value="受注">受注</option>
-                  <option value="注文">注文</option>
-                  <option value="納品">納品</option>
                   <option value="倉庫移動">移動（倉庫移動）</option>
+                  <option value="失注">失注</option>
                   <option value="完了">完了</option>
                 </select>
               </td>

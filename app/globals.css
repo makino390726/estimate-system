@@ -3,6 +3,15 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --card: #ffffff;
+  --card-alt: #f9f9f9;
+  --muted-bg: #f0f0f0;
+  --muted-foreground: #666666;
+  --border: #ddd;
+  --input-bg: #ffffff;
+  --input-border: #cccccc;
+  --primary: #0070f3;
+  --accent-light: #e7f3ff;
 }
 
 @theme inline {
@@ -16,6 +25,15 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --card: #1a1a1a;
+    --card-alt: #0f0f0f;
+    --muted-bg: #2a2a2a;
+    --muted-foreground: #888888;
+    --border: #444444;
+    --input-bg: #1a1a1a;
+    --input-border: #444444;
+    --primary: #4a9eff;
+    --accent-light: #1a3a52;
   }
 }
 

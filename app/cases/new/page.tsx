@@ -79,6 +79,11 @@ export default function CaseNewPage() {
   const [loadedCaseId, setLoadedCaseId] = useState<string | null>(null)
   const [showSaveModal, setShowSaveModal] = useState(false)
 
+  // ★ 明細編集モーダル用
+  const [showEditRowModal, setShowEditRowModal] = useState(false)
+  const [editRowIndex, setEditRowIndex] = useState<number>(-1)
+  const [editRowData, setEditRowData] = useState<Row | null>(null)
+
   const [customers, setCustomers] = useState<Customer[]>([])
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -686,6 +691,26 @@ export default function CaseNewPage() {
 
   const handleDeleteRow = (index: number) => {
     setRows(rows.filter((_, i) => i !== index))
+  }
+
+  const handleOpenEditRowModal = (index: number) => {
+    setEditRowIndex(index)
+    setEditRowData({ ...rows[index] })
+    setShowEditRowModal(true)
+  }
+
+  const handleSaveEditRow = () => {
+    if (editRowIndex === -1 || !editRowData) return
+
+    const newRows = [...rows]
+    newRows[editRowIndex] = {
+      ...editRowData,
+      amount: editRowData.quantity * (editRowData.unit_price ?? 0)
+    }
+    setRows(newRows)
+    setShowEditRowModal(false)
+    setEditRowIndex(-1)
+    setEditRowData(null)
   }
 
   const handleAddSection = () => {
@@ -1424,17 +1449,30 @@ export default function CaseNewPage() {
                       <td style={{...tdStyle, textAlign: 'right'}}>{costAmount.toLocaleString()}</td>
                       <td style={{...tdStyle, textAlign: 'right'}}>{grossProfit.toLocaleString()}</td>
                       <td style={{...tdStyle, textAlign: 'center'}}>
-                        <button
-                          onClick={() => handleDeleteRow(index)}
-                          className="selector-button"
-                          style={{
-                            backgroundColor: '#dc2626',
-                            borderColor: '#991b1b',
-                            color: '#fff',
-                          }}
-                        >
-                          削除
-                        </button>
+                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                          <button
+                            onClick={() => handleOpenEditRowModal(index)}
+                            className="selector-button"
+                            style={{
+                              backgroundColor: '#0284c7',
+                              borderColor: '#0369a1',
+                              color: '#fff',
+                            }}
+                          >
+                            編集
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRow(index)}
+                            className="selector-button"
+                            style={{
+                              backgroundColor: '#dc2626',
+                              borderColor: '#991b1b',
+                              color: '#fff',
+                            }}
+                          >
+                            削除
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -2388,6 +2426,170 @@ export default function CaseNewPage() {
                   }}
                 >
                   キャンセル
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 明細編集モーダル */}
+        {showEditRowModal && editRowData && (
+          <div style={modalOverlayStyle}>
+            <div style={{ ...modalContentStyle, maxWidth: 700 }}>
+              <h2 style={{ marginBottom: 20 }}>明細編集</h2>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                    商品名:
+                  </label>
+                  <input
+                    type="text"
+                    value={editRowData.item_name}
+                    onChange={(e) => setEditRowData({ ...editRowData, item_name: e.target.value })}
+                    style={{ ...inputStyle, width: '100%' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                    規格:
+                  </label>
+                  <input
+                    type="text"
+                    value={editRowData.spec}
+                    onChange={(e) => setEditRowData({ ...editRowData, spec: e.target.value })}
+                    style={{ ...inputStyle, width: '100%' }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                      単位:
+                    </label>
+                    <input
+                      type="text"
+                      value={editRowData.unit}
+                      onChange={(e) => setEditRowData({ ...editRowData, unit: e.target.value })}
+                      style={{ ...inputStyle, width: '100%' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                      数量:
+                    </label>
+                    <input
+                      type="number"
+                      value={editRowData.quantity}
+                      onChange={(e) => setEditRowData({ ...editRowData, quantity: Number(e.target.value) })}
+                      style={{ ...inputStyle, width: '100%', textAlign: 'right' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                      単価:
+                    </label>
+                    <input
+                      type="number"
+                      value={editRowData.unit_price ?? ''}
+                      onChange={(e) => setEditRowData({ ...editRowData, unit_price: e.target.value ? Number(e.target.value) : null })}
+                      style={{ ...inputStyle, width: '100%', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                      原価単価:
+                    </label>
+                    <input
+                      type="number"
+                      value={editRowData.cost_price}
+                      onChange={(e) => setEditRowData({ ...editRowData, cost_price: Number(e.target.value) })}
+                      style={{ ...inputStyle, width: '100%', textAlign: 'right' }}
+                    />
+                  </div>
+                </div>
+
+                {layoutType === 'horizontal' && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                      セクション:
+                    </label>
+                    <select
+                      value={editRowData.section_id || ''}
+                      onChange={(e) => setEditRowData({ ...editRowData, section_id: e.target.value ? Number(e.target.value) : null })}
+                      style={{ ...inputStyle, width: '100%' }}
+                    >
+                      <option value="">選択してください</option>
+                      {sections.map((section) => (
+                        <option key={section.id} value={section.id}>
+                          {section.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold', color: '#e2e8f0' }}>
+                    備考:
+                  </label>
+                  <input
+                    type="text"
+                    value={editRowData.remarks || ''}
+                    onChange={(e) => setEditRowData({ ...editRowData, remarks: e.target.value })}
+                    style={{ ...inputStyle, width: '100%' }}
+                  />
+                </div>
+
+                <div style={{
+                  padding: 16,
+                  backgroundColor: '#1e293b',
+                  borderRadius: 8,
+                  border: '1px solid #334155'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ color: '#94a3b8' }}>金額:</span>
+                    <span style={{ fontWeight: 'bold', fontSize: 18, color: '#e2e8f0' }}>
+                      {((editRowData.quantity * (editRowData.unit_price ?? 0))).toLocaleString()} 円
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ color: '#94a3b8' }}>原価額:</span>
+                    <span style={{ color: '#e2e8f0' }}>
+                      {(editRowData.quantity * editRowData.cost_price).toLocaleString()} 円
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#94a3b8' }}>粗利額:</span>
+                    <span style={{ color: '#22c55e' }}>
+                      {((editRowData.quantity * (editRowData.unit_price ?? 0)) - (editRowData.quantity * editRowData.cost_price)).toLocaleString()} 円
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 24, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => {
+                    setShowEditRowModal(false)
+                    setEditRowIndex(-1)
+                    setEditRowData(null)
+                  }}
+                  className="btn-3d btn-reset"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleSaveEditRow}
+                  className="btn-3d btn-primary"
+                >
+                  保存
                 </button>
               </div>
             </div>
