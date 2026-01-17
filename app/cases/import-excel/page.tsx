@@ -116,8 +116,8 @@ export default function ImportExcelPage() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault?.()
     if (!file) {
       setError('ファイルを選択してください')
       return
@@ -471,6 +471,21 @@ export default function ImportExcelPage() {
               }}
             >
               → マッピング設定へ進む
+            </button>
+            <button
+              onClick={() => handleSubmit()}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              → プリセットのまま取り込む（マッピングスキップ）
             </button>
           </div>
         </div>
