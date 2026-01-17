@@ -128,6 +128,27 @@ export default function ConfirmImportPage() {
       }
 
       const data = JSON.parse(dataStr)
+      
+      // 複数セルマッピングがある場合、複合値を構築（複数セル値の連結表示）
+      if (data._mappings) {
+        // 複数セルアドレスを検出してセルの値を結合することは
+        // クライアント側ではExcelデータにアクセスできないため、
+        // ユーザーに複数セルマッピング情報を表示するに留める
+        console.log('[ConfirmPage] Multiple cell mappings detected:', data._mappings)
+        
+        // 複数セルマッピング情報をキャッシュ
+        const multiCellInfo: Record<string, number> = {}
+        for (const [key, val] of Object.entries(data._mappings || {})) {
+          const cellStr = String(val || '')
+          if (cellStr.includes(',')) {
+            multiCellInfo[key] = cellStr.split(',').length
+          }
+        }
+        if (Object.keys(multiCellInfo).length > 0) {
+          console.log('[ConfirmPage] Multi-cell mapping info:', multiCellInfo)
+        }
+      }
+      
       setImportData(data)
       console.log('[ConfirmPage] Imported data:', {
         subtotal: data.subtotal,
@@ -145,6 +166,8 @@ export default function ConfirmImportPage() {
         if (Number.isFinite(inferredRate)) setTaxRate(inferredRate)
       }
       setStampImage(data.stampImage || null)
+      
+      // ★API側で複数セル値が連結されている場合、それを反映
       setEditEstimateNo(data.estimateNo || '')
       
       // 日付のサニタイズとバリデーション
@@ -446,6 +469,19 @@ export default function ConfirmImportPage() {
               <td style={{ padding: '10px', fontWeight: 'bold', width: '150px', color: '#1565c0' }}>顧客名:</td>
               <td style={{ padding: '10px', color: '#212121', fontSize: '16px' }}>
                 {importData.customerName}
+                {importData._mappings?.customerNameCell && (
+                  <span style={{ 
+                    marginLeft: '12px', 
+                    color: '#ffffff',
+                    backgroundColor: '#4caf50',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    fontWeight: 'bold'
+                  }}>
+                    📍 {importData._mappings.customerNameCell}
+                  </span>
+                )}
                 {importData.customerStatus === 'new' && (
                   <span style={{ 
                     marginLeft: '12px', 
@@ -476,7 +512,12 @@ export default function ConfirmImportPage() {
             </tr>
             <tr>
               <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>件名:</td>
-              <td style={{ padding: '10px', color: '#212121', fontSize: '15px' }}>{importData.subject || '（未設定）'}</td>
+              <td style={{ padding: '10px', color: '#212121', fontSize: '15px' }}>
+                {importData.subject || '（未設定）'}
+                {importData._mappings?.subjectCell && (
+                  <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>📍 {importData._mappings.subjectCell}</span>
+                )}
+              </td>
             </tr>
             <tr>
               <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>見積番号:</td>
@@ -488,6 +529,9 @@ export default function ConfirmImportPage() {
                   placeholder="例: 第 R8-SO 001 号"
                   style={{ padding: '8px', border: '2px solid #1976d2', borderRadius: 4, width: '260px', fontWeight: 'bold' }}
                 />
+                {importData._mappings?.estimateNumberCell && (
+                  <span style={{ marginLeft: '10px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>📍 {importData._mappings.estimateNumberCell}</span>
+                )}
               </td>
             </tr>
             <tr>
@@ -499,23 +543,46 @@ export default function ConfirmImportPage() {
                   onChange={(e) => setEditEstimateDate(e.target.value)}
                   style={{ padding: '8px', border: '2px solid #1976d2', borderRadius: 4, fontWeight: 'bold' }}
                 />
+                {importData._mappings?.estimateDateCell && (
+                  <span style={{ marginLeft: '10px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>📍 {importData._mappings.estimateDateCell}</span>
+                )}
               </td>
             </tr>
             <tr>
               <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>納入場所:</td>
-              <td style={{ padding: '10px', color: '#424242' }}>{importData.deliveryPlace || '-'}</td>
+              <td style={{ padding: '10px', color: '#424242' }}>
+                {importData.deliveryPlace || '-'}
+                {importData._mappings?.deliveryPlaceCell && (
+                  <span style={{ marginLeft: '10px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>📍 {importData._mappings.deliveryPlaceCell}</span>
+                )}
+              </td>
             </tr>
             <tr>
               <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>納期:</td>
-              <td style={{ padding: '10px', color: '#424242' }}>{importData.deliveryDeadline || '-'}</td>
+              <td style={{ padding: '10px', color: '#424242' }}>
+                {importData.deliveryDeadline || '-'}
+                {importData._mappings?.deliveryDeadlineCell && (
+                  <span style={{ marginLeft: '10px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>📍 {importData._mappings.deliveryDeadlineCell}</span>
+                )}
+              </td>
             </tr>
             <tr>
               <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>有効期限:</td>
-              <td style={{ padding: '10px', color: '#424242' }}>{importData.validityText || '-'}</td>
+              <td style={{ padding: '10px', color: '#424242' }}>
+                {importData.validityText || '-'}
+                {importData._mappings?.validityCell && (
+                  <span style={{ marginLeft: '10px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>📍 {importData._mappings.validityCell}</span>
+                )}
+              </td>
             </tr>
             <tr>
               <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>支払条件:</td>
-              <td style={{ padding: '10px', color: '#424242' }}>{importData.paymentTerms || '-'}</td>
+              <td style={{ padding: '10px', color: '#424242' }}>
+                {importData.paymentTerms || '-'}
+                {importData._mappings?.paymentTermsCell && (
+                  <span style={{ marginLeft: '10px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>📍 {importData._mappings.paymentTermsCell}</span>
+                )}
+              </td>
             </tr>
             <tr style={{ backgroundColor: '#e3f2fd' }}>
               <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0' }}>小計:</td>

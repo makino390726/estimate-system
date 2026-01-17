@@ -53,6 +53,10 @@ export default function ImportExcelPage() {
   const [selectedSheet, setSelectedSheet] = useState<'cover' | 'detail'>('detail') // シート切り替え
   const [columnMapping, setColumnMapping] = useState(() => buildColumnDefaults(resolvePreset(selectedPreset)))
   const [metadataMapping, setMetadataMapping] = useState(() => buildMetadataDefaults(resolvePreset(selectedPreset)))
+  // クリック式マッピングUI用の状態
+  const [mappingMode, setMappingMode] = useState<keyof ReturnType<typeof buildMetadataDefaults> | null>(null)
+  const [selectedCellAddr, setSelectedCellAddr] = useState<string | null>(null)
+  const [detailMappingMode, setDetailMappingMode] = useState<keyof ReturnType<typeof buildColumnDefaults> | null>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -124,6 +128,18 @@ export default function ImportExcelPage() {
     setResult(null)
 
     try {
+      // ★デバッグ：マッピング状態確認
+      console.log('[handleSubmit] mappingMode:', mappingMode)
+      console.log('[handleSubmit] detailMappingMode:', detailMappingMode)
+      console.log('[handleSubmit] Current metadataMapping state:')
+      for (const [key, val] of Object.entries(metadataMapping || {})) {
+        console.log(`  ${key}: "${val}"`)
+      }
+      console.log('[handleSubmit] Current columnMapping state:')
+      for (const [key, val] of Object.entries(columnMapping || {})) {
+        console.log(`  ${key}: "${val}"`)
+      }
+
       const formData = new FormData()
       formData.append('file', file)
       
@@ -137,6 +153,14 @@ export default function ImportExcelPage() {
         formData.append('layoutType', layoutType)  // レイアウトタイプを送信
         formData.append('presetId', selectedPreset)  // プリセットIDを送信
         formData.append('mode', 'import')  // ★インポートモード
+        // ★マッピング情報を送信（複数セル値の自動抽出用）
+        const mappingsJson = JSON.stringify(metadataMapping)
+        const columnsJson = JSON.stringify(columnMapping)
+        console.log('[handleSubmit] Appending to FormData:')
+        console.log('  _mappings:', mappingsJson)
+        console.log('  _mappingsColumns:', columnsJson)
+        formData.append('_mappings', mappingsJson)
+        formData.append('_mappingsColumns', columnsJson)
       }
 
       const response = await fetch(apiUrl, {
@@ -176,10 +200,42 @@ export default function ImportExcelPage() {
           detailsCount: data.details?.length,
           firstDetail: data.details?.[0],
           secondDetail: data.details?.[1],
-          thirdDetail: data.details?.[2]
+          thirdDetail: data.details?.[2],
+          estimateNo: data.estimateNo,
+          estimateDate: data.estimateDate
         })
-        // sessionStorageに解析データを保存
-        sessionStorage.setItem('excel_import_data', JSON.stringify(data))
+        // sessionStorageに解析データ + マッピング情報を保存
+        const merged = {
+          ...data,
+          _mappings: metadataMapping,               // 既存互換（メタ情報）
+          _mappingsColumns: columnMapping,          // 明細列マッピング
+          _sheetForMapping: selectedSheet
+        }
+        
+        console.log('[ImportPage] Merged data being saved to session:', {
+          _mappings: merged._mappings,
+          _mappingsColumns: merged._mappingsColumns,
+          estimateNo: merged.estimateNo,
+          estimateDate: merged.estimateDate
+        })
+        
+        sessionStorage.setItem('excel_import_data', JSON.stringify(merged))
+        
+        // 複数セルマッピング検出：複数セル対応項目
+        const multiCellFields: (keyof typeof metadataMapping)[] = []
+        for (const [key, val] of Object.entries(metadataMapping)) {
+          if (String(val || '').includes(',')) {
+            multiCellFields.push(key as keyof typeof metadataMapping)
+          }
+        }
+        
+        if (multiCellFields.length > 0) {
+          console.log('[ImportPage] Multiple cell mappings detected:', multiCellFields)
+          // 複数セルマッピング情報をセッションに保存（確認画面で警告表示用）
+          merged._multiCellFields = multiCellFields
+          sessionStorage.setItem('excel_import_data', JSON.stringify(merged))
+        }
+        
         router.push('/cases/import-excel/confirm')
       } else {
         setResult(data)
@@ -499,25 +555,105 @@ export default function ImportExcelPage() {
                         >
                           {row.rowNum}
                         </td>
-                        {row.cells.map((cell: any, cidx: number) => (
-                          <td
-                            key={cidx}
-                            style={{
-                              padding: '6px',
-                              borderRight: '1px solid var(--border)',
-                              maxWidth: '120px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              color: 'inherit'
-                            }}
-                            title={cell.value}
-                          >
-                            <span style={{ color: 'var(--primary)', fontSize: '9px', fontWeight: 'bold' }}>{cell.col}</span>
-                            <br />
-                            <span style={{ fontSize: '10px' }}>{cell.value}</span>
-                          </td>
-                        ))}
+                        {row.cells.map((cell: any, cidx: number) => {
+                          const addr = `${cell.col}${row.rowNum}`
+                          const mappedList = Object.values(metadataMapping || {}).flatMap((v) => String(v || '').split(',').map(s => s.trim()).filter(Boolean))
+                          const isMetaMapped = mappedList.includes(addr)
+                          const isDetailMapped = [
+                            columnMapping?.itemNameCol,
+                            columnMapping?.specCol,
+                            columnMapping?.qtyCol,
+                            columnMapping?.priceCol,
+                            columnMapping?.amountCol
+                          ].filter(Boolean).includes(cell.col)
+                          const isMapped = isMetaMapped || isDetailMapped
+                          const isSelected = selectedCellAddr === addr
+                          const clickable = Boolean(mappingMode || detailMappingMode)
+
+                          const baseBg = idx % 2 === 0 ? 'var(--card-alt)' : 'var(--card)'
+                          const bgColor = isSelected ? '#2196f3' : (isMapped ? '#c8e6c9' : baseBg)
+                          const color = isSelected ? '#fff' : 'inherit'
+
+                          return (
+                            <td
+                              key={cidx}
+                              onClick={(e) => {
+                                const isMulti = (e as any).ctrlKey || (e as any).metaKey
+                                console.log(`[CellClick] Cell: ${addr}, mappingMode: ${mappingMode}, isMulti: ${isMulti}`)
+                                // メタデータのセル指定（Ctrl/⌘で複数セルをカンマ連結）
+                                if (mappingMode) {
+                                  setMetadataMapping(prev => {
+                                    const current = String(prev[mappingMode] || '').split(',').map(s => s.trim()).filter(Boolean)
+                                    console.log(`[CellClick] Current values for ${mappingMode}:`, current)
+                                    if (isMulti) {
+                                      if (!current.includes(addr)) {
+                                        current.push(addr)
+                                        console.log(`[CellClick] Added ${addr}, new list:`, current)
+                                      } else {
+                                        console.log(`[CellClick] ${addr} already exists, skipping`)
+                                      }
+                                      const newVal = current.join(',')
+                                      console.log(`[CellClick] Setting ${mappingMode} to: "${newVal}"`)
+                                      return { ...prev, [mappingMode]: newVal } as any
+                                    } else {
+                                      console.log(`[CellClick] Single click mode, setting ${mappingMode} to: "${addr}"`)
+                                      return { ...prev, [mappingMode]: addr } as any
+                                    }
+                                  })
+                                  setSelectedCellAddr(addr)
+                                }
+                                // 明細列の列指定（列記号のみ反映・単一選択）
+                                if (detailMappingMode) {
+                                  setColumnMapping(prev => ({
+                                    ...prev,
+                                    [detailMappingMode]: cell.col
+                                  }) as any)
+                                  setSelectedCellAddr(addr)
+                                }
+                              }}
+                              style={{
+                                padding: '6px',
+                                borderRight: '1px solid var(--border)',
+                                maxWidth: '120px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                color,
+                                backgroundColor: bgColor,
+                                cursor: clickable ? 'pointer' : 'default',
+                                position: 'relative',
+                                transition: 'background-color 0.15s ease'
+                              }}
+                              title={`${addr} ${cell.value}`}
+                              onMouseEnter={(e) => {
+                                if (clickable && !isSelected && !isMapped) {
+                                  (e.currentTarget as HTMLTableCellElement).style.backgroundColor = '#bbdefb'
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (clickable && !isSelected && !isMapped) {
+                                  (e.currentTarget as HTMLTableCellElement).style.backgroundColor = baseBg
+                                }
+                              }}
+                            >
+                              <span style={{ color: isSelected ? '#fff' : 'var(--primary)', fontSize: '9px', fontWeight: 'bold' }}>{cell.col}</span>
+                              <br />
+                              <span style={{ fontSize: '10px' }}>{cell.value}</span>
+                              {isMapped && (
+                                <span style={{
+                                  position: 'absolute',
+                                  top: '2px',
+                                  right: '4px',
+                                  fontSize: '10px',
+                                  backgroundColor: '#4caf50',
+                                  color: '#fff',
+                                  padding: '2px 4px',
+                                  borderRadius: '3px'
+                                }}>✓</span>
+                              )}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -579,6 +715,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="A, B, C..."
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setDetailMappingMode('itemNameCol'); setSelectedCellAddr(null); setSelectedSheet('detail') }}
+                    style={{ padding: '6px 10px', backgroundColor: detailMappingMode === 'itemNameCol' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {columnMapping?.itemNameCol && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{columnMapping.itemNameCol}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -602,6 +748,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="A, B, C..."
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setDetailMappingMode('specCol'); setSelectedCellAddr(null); setSelectedSheet('detail') }}
+                    style={{ padding: '6px 10px', backgroundColor: detailMappingMode === 'specCol' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {columnMapping?.specCol && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{columnMapping.specCol}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -625,6 +781,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="A, B, C..."
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setDetailMappingMode('qtyCol'); setSelectedCellAddr(null); setSelectedSheet('detail') }}
+                    style={{ padding: '6px 10px', backgroundColor: detailMappingMode === 'qtyCol' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {columnMapping?.qtyCol && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{columnMapping.qtyCol}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -648,6 +814,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="A, B, C..."
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setDetailMappingMode('priceCol'); setSelectedCellAddr(null); setSelectedSheet('detail') }}
+                    style={{ padding: '6px 10px', backgroundColor: detailMappingMode === 'priceCol' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {columnMapping?.priceCol && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{columnMapping.priceCol}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -671,6 +847,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="A, B, C..."
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setDetailMappingMode('amountCol'); setSelectedCellAddr(null); setSelectedSheet('detail') }}
+                    style={{ padding: '6px 10px', backgroundColor: detailMappingMode === 'amountCol' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {columnMapping?.amountCol && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{columnMapping.amountCol}</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -682,7 +868,20 @@ export default function ImportExcelPage() {
             borderRadius: '4px',
             marginBottom: '20px'
           }}>
-            <p style={{ margin: '0 0 16px 0', fontWeight: 'bold', color: 'inherit' }}>メタデータ設定（セル位置）:</p>
+            <p style={{ margin: '0 0 8px 0', fontWeight: 'bold', color: 'inherit' }}>メタデータ設定（セル位置）:</p>
+            {mappingMode && (
+              <div style={{
+                margin: '0 0 12px 0',
+                padding: '10px',
+                border: '2px solid #ff6f00',
+                backgroundColor: '#fff3e0',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 'bold'
+              }}>
+                📌 マッピング中: {mappingMode} — 左の表でセルをクリックしてください（Ctrl/⌘+クリックで複数選択可）
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -705,6 +904,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="C8"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('customerNameCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'customerNameCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.customerNameCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.customerNameCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -727,6 +936,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="J27"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('subjectCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'subjectCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.subjectCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.subjectCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -749,6 +968,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="J29"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('deliveryPlaceCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'deliveryPlaceCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.deliveryPlaceCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.deliveryPlaceCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -771,6 +1000,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="J31"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('deliveryDeadlineCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'deliveryDeadlineCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.deliveryDeadlineCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.deliveryDeadlineCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -793,6 +1032,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="J33"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('deliveryTermsCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'deliveryTermsCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.deliveryTermsCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.deliveryTermsCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -815,6 +1064,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="J37"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('validityCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'validityCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.validityCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.validityCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -837,6 +1096,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="J39"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('paymentTermsCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'paymentTermsCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.paymentTermsCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.paymentTermsCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -859,6 +1128,16 @@ export default function ImportExcelPage() {
                   }}
                     placeholder="AN5,AR5,AU5"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('estimateDateCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'estimateDateCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.estimateDateCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.estimateDateCell}</span>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', fontWeight: '600', color: 'inherit' }}>
@@ -881,6 +1160,16 @@ export default function ImportExcelPage() {
                   }}
                   placeholder="G5"
                 />
+                <div style={{ marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMappingMode('estimateNumberCell'); setSelectedCellAddr(null); setSelectedSheet('cover') }}
+                    style={{ padding: '6px 10px', backgroundColor: mappingMode === 'estimateNumberCell' ? '#ff6f00' : '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                  >セル指定</button>
+                  {metadataMapping?.estimateNumberCell && (
+                    <span style={{ marginLeft: '8px', padding: '4px 8px', backgroundColor: '#4caf50', color: '#fff', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>{metadataMapping.estimateNumberCell}</span>
+                  )}
+                </div>
               </div>
             </div>
             </div>

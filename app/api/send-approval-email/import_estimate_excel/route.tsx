@@ -106,6 +106,44 @@ function pickDigits(s: string): string {
   return s.replace(/\D+/g, '')
 }
 
+/**
+ * 複数セルから値を取得して連結
+ * 例: "AN5,AR5,AU5" → セル AN5, AR5, AU5 の値を取得して連結
+ * forceNumber: true の場合、数値セルのみを抽出（日付フォーマット用）
+ */
+function extractMultipleCellValues(ws: XLSX.WorkSheet, cellAddrs: string, forceNumber: boolean = false): string {
+  if (!cellAddrs || !cellAddrs.trim()) return ''
+  
+  const cells = cellAddrs.split(',').map(s => s.trim()).filter(Boolean)
+  const values: string[] = []
+  
+  console.log(`[extractMultipleCellValues] Processing cells: ${cells.join(', ')}, forceNumber: ${forceNumber}`)
+  
+  for (const cell of cells) {
+    const val = getCell(ws, cell)
+    console.log(`[extractMultipleCellValues] Cell ${cell}: ${JSON.stringify(val)} (type: ${typeof val})`)
+    
+    if (val !== null && val !== undefined && val !== '') {
+      // forceNumber=true の場合、数値のみを抽出
+      if (forceNumber) {
+        const numVal = toNumber(val)
+        if (numVal !== null) {
+          values.push(String(numVal))
+        }
+      } else {
+        const strVal = String(val).trim()
+        if (strVal) {
+          values.push(strVal)
+        }
+      }
+    }
+  }
+  
+  const result = values.join('')
+  console.log(`[extractMultipleCellValues] Final result: "${result}"`)
+  return result
+}
+
 // Excelセルの値から日付文字列(YYYY-MM-DD)を生成
 function formatDateValue(v: unknown): string | null {
   if (v === null || v === undefined) return null
@@ -1880,9 +1918,21 @@ export async function POST(req: Request) {
     const file = form.get('file')
     const presetId = form.get('presetId') as string | null
     const mode = form.get('mode') as string | null  // 'preview' or 'import'
+    const mappingsStr = form.get('_mappings') as string | null  // クライアント側のマッピング情報
     
     if (!(file instanceof File)) {
       return NextResponse.json({ ok: false, message: 'file がありません' }, { status: 400 })
+    }
+
+    // マッピング情報をパース
+    let mappings: Record<string, string> = {}
+    if (mappingsStr) {
+      try {
+        mappings = JSON.parse(mappingsStr)
+        console.log('[Import Excel] Received cell mappings:', Object.keys(mappings))
+      } catch (e) {
+        console.warn('[Import Excel] Failed to parse mappings:', e)
+      }
     }
 
     // Excel読み込み
@@ -1977,8 +2027,68 @@ export async function POST(req: Request) {
       const deliveryTerms = findValueFromCells(ws, preset.cover.deliveryTerms) || findLabelValue(ws, ['受渡条件', '納入条件', '受渡し条件'])
       const validityText = findValueFromCells(ws, preset.cover.validityText) || findLabelValue(ws, ['有効期限', '本書有効期限', '見積有効期限'])
       const paymentTerms = findValueFromCells(ws, preset.cover.paymentTerms) || findLabelValue(ws, ['支払条件', '支払方法', '決済条件'])
-      const estimateDate = findEstimateDate(ws)
-      const estimateNo = findEstimateNo(ws)
+      let estimateDate = findEstimateDate(ws)
+      let estimateNo = findEstimateNo(ws)
+
+      // ★マッピング情報がある場合、複数セル値を優先的に取得
+      if (mappings && Object.keys(mappings).length > 0) {
+        console.log('[Import Excel] Extracting multi-cell mapped values...')
+        console.log('[Import Excel] Full mappings object:', mappings)
+        
+        // 表紙シートを取得（webpackの第一シートを表紙と仮定）
+        const coverSheetName = wb.SheetNames[0]
+        const coverWs = wb.Sheets[coverSheetName]
+        
+        if (mappings.estimateDateCell) {
+          const cellAddrs = String(mappings.estimateDateCell || '').trim()
+          console.log(`[Import Excel] estimateDateCell raw value: "${cellAddrs}"`)
+          
+          // ★日付の場合、データ部分（数値）だけを抽出
+          const mappedDate = extractMultipleCellValues(coverWs, cellAddrs, true)
+          console.log(`[Import Excel] estimateDateCell extracted (numbers only): "${mappedDate}"`)
+          
+          if (mappedDate) {
+            // ★抽出した数値を日付フォーマットに変換（例: "2025930" → "2025-09-30"）
+            let formattedDate = mappedDate
+            
+            // 8桁の数字と仮定（YYYYMMDD形式）
+            if (/^\d{8}$/.test(mappedDate)) {
+              const yyyy = mappedDate.slice(0, 4)
+              const mm = mappedDate.slice(4, 6)
+              const dd = mappedDate.slice(6, 8)
+              formattedDate = `${yyyy}-${mm}-${dd}`
+              console.log(`[Import Excel] Formatted date from YYYYMMDD: "${mappedDate}" → "${formattedDate}"`)
+            }
+            // 4+1+1+1+2 = 9文字（年数字 + 月数字 + 日数字の場合）
+            else if (/^\d{4}\d{1,2}\d{1,2}$/.test(mappedDate)) {
+              const yyyy = mappedDate.slice(0, 4)
+              const mm = mappedDate.slice(4, mappedDate.length - 2).padStart(2, '0')
+              const dd = mappedDate.slice(-2).padStart(2, '0')
+              formattedDate = `${yyyy}-${mm}-${dd}`
+              console.log(`[Import Excel] Formatted date from flexible YYYY M D: "${mappedDate}" → "${formattedDate}"`)
+            } else {
+              const parsedDate = formatDateValue(mappedDate)
+              if (parsedDate) {
+                formattedDate = parsedDate
+              }
+            }
+            
+            estimateDate = formattedDate
+            console.log(`[Import Excel] estimateDate final: "${estimateDate}"`)
+          }
+        }
+        
+        if (mappings.estimateNumberCell) {
+          const cellAddrs = String(mappings.estimateNumberCell || '').trim()
+          console.log(`[Import Excel] estimateNumberCell raw value: "${cellAddrs}"`)
+          const mappedNo = extractMultipleCellValues(coverWs, cellAddrs, false)
+          console.log(`[Import Excel] estimateNumberCell extracted: "${mappedNo}"`)
+          if (mappedNo) {
+            console.log(`[Import Excel] estimateNumberCell mapped: "${cellAddrs}" → "${mappedNo}"`)
+            estimateNo = mappedNo
+          }
+        }
+      }
 
       const summary = findSummaryAmounts(ws, lastDetailRow)
       const detailsSum = details.reduce((sum, d) => sum + d.amount, 0)
