@@ -120,7 +120,7 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
     stopWords: ['小計', '消費税', '合計', '値引'],
     
     columns: {
-      productName: ['品名', '商品名', '製品名', '項目'],
+      productName: ['商品名', '名称', '品名', '製品名', '項目'],
       spec: ['規格', '仕様', 'スペック'],
       unit: ['単位'],
       quantity: ['数量', '数'],
@@ -222,15 +222,15 @@ export const MINAMIKYUSHU_PRESET: ExcelFormatPreset = {
   layoutType: 'vertical',
   
   cover: {
-    customerName: ['C8', 'B8', 'D8', 'C9', 'D9'],
-    subject: ['J27', 'J26', 'J28', 'K27'],
+    customerName: ['B5', 'C8', 'B8', 'D8', 'C9', 'D9'],
+    subject: ['C21', 'J27', 'J26', 'J28', 'K27'],
     deliveryPlace: ['J29', 'J28', 'J30', 'K29'],
     deliveryDeadline: ['J31', 'J30', 'J32', 'K31'],
     deliveryTerms: ['J33', 'J32', 'J34', 'K33'],
     validityText: ['J35', 'J34', 'J36', 'K35'],
     paymentTerms: ['J37', 'J36', 'J38', 'K37'],
     estimateDate: ['AM5,AN5,AO5', 'L35,M35,N35', 'K35'],
-    estimateNumber: ['AN1,AO1,AS1,AV1', 'G5', 'H5', 'F5', 'I5'],
+    estimateNumber: ['L2', 'AN1,AO1,AS1,AV1', 'G5', 'H5', 'F5', 'I5'],
     subtotal: ['AL78', 'AL80', 'L78', 'M78'],
     taxAmount: ['AL80', 'AL82', 'L80', 'M80'],
     totalAmount: ['AL82', 'AL84', 'L82', 'M82']
