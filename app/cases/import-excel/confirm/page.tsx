@@ -873,19 +873,19 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
           >
             <thead>
               <tr style={{ backgroundColor: '#1976d2', borderBottom: '3px solid #0d47a1' }}>
-                <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '50px' }}>No.</th>
-                <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '120px' }}>セクション</th>
-                <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '180px' }}>Excel品名</th>
-                <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '140px' }}>規格</th>
-                <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '320px' }}>商品マスタ</th>
-                <th style={{ padding: '12px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '70px' }}>数量</th>
-                <th style={{ padding: '12px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '70px' }}>単位</th>
-                <th style={{ padding: '12px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '90px' }}>単価</th>
-                <th style={{ padding: '12px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '100px' }}>金額</th>
-                <th style={{ padding: '12px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '100px' }}>原価単価</th>
-                <th style={{ padding: '12px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '110px' }}>原価額</th>
-                <th style={{ padding: '12px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '90px' }}>粗利率</th>
-                <th style={{ padding: '12px', textAlign: 'center', color: '#ffffff', fontWeight: 'bold', width: '70px' }}>削除</th>
+                <th style={{ padding: '8px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '40px' }}>No.</th>
+                <th style={{ padding: '8px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '100px' }}>セクション</th>
+                <th style={{ padding: '8px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '140px' }}>Excel品名</th>
+                <th style={{ padding: '8px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '200px' }}>商品マスタ</th>
+                <th style={{ padding: '8px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '100px' }}>規格</th>
+                <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '60px' }}>数量</th>
+                <th style={{ padding: '8px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '50px' }}>単位</th>
+                <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '80px' }}>単価</th>
+                <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '90px' }}>金額</th>
+                <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '80px' }}>原価単価</th>
+                <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '90px' }}>原価額</th>
+                <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '70px' }}>粗利率</th>
+                <th style={{ padding: '8px', textAlign: 'center', color: '#ffffff', fontWeight: 'bold', width: '60px' }}>削除</th>
               </tr>
             </thead>
             <tbody>
@@ -894,15 +894,14 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                   borderBottom: '1px solid #e0e0e0',
                   backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f5f5f5'
                 }}>
-                  <td style={{ padding: '10px', color: '#424242', fontWeight: 'bold', width: '50px' }}>{idx + 1}</td>
-                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#e65100', width: '120px', backgroundColor: '#fff3e0' }}>
+                  <td style={{ padding: '8px', color: '#424242', fontWeight: 'bold', width: '40px' }}>{idx + 1}</td>
+                  <td style={{ padding: '8px', fontWeight: 'bold', color: '#e65100', width: '100px', backgroundColor: '#fff3e0' }}>
                     {detail.section_name || '-'}
                   </td>
-                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#1565c0', width: '180px' }}>{detail.item_name}</td>
-                  <td style={{ padding: '10px', fontSize: '13px', color: '#616161', width: '140px' }}>{detail.spec || '-'}</td>
-                  <td style={{ padding: '10px', minWidth: '320px', width: '320px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative' }}>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                  <td style={{ padding: '8px', fontWeight: 'bold', color: '#1565c0', width: '140px' }}>{detail.item_name}</td>
+                  <td style={{ padding: '8px', width: '200px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}>
+                      <div style={{ display: 'flex', gap: '4px' }}>
                         <input
                           type="text"
                           value={searchQueries[idx] || ''}
@@ -910,10 +909,10 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                           placeholder="商品名で検索"
                           style={{
                             flex: 1,
-                            padding: '10px',
+                            padding: '6px',
                             border: '2px solid #0d47a1',
                             borderRadius: '4px',
-                            fontSize: '13px',
+                            fontSize: '12px',
                             backgroundColor: '#e3f2fd',
                             color: '#0d47a1',
                             fontWeight: 'bold'
@@ -925,29 +924,35 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                           onClick={() => handleSearchClick(idx)}
                           disabled={isSearching[idx]}
                           style={{
-                            padding: '10px 12px',
+                            padding: '6px 8px',
                             backgroundColor: isSearching[idx] ? '#90caf9' : '#1976d2',
                             color: '#fff',
                             border: 'none',
                             borderRadius: '4px',
                             cursor: isSearching[idx] ? 'not-allowed' : 'pointer',
-                            fontSize: '13px',
-                            fontWeight: 'bold'
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            minWidth: '50px'
                           }}
                         >
-                          {isSearching[idx] ? '検索中...' : '検索'}
+                          {isSearching[idx] ? '中' : '検索'}
                         </button>
+                      </div>
+
+                      <div style={{ fontSize: '10px', color: '#0d47a1', fontWeight: 'bold' }}>
+                        {isSearching[idx] ? '検索中...' : `候補: ${(filteredOptions[idx] || []).length}件`}
                         <button
                           type="button"
                           onClick={() => toggleDropdown(idx, !dropdownOpen[idx])}
                           style={{
-                            padding: '10px 12px',
+                            marginLeft: '4px',
+                            padding: '2px 6px',
                             backgroundColor: dropdownOpen[idx] ? '#1565c0' : '#9e9e9e',
                             color: '#fff',
                             border: 'none',
-                            borderRadius: '4px',
+                            borderRadius: '3px',
                             cursor: 'pointer',
-                            fontSize: '13px',
+                            fontSize: '10px',
                             fontWeight: 'bold'
                           }}
                         >
@@ -955,24 +960,20 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                         </button>
                       </div>
 
-                      <div style={{ fontSize: '12px', color: '#0d47a1', fontWeight: 'bold' }}>
-                        {isSearching[idx] ? '検索中...' : `候補: ${(filteredOptions[idx] || []).length}件`}
-                      </div>
-
                       {dropdownOpen[idx] && (
                         <div
                           style={{
                             position: 'absolute',
-                            top: '100px',
+                            top: '70px',
                             left: 0,
                             right: 0,
-                            maxHeight: '300px',
+                            maxHeight: '250px',
                             overflowY: 'auto',
                             border: '2px solid #0d47a1',
-                            borderRadius: '6px',
+                            borderRadius: '4px',
                             backgroundColor: '#0d47a1',
                             zIndex: 10,
-                            boxShadow: '0 6px 12px rgba(0,0,0,0.2)'
+                            boxShadow: '0 4px 8px rgba(0,0,0,0.2)'
                           }}
                         >
                           <div
@@ -981,12 +982,13 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                               toggleDropdown(idx, false)
                             }}
                             style={{
-                              padding: '10px',
+                              padding: '8px',
                               cursor: 'pointer',
                               color: '#fff',
                               fontWeight: 'bold',
                               borderBottom: '1px solid rgba(255,255,255,0.2)',
-                              backgroundColor: !detail.product_id ? 'rgba(255,255,255,0.15)' : 'transparent'
+                              backgroundColor: !detail.product_id ? 'rgba(255,255,255,0.15)' : 'transparent',
+                              fontSize: '12px'
                             }}
                           >
                             未登録（クリア）
@@ -1000,20 +1002,21 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                                   toggleDropdown(idx, false)
                                 }}
                                 style={{
-                                  padding: '10px',
+                                  padding: '8px',
                                   cursor: 'pointer',
                                   color: '#e3f2fd',
                                   borderBottom: '1px solid rgba(255,255,255,0.08)',
                                   backgroundColor: detail.product_id === p.id ? 'rgba(255,255,255,0.15)' : 'transparent',
-                                  transition: 'background-color 0.2s'
+                                  transition: 'background-color 0.2s',
+                                  fontSize: '12px'
                                 }}
                               >
                                 <div style={{ fontWeight: 'bold' }}>{p.name}</div>
-                                <div style={{ fontSize: '12px', opacity: 0.85 }}>{p.spec || '規格なし'}</div>
+                                <div style={{ fontSize: '11px', opacity: 0.85 }}>{p.spec || '規格なし'}</div>
                               </div>
                             ))
                           ) : (
-                            <div style={{ padding: '10px', color: '#fff', fontWeight: 'bold', textAlign: 'center' }}>
+                            <div style={{ padding: '8px', color: '#fff', fontWeight: 'bold', textAlign: 'center', fontSize: '12px' }}>
                               {isSearching[idx] ? '検索中...' : '検索結果なし'}
                             </div>
                           )}
@@ -1025,10 +1028,10 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                         value={detail.product_id || '未登録'}
                         readOnly
                         style={{
-                          padding: '8px',
+                          padding: '4px',
                           border: '2px solid #1976d2',
                           borderRadius: '4px',
-                          fontSize: '13px',
+                          fontSize: '11px',
                           backgroundColor: '#ffffff',
                           color: '#212121',
                           fontWeight: 'bold'
@@ -1036,29 +1039,30 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                       />
                     </div>
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#212121', fontWeight: 'bold', width: '70px' }}>{detail.quantity}</td>
-                  <td style={{ padding: '10px', color: '#424242', width: '70px' }}>{detail.unit || '-'}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#1565c0', fontWeight: 'bold', width: '90px' }}>
+                  <td style={{ padding: '8px', fontSize: '12px', color: '#616161', width: '100px' }}>{detail.spec || '-'}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', color: '#212121', fontWeight: 'bold', width: '60px' }}>{detail.quantity}</td>
+                  <td style={{ padding: '8px', color: '#424242', width: '50px' }}>{detail.unit || '-'}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', color: '#1565c0', fontWeight: 'bold', width: '80px' }}>
                     ¥{detail.unit_price.toLocaleString('ja-JP')}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', color: '#c62828', fontSize: '15px', width: '100px' }}>
+                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#c62828', fontSize: '14px', width: '90px' }}>
                     ¥{detail.amount.toLocaleString('ja-JP')}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#2e7d32', fontWeight: 'bold', backgroundColor: '#e8f5e9', width: '100px' }}>
+                  <td style={{ padding: '8px', textAlign: 'right', color: '#2e7d32', fontWeight: 'bold', backgroundColor: '#e8f5e9', width: '80px' }}>
                     {detail.cost_price != null ? `¥${detail.cost_price.toLocaleString('ja-JP')}` : '-'}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#2e7d32', fontWeight: 'bold', backgroundColor: '#e8f5e9', width: '110px' }}>
+                  <td style={{ padding: '8px', textAlign: 'right', color: '#2e7d32', fontWeight: 'bold', backgroundColor: '#e8f5e9', width: '90px' }}>
                     {detail.cost_amount != null ? `¥${detail.cost_amount.toLocaleString('ja-JP')}` : '-'}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#2e7d32', fontWeight: 'bold', backgroundColor: '#e8f5e9', width: '90px' }}>
+                  <td style={{ padding: '8px', textAlign: 'right', color: '#2e7d32', fontWeight: 'bold', backgroundColor: '#e8f5e9', width: '70px' }}>
                     {detail.gross_margin != null ? `${(detail.gross_margin * 100).toFixed(1)}%` : '-'}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'center', width: '70px' }}>
+                  <td style={{ padding: '8px', textAlign: 'center', width: '60px' }}>
                     <button
                       onClick={() => handleDeleteRow(idx)}
                       style={{
-                        padding: '6px 12px',
-                        fontSize: '13px',
+                        padding: '4px 8px',
+                        fontSize: '12px',
                         backgroundColor: '#d32f2f',
                         color: 'white',
                         border: 'none',
@@ -1068,7 +1072,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                       }}
                       title="この行を削除"
                     >
-                      🗑️ 削除
+                      🗑️
                     </button>
                   </td>
                 </tr>
@@ -1076,16 +1080,16 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#1976d2', fontWeight: 'bold', borderTop: '3px solid #0d47a1' }}>
-                <td colSpan={8} style={{ padding: '14px', textAlign: 'right', color: '#ffffff', fontSize: '16px', fontWeight: 'bold' }}>
+                <td colSpan={8} style={{ padding: '12px', textAlign: 'right', color: '#ffffff', fontSize: '15px', fontWeight: 'bold' }}>
                   合計:
                 </td>
-                <td style={{ padding: '14px', textAlign: 'right', fontSize: '18px', fontWeight: 'bold', color: '#ffeb3b' }}>
+                <td style={{ padding: '12px', textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: '#ffeb3b' }}>
                   ¥{details.reduce((sum, d) => sum + d.amount, 0).toLocaleString('ja-JP')}
                                 </td>
-                                <td colSpan={2} style={{ padding: '14px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffffff', fontSize: '14px' }}>
+                                <td colSpan={2} style={{ padding: '12px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffffff', fontSize: '13px' }}>
                                   原価計: ¥{details.reduce((sum, d) => sum + (d.cost_amount || 0), 0).toLocaleString('ja-JP')}
                                 </td>
-                                <td style={{ padding: '14px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffeb3b', fontSize: '16px', fontWeight: 'bold' }}>
+                                <td style={{ padding: '12px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffeb3b', fontSize: '14px', fontWeight: 'bold' }}>
                                   粗利: ¥{(details.reduce((sum, d) => sum + d.amount, 0) - details.reduce((sum, d) => sum + (d.cost_amount || 0), 0)).toLocaleString('ja-JP')}
                 </td>
               </tr>

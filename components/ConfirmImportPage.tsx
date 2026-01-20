@@ -662,18 +662,18 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', backgroundColor: 'white' }}>
             <thead>
               <tr style={{ backgroundColor: '#424242', color: 'white' }}>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '40px' }}>No</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '200px' }}>品名</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '150px' }}>規格</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '80px' }}>数量</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '80px' }}>単位</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '100px' }}>単価</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '120px' }}>金額</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '100px', backgroundColor: '#4caf50' }}>原価単価</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '120px', backgroundColor: '#81c784' }}>原価額</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '80px', backgroundColor: '#ffb74d' }}>粗利率</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '250px' }}>商品検索</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd', minWidth: '60px' }}>削除</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '40px' }}>No</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '140px' }}>品名</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '200px' }}>商品検索</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '120px' }}>規格</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '45px' }}>数量</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '55px' }}>単位</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '90px' }}>単価</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '100px' }}>金額</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '90px', backgroundColor: '#4caf50' }}>原価単価</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '100px', backgroundColor: '#81c784' }}>原価額</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '70px', backgroundColor: '#ffb74d' }}>粗利率</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '60px' }}>削除</th>
               </tr>
             </thead>
             <tbody>
@@ -689,8 +689,112 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
                         newDetails[idx].item_name = e.target.value
                         setDetails(newDetails)
                       }}
-                      style={{ width: '100%', padding: '4px', border: '1px solid #ccc', borderRadius: '3px' }}
+                      style={{ width: '100%', padding: '4px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px' }}
                     />
+                  </td>
+                  <td style={{ padding: '8px', border: '1px solid #ddd', position: 'relative' }}>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <input
+                        type="text"
+                        value={searchQueries[idx] || ''}
+                        onChange={(e) => handleQueryChange(idx, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleSearchClick(idx)
+                          }
+                        }}
+                        placeholder="商品名で検索..."
+                        style={{ flex: 1, padding: '4px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '11px' }}
+                      />
+                      <button
+                        onClick={() => handleSearchClick(idx)}
+                        disabled={isSearching[idx]}
+                        style={{
+                          padding: '4px 6px',
+                          fontSize: '11px',
+                          backgroundColor: isSearching[idx] ? '#ccc' : '#2196f3',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '3px',
+                          cursor: isSearching[idx] ? 'not-allowed' : 'pointer',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {isSearching[idx] ? '中' : '検索'}
+                      </button>
+                      {dropdownOpen[idx] && filteredOptions[idx]?.length > 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: '8px',
+                          right: '8px',
+                          backgroundColor: 'white',
+                          border: '2px solid #2196f3',
+                          borderRadius: '4px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 1000,
+                          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                        }}>
+                          {filteredOptions[idx].slice(pageIndex[idx] * 50, (pageIndex[idx] + 1) * 50).map((prod) => (
+                            <div
+                              key={prod.id}
+                              onClick={() => {
+                                handleProductChange(idx, prod.id)
+                                toggleDropdown(idx, false)
+                              }}
+                              style={{
+                                padding: '6px',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid #eee',
+                                fontSize: '11px',
+                                color: '#000'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e3f2fd'}
+                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                            >
+                              <div style={{ fontWeight: 'bold' }}>{prod.name}</div>
+                              <div style={{ fontSize: '10px', color: '#666' }}>
+                                規格: {prod.spec || 'なし'} | 単位: {prod.unit || 'なし'} | 単価: ¥{(prod.unit_price || 0).toLocaleString()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {filteredOptions[idx]?.length > 0 && (
+                      <button
+                        onClick={() => toggleDropdown(idx, !dropdownOpen[idx])}
+                        style={{
+                          marginTop: '4px',
+                          padding: '2px 6px',
+                          fontSize: '10px',
+                          backgroundColor: dropdownOpen[idx] ? '#1976d2' : '#9e9e9e',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '3px',
+                          cursor: 'pointer',
+                          width: '100%'
+                        }}
+                      >
+                        {dropdownOpen[idx] ? '閉じる' : `候補: ${filteredOptions[idx].length}件`}
+                      </button>
+                    )}
+                    {d.product_id && (
+                      <div style={{
+                        marginTop: '4px',
+                        padding: '4px',
+                        backgroundColor: '#e8f5e9',
+                        borderRadius: '3px',
+                        fontSize: '10px',
+                        color: '#2e7d32',
+                        fontWeight: 'bold',
+                        border: '1px solid #4caf50'
+                      }}>
+                        ✓ 適用: {productList.find(p => p.id === d.product_id)?.name || d.product_id}
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: '8px', border: '1px solid #ddd', color: '#000' }}>
                     <input
@@ -701,7 +805,7 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
                         newDetails[idx].spec = e.target.value
                         setDetails(newDetails)
                       }}
-                      style={{ width: '100%', padding: '4px', border: '1px solid #ccc', borderRadius: '3px' }}
+                      style={{ width: '100%', padding: '4px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px' }}
                     />
                   </td>
                   <td style={{ padding: '8px', border: '1px solid #ddd', color: '#000' }}>
@@ -715,7 +819,7 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
                         newDetails[idx].amount = qty * newDetails[idx].unit_price
                         setDetails(newDetails)
                       }}
-                      style={{ width: '80px', padding: '4px', border: '1px solid #ccc', borderRadius: '3px' }}
+                      style={{ width: '100%', padding: '4px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px' }}
                     />
                   </td>
                   <td style={{ padding: '8px', border: '1px solid #ddd', color: '#000' }}>
@@ -727,7 +831,7 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
                         newDetails[idx].unit = e.target.value
                         setDetails(newDetails)
                       }}
-                      style={{ width: '70px', padding: '4px', border: '1px solid #ccc', borderRadius: '3px' }}
+                      style={{ width: '100%', padding: '4px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px' }}
                     />
                   </td>
                   <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'right', color: '#000' }}>
@@ -769,96 +873,6 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
                       const grossProfitRate = Math.floor(((d.amount - costAmount) / d.amount) * 100)
                       return `${grossProfitRate}%`
                     })()}
-                  </td>
-                  <td style={{ padding: '8px', border: '1px solid #ddd', position: 'relative' }}>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <input
-                        type="text"
-                        value={searchQueries[idx] || ''}
-                        onChange={(e) => handleQueryChange(idx, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            handleSearchClick(idx)
-                          }
-                        }}
-                        placeholder="商品名で検索..."
-                        style={{ flex: 1, padding: '4px', border: '1px solid #ccc', borderRadius: '3px', fontSize: '12px' }}
-                      />
-                      <button
-                        onClick={() => handleSearchClick(idx)}
-                        disabled={isSearching[idx]}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: '12px',
-                          backgroundColor: isSearching[idx] ? '#ccc' : '#2196f3',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '3px',
-                          cursor: isSearching[idx] ? 'not-allowed' : 'pointer',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {isSearching[idx] ? '検索中...' : '検索'}
-                      </button>
-                      {dropdownOpen[idx] && filteredOptions[idx]?.length > 0 && (
-                        <div style={{
-                          position: 'absolute',
-                          top: '100%',
-                          left: '8px',
-                          right: '8px',
-                          backgroundColor: 'white',
-                          border: '2px solid #2196f3',
-                          borderRadius: '4px',
-                          maxHeight: '200px',
-                          overflowY: 'auto',
-                          zIndex: 1000,
-                          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-                        }}>
-                          {filteredOptions[idx].slice(pageIndex[idx] * 50, (pageIndex[idx] + 1) * 50).map((prod) => (
-                            <div
-                              key={prod.id}
-                              onClick={() => {
-                                handleProductChange(idx, prod.id)
-                                toggleDropdown(idx, false)
-                              }}
-                              style={{
-                                padding: '8px',
-                                cursor: 'pointer',
-                                borderBottom: '1px solid #eee',
-                                fontSize: '12px',
-                                color: '#000'
-                              }}
-                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e3f2fd'}
-                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
-                            >
-                              <div style={{ fontWeight: 'bold' }}>{prod.name}</div>
-                              <div style={{ fontSize: '11px', color: '#666' }}>
-                                規格: {prod.spec || 'なし'} | 単位: {prod.unit || 'なし'} | 単価: ¥{prod.unit_price.toLocaleString()}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {filteredOptions[idx]?.length > 0 && (
-                      <button
-                        onClick={() => toggleDropdown(idx, !dropdownOpen[idx])}
-                        style={{
-                          marginTop: '4px',
-                          padding: '4px 8px',
-                          fontSize: '11px',
-                          backgroundColor: '#4caf50',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '3px',
-                          cursor: 'pointer',
-                          width: '100%'
-                        }}
-                      >
-                        {dropdownOpen[idx] ? '▲ 閉じる' : `▼ 候補 ${filteredOptions[idx].length}件`}
-                      </button>
-                    )}
                   </td>
                   <td style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'center' }}>
                     <button

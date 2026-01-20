@@ -7,11 +7,14 @@ import dynamic from 'next/dynamic'
 import ConfirmImportPage from '@/components/ConfirmImportPage'
 import TextMapper from '@/components/TextMapper'
 import DetailMapper from '@/components/DetailMapper'
+import HorizontalDetailMapper from '@/components/HorizontalDetailMapper'
+import ExcelHeaderMapper from '@/components/ExcelHeaderMapper'
+import ExcelDetailMapper from '@/components/ExcelDetailMapper'
 const PdfMapper = dynamic(() => import('@/components/PdfMapper'), { ssr: false })
 
 const DragSelectMapper = dynamic(() => import('@/components/DragSelectMapper'), { ssr: false })
 
-type Stage = 'upload' | 'preview' | 'text-mapping' | 'detail-mapping' | 'confirm'
+type Stage = 'upload' | 'preview' | 'text-mapping' | 'header-mapping' | 'detail-mapping' | 'confirm'
 
 // テキスト行を事前に整形: 連続スペースで区切られている場合は分割して別行として扱う
 const splitLinesByLargeSpaces = (lines: string[]) => {
@@ -80,6 +83,7 @@ export default function ImportExcelPage() {
   const [textLines, setTextLines] = useState<string[]>([])  // PDF用テキスト行
   const [detailLines, setDetailLines] = useState<any[]>([])  // 自動抽出した明細行
   const [pdfFileName, setPdfFileName] = useState<string>('')
+  const mappingSource = previewData?.details?.length ? previewData : confirmData
 
   // PDF用の新しいハンドラー：テキスト抽出 → マッピング画面へ
   const handlePdfUpload = async (e: React.FormEvent) => {
@@ -206,6 +210,37 @@ export default function ImportExcelPage() {
     setStage('confirm')
   }
 
+  // 横見積ヘッダーマッピングハンドラ
+  const handleHeaderMapping = (headerData: any) => {
+    console.log('[ExcelHeaderMapper] Header mapping completed:', headerData)
+    
+    // ヘッダー情報を更新してdetail-mappingへ
+    const updated = {
+      ...previewData,
+      ...headerData
+    }
+    
+    setPreviewData(updated)
+    setConfirmData(updated)
+    setStage('detail-mapping')
+  }
+
+  // 横見積専用のマッピングハンドラ
+  const handleHorizontalDetailMapping = (details: any[], sections: any[]) => {
+    console.log('[HorizontalDetailMapper] Mapping completed, details count:', details.length)
+    
+    // 編集済みの明細とセクションでconfirmDataを更新
+    const updated = {
+      ...previewData,
+      details,
+      sections
+    }
+    
+    setConfirmData(updated)
+    console.log('[HorizontalDetailMapper→Confirm] Switching to confirm stage...')
+    setStage('confirm')
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (f) {
@@ -275,8 +310,44 @@ export default function ImportExcelPage() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault?.()
+    
+    console.log('[handleSubmit] Called, current stage:', stage, 'previewData exists:', !!previewData)
+    
     if (!file) {
       setError('ファイルを選択してください')
+      return
+    }
+
+    // プレビュー画面からのインポート実行の場合、プレビューデータを使用
+    if (stage === 'preview' && previewData?.parsed) {
+      console.log('[handleSubmit] Using preview data for import')
+      const data = previewData
+      
+      // プリセットから様式を判定
+      const finalPresetId = selectedPreset === 'auto' ? (data.preset?.id || 'default') : selectedPreset
+      const preset = resolvePreset(finalPresetId)
+      
+      console.log('[Import from Preview] Layout detection:', {
+        selectedPreset,
+        finalPresetId,
+        layoutType: preset.layoutType,
+        presetName: preset.name
+      })
+      
+      // 横見積の場合のみheader-mappingを挟む
+      if (preset.layoutType === 'horizontal') {
+        console.log('[Import from Preview] Horizontal layout detected → Going to header-mapping stage')
+        // プレビューデータのsheetsを保持（マッピング画面でExcelプレビューに使用）
+        const dataWithSheets = { ...data, sheets: previewData?.sheets || [] }
+        setPreviewData(dataWithSheets)
+        setConfirmData(dataWithSheets)
+        setStage('header-mapping')
+      } else {
+        // 縦見積の場合は直接確認画面へ
+        console.log('[Import from Preview] Vertical layout detected → Going to confirm stage')
+        setConfirmData(data)
+        setStage('confirm')
+      }
       return
     }
 
@@ -331,10 +402,35 @@ export default function ImportExcelPage() {
         return
       }
 
-      // ✅ 解析成功 → 確認画面へデータを渡す
+      // ✅ 解析成功 → 様式に応じて遷移先を決定
       if (data.parsed) {
-        setConfirmData(data)
-        setStage('confirm')
+        // プリセットから様式を判定
+        const finalPresetId = selectedPreset === 'auto' ? (data.preset?.id || 'default') : selectedPreset
+        const preset = resolvePreset(finalPresetId)
+        
+        console.log('[Import] Layout detection:', {
+          selectedPreset,
+          finalPresetId,
+          layoutType: preset.layoutType,
+          presetName: preset.name
+        })
+        
+        // 横見積の場合のみheader-mappingを挟む
+        if (preset.layoutType === 'horizontal') {
+          console.log('[Import] Horizontal layout detected → Going to header-mapping stage')
+          // プレビューがある場合はsheetsを引き継ぐ
+          const dataWithSheets = previewData?.sheets 
+            ? { ...data, sheets: previewData.sheets }
+            : data
+          setPreviewData(dataWithSheets)
+          setConfirmData(dataWithSheets)
+          setStage('header-mapping')
+        } else {
+          // 縦見積の場合は直接確認画面へ
+          console.log('[Import] Vertical layout detected → Going to confirm stage')
+          setConfirmData(data)
+          setStage('confirm')
+        }
       } else {
         setResult(data)
       }
@@ -357,14 +453,37 @@ export default function ImportExcelPage() {
         setTextLines([])
         setDetailLines([])
       }} />
-    ) : stage === 'detail-mapping' ? (
-      <DetailMapper 
-        textLines={textLines}
-        onMapping={handleDetailMapping}
+    ) : stage === 'header-mapping' ? (
+      // 横見積ヘッダーマッピング（Excelセルから案件情報を選択）
+      <ExcelHeaderMapper 
+        meta={mappingSource}
+        onConfirm={handleHeaderMapping}
         onBack={() => {
-          setStage('text-mapping')
+          setStage('preview')
         }}
       />
+    ) : stage === 'detail-mapping' ? (
+      // 横見積の場合は専用マッパーを使用（プレビュー／インポートのどちら経由でも表示）
+      mappingSource && mappingSource.details?.length ? (
+        <ExcelDetailMapper 
+          details={mappingSource.details || []}
+          sections={mappingSource.sections || []}
+          meta={mappingSource}
+          onConfirm={handleHorizontalDetailMapping}
+          onBack={() => {
+            setStage('header-mapping')
+          }}
+        />
+      ) : (
+        // PDF用の既存のDetailMapper
+        <DetailMapper 
+          textLines={textLines}
+          onMapping={handleDetailMapping}
+          onBack={() => {
+            setStage('text-mapping')
+          }}
+        />
+      )
     ) : stage === 'text-mapping' ? (
       <div style={{ maxWidth: '1200px', margin: '40px auto', padding: '20px' }}>
         <button
@@ -615,7 +734,7 @@ export default function ImportExcelPage() {
                       >
                         {col}
                       </th>
-                    ))})
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
