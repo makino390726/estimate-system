@@ -89,17 +89,17 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
   
   cover: {
     customerName: ['D8', 'C8', 'D10', 'C10', 'E8'],
-    subject: ['C21', 'D21', 'C22', 'D22', 'K27', 'D27'],
-    deliveryPlace: ['C23', 'D23', 'K29', 'D29', 'C29'],
-    deliveryDeadline: ['C25', 'D25', 'K31', 'D31', 'C31'],
-    deliveryTerms: ['C27', 'D27', 'K33', 'D33', 'C33'],
-    validityText: ['C29', 'D29', 'K35', 'D35', 'C35'],
-    paymentTerms: ['C31', 'D31', 'K37', 'D37', 'C37'],
-    estimateDate: ['AN5,AR5,AU5', 'D5', 'E5'],
-    estimateNumber: ['G5', 'H5', 'F5', 'AN3', 'AR3'],
-    subtotal: ['AJ78', 'AK78', 'AL78', 'K70', 'L70'],
-    taxAmount: ['AJ80', 'AK80', 'AL80', 'K72', 'L72'],
-    totalAmount: ['AJ82', 'AK82', 'AL82', 'K74', 'L74']
+    subject: ['K27', 'C21', 'D21', 'C22', 'D22', 'D27'],
+    deliveryPlace: ['K29', 'C23', 'D23', 'D29', 'C29'],
+    deliveryDeadline: ['K31', 'C25', 'D25', 'D31', 'C31'],
+    deliveryTerms: ['K33', 'C27', 'D27', 'D33', 'C33'],
+    validityText: ['K35', 'C29', 'D29', 'D35', 'C35'],
+    paymentTerms: ['K37', 'C31', 'D31', 'D37', 'C37'],
+    estimateDate: ['AM5,AQ5,AT5', 'AN5,AR5,AU5', 'D5', 'E5'],
+    estimateNumber: ['AL1,AR1,AU1', 'AN3', 'AR3', 'G5', 'H5', 'F5'],
+    subtotal: ['AJ59', 'AJ78', 'AK78', 'AL78', 'K70', 'L70'],
+    taxAmount: ['AJ60', 'AJ80', 'AK80', 'AL80', 'K72', 'L72'],
+    totalAmount: ['AJ61', 'I14', 'AJ82', 'AK82', 'AL82', 'K74', 'L74']
   },
   
   labels: {
@@ -129,7 +129,7 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
       costPrice: ['原価単価', '原価', '仕入単価'],
       costAmount: ['原価金額', '原価合計'],
       grossMargin: ['粗利', '粗利率', '利益率'],
-      wholesalePrice: ['仕切', '仕切価格', '帰社']
+      wholesalePrice: ['仕切', '仕切価格', '帰社', '貴社仕切価格', '貴社仕切金額', '備考']
     },
     
     defaultColumns: {
@@ -199,7 +199,7 @@ export const SINGLE_SHEET_VERTICAL_PRESET: ExcelFormatPreset = {
       costPrice: ['原価単価', '原価', '仕入単価', '今回仕入'],
       costAmount: ['原価金額', '原価合計'],
       grossMargin: ['粗利', '粗利率', '利益率'],
-      wholesalePrice: ['仕切金額', '仕切', '仕切価格']
+      wholesalePrice: ['仕切', '仕切価格', '仕切金額', '貴社仕切', '貴社仕切価格', '貴社仕切金額', '帰社', '卸値', '卸価格', '卸売価格', '特価']
     },
     
     defaultColumns: {

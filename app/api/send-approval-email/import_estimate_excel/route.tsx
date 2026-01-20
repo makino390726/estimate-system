@@ -1124,11 +1124,13 @@ function parseIndexSheet(ws: XLSX.WorkSheet): SectionDef[] {
     }
   }
   
-  // B列からセクション名、H列から金額、I列から仕切金額を読み取る
+  // セクション名はB列またはC列、金額はH列、仕切金額はI列から読み取る（横様式対応）
   // Row3から開始（Row2はヘッダー）
   let sectionOrder = 0
   for (let row = 3; row <= 50; row++) {  // ★範囲を30→50に拡張
-    const bVal = normalizeText(getCellWithMerge(ws, `B${row}`))
+    const nameCellB = normalizeText(getCellWithMerge(ws, `B${row}`))
+    const nameCellC = normalizeText(getCellWithMerge(ws, `C${row}`))
+    const bVal = nameCellB || nameCellC
     const hVal = toNumber(getCell(ws, `H${row}`))
     const iVal = toNumber(getCell(ws, `I${row}`))
     
@@ -1136,7 +1138,7 @@ function parseIndexSheet(ws: XLSX.WorkSheet): SectionDef[] {
       console.log(`[Excel Parse] Index Row${row}: B="${bVal}" H=${hVal} I=${iVal}`)
     }
     
-    // B列が空になったら終了
+    // セクション名セルが空になったら終了
     if (!bVal) {
       if (row > 15) break  // ★最初の15行を超えたら終了
       continue
@@ -1298,19 +1300,13 @@ function processMultiSheetWorkbook(
   stampImage: string | null,
   preset: ExcelFormatPreset = DEFAULT_PRESET
 ): SheetProcessResult {
-  // ★表紙シート処理
+  // ★表紙シート処理（第1シートを表紙として扱う）
   console.log('[Excel Parse] All sheets:', wb.SheetNames)
-  const coverSheetName = wb.SheetNames.find(name => {
-    const normalized = normalizeText(name)
-    return normalized === SHEET_NAMES.cover || normalized.includes(SHEET_NAMES.cover)
-  })
-  if (!coverSheetName) {
-    throw new Error(`【エラー】「${SHEET_NAMES.cover}」シートが見つかりません。利用可能なシート: ${wb.SheetNames.join(', ')}`)
-  }
-  console.log(`[Excel Parse] Found cover sheet: "${coverSheetName}"`)
+  const coverSheetName = wb.SheetNames[0]
   const coverWs = wb.Sheets[coverSheetName]
   
   // 表紙から見積情報を抽出（プリセット設定を使用）
+  console.log(`[Excel Parse] Using cover sheet: "${coverSheetName}"`)
   console.log(`[Excel Parse] Using preset: ${preset.name}`)
   const customerName = findValueFromCells(coverWs, preset.cover.customerName) || findCustomerName(coverWs) || ''
   console.log('[Excel Parse] cover.customerName:', customerName)
@@ -1343,99 +1339,84 @@ function processMultiSheetWorkbook(
     estimateNo
   })
 
-  // ★目次シート処理（セクション定義 + 合計値）
-  const indexSheetName = wb.SheetNames.find(name => {
-    const normalized = normalizeText(name)
-    return normalized === SHEET_NAMES.index || normalized.includes('目次')
-  })
-  let sections: SectionDef[] | undefined
-  let indexTotals: IndexSheetTotals | undefined
-  if (indexSheetName) {
-    console.log(`[Excel Parse] Found index sheet: "${indexSheetName}"`)
-    const indexWs = wb.Sheets[indexSheetName]
-    sections = parseIndexSheet(indexWs)
-    indexTotals = parseIndexSheetTotals(indexWs)
-    console.log(`[Excel Parse] Parsed ${sections.length} sections from index sheet:`)
-    sections.forEach(sec => {
-      console.log(`  Section ${sec.order}: ${sec.name}, amount=${sec.amount}, wholesale=${sec.wholesaleAmount ?? 'N/A'}`)
-    })
-    console.log(`[Excel Parse] Index sheet totals:`, indexTotals)
-  } else {
-    console.log('[Excel Parse] No index sheet found. Sections will be auto-detected from details.')
+  // ★★★ セクションごとのシート処理（複数シートから全明細を集約） ★★★
+  // 最初のシートを除外し、2番目以降のシートをセクション明細として処理
+  console.log(`[Excel Parse] Processing ${wb.SheetNames.length} sheets for details...`)
+  
+  let allDetails: ParsedDetail[] = []
+  let detailSheetCount = 0
+  
+  for (let sheetIdx = 1; sheetIdx < wb.SheetNames.length; sheetIdx++) {
+    const sheetName = wb.SheetNames[sheetIdx]
+    const ws = wb.Sheets[sheetName]
+    console.log(`[Excel Parse] Processing sheet [${sheetIdx}] "${sheetName}"...`)
+    
+    try {
+      // 各シートからヘッダー検出してパース
+      const parseResult = parseDetailsFromHeaderDetectionWithPreset(ws, preset)
+      const sheetDetails = parseResult.details
+      
+      console.log(`[Excel Parse] Sheet "${sheetName}" yielded ${sheetDetails.length} items`)
+      
+      if (sheetDetails.length > 0) {
+        // セクション名をシート名から判定
+        const sectionName = sheetName.replace(/^[\d０-９]+[.．。]\s*/, '').trim()
+        
+        // セクション名を各明細に付与
+        sheetDetails.forEach(detail => {
+          detail.section_name = sectionName
+        })
+        
+        allDetails.push(...sheetDetails)
+        detailSheetCount++
+      } else {
+        console.log(`[Excel Parse] Sheet "${sheetName}" has no data items (only headers/empty rows?)`)
+      }
+    } catch (sheetErr: any) {
+      console.warn(`[Excel Parse] ⚠️ Failed to parse sheet "${sheetName}": ${sheetErr.message}`)
+      // 1つのシート失敗で全体を失敗させない
+    }
   }
 
-  // ★明細シート処理
-  const detailSheetNames = Array.isArray(preset.details.sheetName) ? preset.details.sheetName : [preset.details.sheetName]
-  const detailSheetName = wb.SheetNames.find(name => {
-    const normalized = normalizeText(name)
-    return detailSheetNames.some(targetName => normalized === targetName || normalized.includes(targetName))
-  })
-  if (!detailSheetName) {
-    throw new Error(`【エラー】明細シートが見つかりません。期待するシート名: ${detailSheetNames.join(', ')}\n利用可能なシート: ${wb.SheetNames.join(', ')}`)
-  }
-  console.log(`[Excel Parse] Found detail sheet: "${detailSheetName}" (using preset: ${preset.name})`)
-  const detailWs = wb.Sheets[detailSheetName]
-  
-  // 明細シートから自動でヘッダー行を検出してパース（プリセット情報を渡す）
-  // ★セクション定義を渡してセクション数分の合計を検出
-  const parseResult = parseDetailsFromHeaderDetectionWithPreset(detailWs, preset, sections)
-  const details = parseResult.details
+  const details = allDetails
+  console.log(`[Excel Parse] Total items from ${detailSheetCount} detail sheets: ${details.length}`)
 
   if (details.length === 0) {
-    console.error('[Excel Parse] No details found! Check logs above for header detection.')
+    console.error('[Excel Parse] No details found in any sheet!')
     throw new Error(
-      '【エラー】明細シートからデータが取得できません。\n' +
-      'ヘッダー行に「数量」「単価」「金額」などのキーワードが必要です。\n' +
-      'ブラウザのデベロッパーツール（F12）→ Console タブで\n' +
-      '[Excel Parse] で始まるログをすべて確認してください。\n' +
-      'その内容をお知らせいただければ原因を特定できます。'
+      '【エラー】すべてのシートから明細データが取得できません。\n' +
+      'Excel ファイルに正しい明細データが含まれているか確認してください。\n' +
+      '各シートに「数量」「単価」「金額」などのヘッダーが必要です。\n' +
+      'ブラウザコンソール [Excel Parse] のログを確認してください。'
     )
   }
 
-  // ★セクション検証（目次シートがある場合）
-  if (sections && sections.length > 0) {
-    validateSections(details, sections)
-  }
-
-  // 小計・消費税・合計を自動検出
+  // 小計・消費税・合計を自動検出（各シートから）
   console.log('[Excel Parse] 小計・消費税・合計を自動検出中...')
-  const lastDetailRow = parseResult.lastDataRow
-  const summary = findSummaryAmounts(detailWs, lastDetailRow)
-
+  let finalSubtotal = 0
+  let finalTaxAmount = 0
+  let finalTotalAmount = 0
+  
+  for (let sheetIdx = 1; sheetIdx < wb.SheetNames.length; sheetIdx++) {
+    const ws = wb.Sheets[wb.SheetNames[sheetIdx]]
+    const summary = findSummaryAmounts(ws, 50)  // ★範囲を固定に
+    
+    if (summary.subtotal) finalSubtotal += summary.subtotal
+    if (summary.taxAmount) finalTaxAmount += summary.taxAmount
+  }
+  
   // 見つからない場合は明細合計から計算
   const detailsSum = details.reduce((sum, d) => sum + d.amount, 0)
-  const finalSubtotal = summary.subtotal ?? detailsSum
-  const finalSpecialDiscount = summary.specialDiscount ?? 0
-  const finalTaxAmount = summary.taxAmount ?? Math.round((finalSubtotal - finalSpecialDiscount) * 0.1)
-  const finalTotalAmount = summary.totalAmount ?? (finalSubtotal - finalSpecialDiscount + finalTaxAmount)
+  if (finalSubtotal === 0) finalSubtotal = detailsSum
+  if (finalTaxAmount === 0) finalTaxAmount = Math.round((finalSubtotal) * 0.1)
+  finalTotalAmount = finalSubtotal + finalTaxAmount
 
   console.log('[Excel Parse] 最終金額情報:', {
     '小計': finalSubtotal,
-    '出精値引き': finalSpecialDiscount,
     '消費税': finalTaxAmount,
     '合計': finalTotalAmount,
     '明細合計': detailsSum
   })
-
-  // ★目次シートの合計値と照合（警告のみ、処理は続行）
-  if (indexTotals) {
-    console.log('[Excel Parse] === Validating against Index Sheet Totals ===')
-    const expectedTotal = indexTotals.wholesaleTotal ?? indexTotals.totalAmount
-    if (expectedTotal && Math.abs(finalTotalAmount - expectedTotal) > 100) {
-      console.warn(
-        `[Excel Parse] ⚠️ Total amount mismatch with index sheet!\n` +
-        `  Parsed from details: ${finalTotalAmount}\n` +
-        `  Expected from index: ${expectedTotal}\n` +
-        `  Difference: ${finalTotalAmount - expectedTotal}`
-      )
-    } else if (expectedTotal) {
-      console.log(`[Excel Parse] ✓ Total amount validated: ${finalTotalAmount} matches index sheet`)
-    }
-  }
-
-  // ★小計行を除外（明細UIに表示しない）
-  const detailsWithoutSubtotals = details.filter(d => !d.section_subtotal)
-  console.log(`[Excel Parse] Filtered out ${details.length - detailsWithoutSubtotals.length} subtotal rows`)
 
   return {
     coverData: {
@@ -1449,12 +1430,11 @@ function processMultiSheetWorkbook(
       estimateDate,
       estimateNo,
       subtotal: finalSubtotal,
-      specialDiscount: finalSpecialDiscount,
+      specialDiscount: 0,
       taxAmount: finalTaxAmount,
       totalAmount: finalTotalAmount
     },
-    details: detailsWithoutSubtotals,
-    sections, // ★目次シートから読み取ったセクション定義
+    details,
     stampImage,
     fileName
   }
@@ -1660,7 +1640,14 @@ function parseDetailsFromHeaderDetectionWithPreset(
     }
   }
 
-  console.log(`[Excel Parse] Column mapping: itemName=${colItemName}, spec=${colSpec}, qty=${colQty}, unit=${colUnit}, price=${colPrice}, amount=${colAmount}, wholesale=${colWholesale}, costPrice=${colCostPrice}`)
+  console.log(`[Excel Parse] Column mapping: itemName=${colItemName}, spec=${colSpec}, qty=${colQty}, unit=${colUnit}, price=${colPrice}, amount=${colAmount}, wholesale=${colWholesale || 'N/A'}, costPrice=${colCostPrice || 'N/A'}`)
+  
+  // ★仕切価格カラム検出状況を明示的にログ出力
+  if (colWholesale) {
+    console.log(`[Excel Parse] ✓ 仕切価格カラム検出済み: ${colWholesale}列`)
+  } else {
+    console.warn(`[Excel Parse] ⚠️ 仕切価格カラム未検出（ヘッダー行 ${headerRow} で「仕切」「仕切価格」「帰社」が見つかりませんでした）`)
+  }
 
   // ★フォールバック：ヘッダー検出に失敗した場合、プリセットのdefaultColumnsを使用
   if (!colItemName || !colQty || !colPrice || !colAmount) {
@@ -1782,7 +1769,8 @@ function parseDetailsFromHeaderDetectionWithPreset(
       const rawB = getCellWithMerge(ws, `B${currentRow}`)
       const rawC = getCellWithMerge(ws, `C${currentRow}`)
       const rawD = getCellWithMerge(ws, `D${currentRow}`)
-      console.log(`[Excel Parse] Row${currentRow}: B="${rawB}" C="${rawC}" D="${rawD}" | itemName="${itemName}" qty=${qty} price=${unitPriceRaw} amount=${amountRaw}`)
+      const wholesaleDebug = colWholesale ? `wholesale(${colWholesale})=${wholesaleRaw}` : 'wholesale=N/A'
+      console.log(`[Excel Parse] Row${currentRow}: B="${rawB}" C="${rawC}" D="${rawD}" | itemName="${itemName}" qty=${qty} price=${unitPriceRaw} amount=${amountRaw} ${wholesaleDebug}`)
     }
 
     // 終了条件チェック
@@ -2194,7 +2182,7 @@ export async function POST(req: Request) {
       console.log('[Import Excel] Falling back to single sheet processing...')
       
       // フォールバック：表紙シートと明細シートを個別に処理
-      // 表紙シートを探す
+      // 表紙シートを探す（オプショナル）
       const coverSheetName = wb.SheetNames.find(n => {
         const norm = normalizeText(n)
         return norm === normalizeText('表紙') || norm.includes('表紙') || norm === normalizeText('cover')
@@ -2210,24 +2198,25 @@ export async function POST(req: Request) {
                norm.includes('明細') || norm.includes('見積明細') || norm.includes('詳細')
       }) || wb.SheetNames[0]
 
-      if (!coverSheetName || !detailSheetName) {
-        throw new Error(`必要なシートが見つかりません。表紙: ${coverSheetName || 'なし'}, 明細: ${detailSheetName || 'なし'}`)
+      if (!detailSheetName) {
+        throw new Error(`必要なシートが見つかりません。明細シート候補: ${wb.SheetNames.join(', ')}`)
       }
       
-      console.log(`[Import Excel] Using fallback: coverSheet="${coverSheetName}", detailSheet="${detailSheetName}"`)
-      const coverWs = wb.Sheets[coverSheetName]
+      console.log(`[Import Excel] Using fallback: coverSheet="${coverSheetName || '(なし)'}", detailSheet="${detailSheetName}"`)
+      const coverWs = coverSheetName ? wb.Sheets[coverSheetName] : null
       const detailWs = wb.Sheets[detailSheetName]
 
-      // 表紙から情報を抽出
-      const customerName = findValueFromCells(coverWs, preset.cover.customerName) || findCustomerName(coverWs) || ''
-      const subject = findValueFromCells(coverWs, preset.cover.subject) || findSubject(coverWs) || findLabelValue(coverWs, ['件名', '工事名', '案件名']) || ''
-      const deliveryPlace = findValueFromCells(coverWs, preset.cover.deliveryPlace) || findLabelValue(coverWs, ['受渡場所', '納入場所', '納品場所', '受け渡し場所']) || ''
-      const deliveryDeadline = findValueFromCells(coverWs, preset.cover.deliveryDeadline) || findLabelValue(coverWs, ['受渡期限', '納期', '納入期限', '受け渡し期限']) || ''
-      const deliveryTerms = findValueFromCells(coverWs, preset.cover.deliveryTerms) || findLabelValue(coverWs, ['受渡条件', '納入条件', '受け渡し条件']) || ''
-      const validityText = findValueFromCells(coverWs, preset.cover.validityText) || findLabelValue(coverWs, ['有効期限', '本書有効期限', '見積有効期限']) || ''
-      const paymentTerms = findValueFromCells(coverWs, preset.cover.paymentTerms) || findLabelValue(coverWs, ['御支払条件', '支払条件', 'お支払条件', '支払い条件']) || ''
-      let estimateDate = findEstimateDate(coverWs)
-      let estimateNo = findEstimateNo(coverWs)
+      // 表紙から情報を抽出（表紙シートがない場合は明細シートから抽出）
+      const sourceWs = coverWs || detailWs
+      const customerName = findValueFromCells(sourceWs, preset.cover.customerName) || findCustomerName(sourceWs) || ''
+      const subject = findValueFromCells(sourceWs, preset.cover.subject) || findSubject(sourceWs) || findLabelValue(sourceWs, ['件名', '工事名', '案件名']) || ''
+      const deliveryPlace = findValueFromCells(sourceWs, preset.cover.deliveryPlace) || findLabelValue(sourceWs, ['受渡場所', '納入場所', '納品場所', '受け渡し場所']) || ''
+      const deliveryDeadline = findValueFromCells(sourceWs, preset.cover.deliveryDeadline) || findLabelValue(sourceWs, ['受渡期限', '納期', '納入期限', '受け渡し期限']) || ''
+      const deliveryTerms = findValueFromCells(sourceWs, preset.cover.deliveryTerms) || findLabelValue(sourceWs, ['受渡条件', '納入条件', '受け渡し条件']) || ''
+      const validityText = findValueFromCells(sourceWs, preset.cover.validityText) || findLabelValue(sourceWs, ['有効期限', '本書有効期限', '見積有効期限']) || ''
+      const paymentTerms = findValueFromCells(sourceWs, preset.cover.paymentTerms) || findLabelValue(sourceWs, ['御支払条件', '支払条件', 'お支払条件', '支払い条件']) || ''
+      let estimateDate = findEstimateDate(sourceWs)
+      let estimateNo = findEstimateNo(sourceWs)
       
       console.log('[Import Excel] Fallback cover data extracted:', {
         customerName, subject, deliveryPlace, deliveryDeadline, 
@@ -2300,27 +2289,31 @@ export async function POST(req: Request) {
     // ★★★ Supabaseでの顧客照合のみ実施（登録はしない） ★★★
     const sb = getAdminClient()
     
-    // 顧客の存在確認
+    // 顧客の存在確認（顧客名が空でも処理続行）
     console.log('[Import Excel] coverData.customerName:', processResult.coverData?.customerName)
     const finalCustomerName = normalizeText(processResult.coverData.customerName)
-    if (!finalCustomerName) throw new Error('顧客名が取得できません')
-
-    const exact = await sb.from('customers').select('id,name').eq('name', finalCustomerName).limit(1)
-    if (exact.error) throw exact.error
     
     let customerId = null
     let customerStatus = 'new'  // new | existing
     
-    if (exact.data?.length) {
-      customerId = exact.data[0].id
-      customerStatus = 'existing'
-    } else {
-      const partial = await sb.from('customers').select('id,name').ilike('name', `%${finalCustomerName}%`).limit(1)
-      if (partial.error) throw partial.error
-      if (partial.data?.length) {
-        customerId = partial.data[0].id
+    if (finalCustomerName) {
+      const exact = await sb.from('customers').select('id,name').eq('name', finalCustomerName).limit(1)
+      if (exact.error) throw exact.error
+      
+      if (exact.data?.length) {
+        customerId = exact.data[0].id
         customerStatus = 'existing'
+      } else {
+        const partial = await sb.from('customers').select('id,name').ilike('name', `%${finalCustomerName}%`).limit(1)
+        if (partial.error) throw partial.error
+        if (partial.data?.length) {
+          customerId = partial.data[0].id
+          customerStatus = 'existing'
+        }
       }
+      console.log('[Import Excel] Customer lookup result:', { customerId, customerStatus })
+    } else {
+      console.warn('[Import Excel] ⚠️ Customer name not found in Excel. User will need to input manually.')
     }
 
     // ★★★ DBには登録せず、解析結果のみ返す ★★★

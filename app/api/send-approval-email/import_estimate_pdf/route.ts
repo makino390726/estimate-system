@@ -92,6 +92,14 @@ function extractNumber(text: string): number | null {
 // ================================
 // PDFテキストから見積情報を抽出
 // ================================
+const safeDecode = (v: string) => {
+  try {
+    return decodeURIComponent(v)
+  } catch {
+    return v
+  }
+}
+
 function extractEstimateData(text: string) {
   console.log('[PDF Parse] 抽出開始')
   console.log('[PDF Parse] テキスト長:', text.length)
@@ -121,7 +129,7 @@ function extractEstimateData(text: string) {
   }> = []
 
   // テキストを改善：スペースを正規化
-  const normalizedText = text.replace(/\s+/g, ' ')
+  const normalizedText = safeDecode(text).replace(/\s+/g, ' ')
   
   // 顧客名抽出（「様」「御中」の前）
   const customerMatch = normalizedText.match(/([^\s]+)\s*(?:様|御中)/)

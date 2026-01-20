@@ -42,8 +42,27 @@ type SectionDef = {
   wholesaleAmount?: number
 }
 
-export default function ConfirmImportPage() {
+type ConfirmImportPageProps = {
+  data?: any
+  onBack?: () => void
+}
+
+export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmImportPageProps = {}) {
+  console.log('[ConfirmPage] Component rendered with propsData:', !!propsData)
+  console.log('[ConfirmPage] propsData keys:', propsData ? Object.keys(propsData) : 'undefined')
+  
   const router = useRouter()
+  
+  // ダークモード対策：body背景を白に明示的に設定
+  useEffect(() => {
+    document.body.style.backgroundColor = '#ffffff'
+    document.body.style.color = '#1a1a1a'
+    return () => {
+      document.body.style.backgroundColor = ''
+      document.body.style.color = ''
+    }
+  }, [])
+  
   const [importData, setImportData] = useState<any>(null)
   const [details, setDetails] = useState<Detail[]>([])
   const [sections, setSections] = useState<SectionDef[]>([])
@@ -127,39 +146,38 @@ export default function ConfirmImportPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [propsData])
 
   const loadData = async () => {
     try {
-      // sessionStorageから解析データ取得
-      const dataStr = sessionStorage.getItem('excel_import_data')
-      if (!dataStr) {
-        alert('データが見つかりません。最初からやり直してください。')
-        router.push('/cases/import-excel')
+      // propsDataが渡されていればそれを使用、なければURL パラメータから取得
+      let data = propsData
+      
+      if (!data && typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search)
+        const dataStr = params.get('data')
+        
+        if (!dataStr) {
+          alert('データが見つかりません。最初からやり直してください。')
+          setLoading(false)
+          return
+        }
+
+        // Base64 デコード
+        const decoded = Buffer.from(dataStr, 'base64').toString('utf-8')
+        data = JSON.parse(decoded)
+      }
+      
+      if (!data) {
+        alert('データが見つかりません。')
+        setLoading(false)
         return
       }
-
-      const data = JSON.parse(dataStr)
+      
+      console.log('[ConfirmPage] Data loaded successfully')
+      console.log('[ConfirmPage] Full data:', JSON.stringify(data, null, 2))
       
       setImportData(data)
-      
-      // 修正可能なフィールドの初期値設定
-      setEditCustomerName(data.customerName || '')
-      setEditSubject(data.subject || '')
-      setEditDeliveryPlace(data.deliveryPlace || '')
-      setEditDeliveryDeadline(data.deliveryDeadline || '')
-      setEditDeliveryTerms(data.deliveryTerms || '')
-      setEditValidityText(data.validityText || '')
-      setEditPaymentTerms(data.paymentTerms || '')
-      
-      console.log('[ConfirmPage] Imported data:', {
-        subtotal: data.subtotal,
-        specialDiscount: data.specialDiscount,
-        taxAmount: data.taxAmount,
-        totalAmount: data.totalAmount,
-        sections: data.sections,
-        details: data.details?.slice(0, 3) // 最初の3件を表示
-      })
       setSpecialDiscount(Number(data.specialDiscount) || 0)
       // Excel側の消費税から税率を推定して初期反映
       const baseForTax = (data.subtotal || 0) - (data.specialDiscount || 0)
@@ -170,12 +188,33 @@ export default function ConfirmImportPage() {
       setStampImage(data.stampImage || null)
       
       // ★API側で複数セル値が連結されている場合、それを反映
-      setEditEstimateNo(data.estimateNo || '')
+      setEditEstimateNo(data.estimateNo || data.coverData?.estimateNumber || '')
       
       // 日付のサニタイズとバリデーション
       debugDateValue('[loadData] data.estimateDate', data.estimateDate)
-      const sanitizedDate = sanitizeDateString(data.estimateDate)
+      const sanitizedDate = sanitizeDateString(data.estimateDate || data.coverData?.estimateDate)
       setEditEstimateDate(sanitizedDate || '')
+      
+      // 顧客名と件名を設定
+      setEditCustomerName(data.customerName || data.coverData?.customerName || '')
+      setEditSubject(data.subject || data.coverData?.subject || '')
+      setEditDeliveryPlace(data.deliveryPlace || data.coverData?.deliveryPlace || '')
+      setEditDeliveryDeadline(data.deliveryDeadline || data.coverData?.deliveryDeadline || '')
+      setEditDeliveryTerms(data.deliveryTerms || data.coverData?.deliveryTerms || '')
+      setEditValidityText(data.validityText || data.coverData?.validityText || '')
+      setEditPaymentTerms(data.paymentTerms || data.coverData?.paymentTerms || '')
+      
+      console.log('[ConfirmPage] Edit states:', {
+        estimateNo: data.estimateNo,
+        estimateDate: sanitizedDate,
+        customerName: data.customerName,
+        subject: data.subject,
+        deliveryDeadline: data.deliveryDeadline,
+        deliveryTerms: data.deliveryTerms,
+        validityText: data.validityText,
+        paymentTerms: data.paymentTerms,
+        details: data.details?.length || 0
+      })
       
       // セクション定義を設定
       if (data.sections) {
@@ -406,8 +445,8 @@ export default function ConfirmImportPage() {
       const { error: detailErr } = await supabase.from('case_details').insert(detailRows)
       if (detailErr) throw detailErr
 
-      // sessionStorageクリア
-      sessionStorage.removeItem('excel_import_data')
+      // localStorage クリア
+      // (URL パラメータなので不要)
 
       alert(`✅ 確定しました！\n案件ID: ${case_id}`)
       router.push('/cases/list')
@@ -434,6 +473,7 @@ export default function ConfirmImportPage() {
       padding: '20px', 
       fontFamily: 'system-ui',
       backgroundColor: '#ffffff',
+      color: '#1a1a1a',
       minHeight: '100vh'
     }}>
       <button
@@ -443,7 +483,7 @@ export default function ConfirmImportPage() {
           padding: '10px 16px',
           fontSize: '14px',
           backgroundColor: '#6c757d',
-          color: 'white',
+          color: '#ffffff',
           border: 'none',
           borderRadius: '4px',
           cursor: 'pointer',
