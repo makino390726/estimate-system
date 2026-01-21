@@ -39,7 +39,7 @@ type StaffInfo = {
 export default function CaseApprovalPage() {
   const params = useParams()
   const router = useRouter()
-  
+
   const caseId = typeof params.caseId === 'string' ? params.caseId : (Array.isArray(params.caseId) ? params.caseId[0] : '')
 
   const [caseData, setCaseData] = useState<any>(null)
@@ -48,7 +48,7 @@ export default function CaseApprovalPage() {
   const [staffName, setStaffName] = useState<string>('担当者不明')
   const [customerName, setCustomerName] = useState<string>('')
   const [approvalHistory, setApprovalHistory] = useState<any[]>([])  // ★ 承認履歴
-  
+
   // ★ approversステートを追加
   const [approvers, setApprovers] = useState<{
     applicant: StaffInfo | null
@@ -61,7 +61,7 @@ export default function CaseApprovalPage() {
     senmu: null,
     shacho: null,
   })
-  
+
   const [approvalFlow, setApprovalFlow] = useState<{
     applicant: string
     sectionHead: string | null
@@ -383,7 +383,7 @@ export default function CaseApprovalPage() {
         role: role,
         action: action,
       })
-    
+
     if (error) {
       console.error('履歴記録エラー:', error)
     }
@@ -491,7 +491,7 @@ export default function CaseApprovalPage() {
 
     switch (role) {
       case 'staff':
-        updateData = { 
+        updateData = {
           approve_staff: now,
           oral_request_manager: now
         }
@@ -504,7 +504,7 @@ export default function CaseApprovalPage() {
           alert('申請者の承認が必要です')
           return
         }
-        updateData = { 
+        updateData = {
           approve_manager: now,
           oral_request_director: now
         }
@@ -514,7 +514,7 @@ export default function CaseApprovalPage() {
           alert('所長の承認が必要です')
           return
         }
-        updateData = { 
+        updateData = {
           approve_director: now,
           oral_request_president: now
         }
@@ -594,7 +594,7 @@ export default function CaseApprovalPage() {
       setMsg('差し戻しました。差し戻しメールを送信しました。')
       fetchCaseData()
     }
-    
+
     setTimeout(() => setMsg(null), 3000)
   }
 
@@ -604,7 +604,7 @@ export default function CaseApprovalPage() {
       return
     }
     let email = ''
-    
+
     switch (role) {
       case 'manager':
         email = managerEmail
@@ -658,8 +658,8 @@ export default function CaseApprovalPage() {
       const response = await fetch('/api/send-approval-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email, 
+        body: JSON.stringify({
+          email,
           caseId,
           subject: caseData?.subject || '件名不明',
           approvedBy: currentUser?.name || '担当者',
@@ -686,8 +686,8 @@ export default function CaseApprovalPage() {
       await fetch('/api/send-approval-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email, 
+        body: JSON.stringify({
+          email,
           caseId,
           subject: `【差し戻し】${caseData?.subject || '件名不明'}`,
           approvedBy: `${rejectedBy}により差し戻し`,
@@ -705,10 +705,10 @@ export default function CaseApprovalPage() {
   const totalCostAmount = detailsData.reduce((sum, r) => sum + ((r.cost_price || 0) * r.quantity), 0)
   const totalGrossProfit = subtotal - totalCostAmount
   const grossProfitRate = subtotal > 0 ? (totalGrossProfit / subtotal) * 100 : 0
-  
+
   // DBにskip_higher_approvalカラムがない環境でも落ちないよう存在判定
   const canSkipHigherApproval = caseData ? ('skip_higher_approval' in caseData) : false
-  
+
   const discount = caseData?.discount || 0
   const taxRate = caseData?.tax_rate || 0.1
   const subtotalAfterDiscount = subtotal - discount
@@ -939,7 +939,7 @@ export default function CaseApprovalPage() {
                   const costPrice = row.cost_unit_price || 0
                   const costAmount = costPrice * row.quantity
                   const grossProfit = row.amount - costAmount
-                  
+
                   return (
                     <tr key={row.id || `row-${index}`}>
                       <td style={tdStyle}>{row.product_name || '-'}</td>
@@ -1099,7 +1099,7 @@ export default function CaseApprovalPage() {
           {/* 承認操作 */}
           <div style={{ marginBottom: 24, padding: 16, border: '1px solid #334155', borderRadius: 8, backgroundColor: '#1e293b' }}>
             <h3 style={{ marginTop: 0, color: '#93c5fd' }}>承認操作</h3>
-            
+
             {/* 申請者承認（申請不要 / 通常送信） */}
             <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#0f172a', borderRadius: 4, border: '1px solid #334155' }}>
               <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>申請者承認</h4>
@@ -1128,13 +1128,13 @@ export default function CaseApprovalPage() {
                 <button onClick={() => openPrintPreview('staff')} className="btn-3d" style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input 
-                  type="email" 
-                  value={managerEmail} 
-                  onChange={(e) => setManagerEmail(e.target.value)} 
-                  placeholder="所長のメールアドレス" 
-                  className="input-inset" 
-                  style={{ flex: 1 }} 
+                <input
+                  type="email"
+                  value={managerEmail}
+                  onChange={(e) => setManagerEmail(e.target.value)}
+                  placeholder="所長のメールアドレス"
+                  className="input-inset"
+                  style={{ flex: 1 }}
                   disabled={!!caseData?.approve_staff}
                 />
               </div>
@@ -1152,13 +1152,13 @@ export default function CaseApprovalPage() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <input 
-                  type="email" 
-                  value={directorEmail} 
-                  onChange={(e) => setDirectorEmail(e.target.value)} 
-                  placeholder="専務のメールアドレス" 
-                  className="input-inset" 
-                  style={{ flex: 1 }} 
+                <input
+                  type="email"
+                  value={directorEmail}
+                  onChange={(e) => setDirectorEmail(e.target.value)}
+                  placeholder="専務のメールアドレス"
+                  className="input-inset"
+                  style={{ flex: 1 }}
                   disabled={higherApprovalDisabled}
                 />
                 <button onClick={() => handleApproveOnly('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
@@ -1173,13 +1173,13 @@ export default function CaseApprovalPage() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input 
-                  type="email" 
-                  value={rejectEmailManager} 
-                  onChange={(e) => setRejectEmailManager(e.target.value)} 
-                  placeholder="差戻先メールアドレス" 
-                  className="input-inset" 
-                  style={{ flex: 1 }} 
+                <input
+                  type="email"
+                  value={rejectEmailManager}
+                  onChange={(e) => setRejectEmailManager(e.target.value)}
+                  placeholder="差戻先メールアドレス"
+                  className="input-inset"
+                  style={{ flex: 1 }}
                   disabled={higherApprovalDisabled}
                 />
                 <button onClick={() => handleReject('manager', rejectEmailManager)} className="btn-3d" style={{ backgroundColor: '#ffc107' }} disabled={higherApprovalDisabled}>↩️ 差戻</button>
@@ -1195,13 +1195,13 @@ export default function CaseApprovalPage() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <input 
-                  type="email" 
-                  value={presidentEmail} 
-                  onChange={(e) => setPresidentEmail(e.target.value)} 
-                  placeholder="社長のメールアドレス" 
-                  className="input-inset" 
-                  style={{ flex: 1 }} 
+                <input
+                  type="email"
+                  value={presidentEmail}
+                  onChange={(e) => setPresidentEmail(e.target.value)}
+                  placeholder="社長のメールアドレス"
+                  className="input-inset"
+                  style={{ flex: 1 }}
                   disabled={higherApprovalDisabled}
                 />
                 <button onClick={() => handleApproveOnly('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
@@ -1216,13 +1216,13 @@ export default function CaseApprovalPage() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input 
-                  type="email" 
-                  value={rejectEmailDirector} 
-                  onChange={(e) => setRejectEmailDirector(e.target.value)} 
-                  placeholder="差戻先メールアドレス" 
-                  className="input-inset" 
-                  style={{ flex: 1 }} 
+                <input
+                  type="email"
+                  value={rejectEmailDirector}
+                  onChange={(e) => setRejectEmailDirector(e.target.value)}
+                  placeholder="差戻先メールアドレス"
+                  className="input-inset"
+                  style={{ flex: 1 }}
                   disabled={higherApprovalDisabled}
                 />
                 <button onClick={() => handleReject('director', rejectEmailDirector)} className="btn-3d" style={{ backgroundColor: '#ffc107' }} disabled={higherApprovalDisabled}>↩️ 差戻</button>
@@ -1243,13 +1243,13 @@ export default function CaseApprovalPage() {
                 <button onClick={() => openPrintPreview('president')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input 
-                  type="email" 
-                  value={rejectEmailPresident} 
-                  onChange={(e) => setRejectEmailPresident(e.target.value)} 
-                  placeholder="差戻先メールアドレス" 
-                  className="input-inset" 
-                  style={{ flex: 1 }} 
+                <input
+                  type="email"
+                  value={rejectEmailPresident}
+                  onChange={(e) => setRejectEmailPresident(e.target.value)}
+                  placeholder="差戻先メールアドレス"
+                  className="input-inset"
+                  style={{ flex: 1 }}
                   disabled={higherApprovalDisabled}
                 />
                 <button onClick={() => handleReject('president', rejectEmailPresident)} className="btn-3d" style={{ backgroundColor: '#ffc107' }} disabled={higherApprovalDisabled}>↩️ 差戻</button>

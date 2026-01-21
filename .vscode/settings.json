@@ -1,0 +1,70 @@
+{
+  // ファイル監視の除外設定（パフォーマンス改善）
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/public/**": true,
+    "**/*.tsbuildinfo": true,
+    "**/package-lock.json": true
+  },
+  
+  // 検索から除外（パフォーマンス改善）
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/package-lock.json": true,
+    "**/.git": true,
+    "**/public/pdf.worker.min.js": true,
+    "**/*.tsbuildinfo": true
+  },
+  
+  // ファイルエクスプローラーから除外（UI整理）
+  "files.exclude": {
+    "**/.git": true,
+    "**/.next": false,
+    "**/*.tsbuildinfo": true
+  },
+  
+  // TypeScriptサーバーのメモリ上限を増やす
+  "typescript.tsserver.maxTsServerMemory": 4096,
+  
+  // TypeScript自動インポート最適化
+  "typescript.preferences.autoImportFileExcludePatterns": [
+    "node_modules",
+    ".next"
+  ],
+  
+  // ESLintのパフォーマンス設定
+  "eslint.runtime": "node",
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  
+  // エディタ設定
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  
+  // Next.js推奨設定
+  "tailwindCSS.experimental.classRegex": [
+    ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+    ["cx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+  ],
+  
+  // ファイル保存時の自動整形
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  }
+}

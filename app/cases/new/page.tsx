@@ -37,6 +37,7 @@ type Row = {
   section_id: number | null
   remarks?: string
   unregistered_product?: string  // ★ 直接入力された商品名
+  comment?: string  // ★ コメント機能
 }
 
 export default function CaseNewPage() {
@@ -113,6 +114,11 @@ export default function CaseNewPage() {
   const [priceModalCalculatedPrice, setPriceModalCalculatedPrice] = useState<number | null>(null)
   const [priceModalMode, setPriceModalMode] = useState<'direct' | 'calculate'>('calculate')
   const [priceModalShowRemarksCheckbox, setPriceModalShowRemarksCheckbox] = useState(false)  // ★ 定価備考表示チェック
+
+  // ★ コメント挿入機能用state
+  const [showCommentModal, setShowCommentModal] = useState(false)
+  const [commentRowIndex, setCommentRowIndex] = useState<number | null>(null)
+  const [commentText, setCommentText] = useState<string>('')
 
   // ★ テーブル・モーダル用スタイル定義（ダークテーマ対応）
   const thStyle: React.CSSProperties = {
@@ -713,6 +719,24 @@ export default function CaseNewPage() {
     setEditRowData(null)
   }
 
+  // ★ コメント挿入用ハンドラー
+  const handleOpenCommentModal = (index: number) => {
+    setCommentRowIndex(index)
+    setCommentText(rows[index].comment || '')
+    setShowCommentModal(true)
+  }
+
+  const handleSaveComment = () => {
+    if (commentRowIndex === null) return
+    
+    const newRows = [...rows]
+    newRows[commentRowIndex].comment = commentText
+    setRows(newRows)
+    setShowCommentModal(false)
+    setCommentRowIndex(null)
+    setCommentText('')
+  }
+
   const handleAddSection = () => {
     if (!newSectionName.trim()) {
       alert('セクション名を入力してください')
@@ -914,6 +938,7 @@ export default function CaseNewPage() {
         section_id: row.section_id,
         unregistered_product: row.unregistered_product || null,
         remarks: row.remarks || null,
+        comment: row.comment || null,  // ★ コメントを追加
       }))
 
       const { error: detailsError } = await supabase
@@ -1471,6 +1496,19 @@ export default function CaseNewPage() {
                             }}
                           >
                             削除
+                          </button>
+                          <button
+                            onClick={() => handleOpenCommentModal(index)}
+                            className="selector-button"
+                            style={{
+                              backgroundColor: row.comment ? '#16a34a' : '#475569',
+                              borderColor: row.comment ? '#15803d' : '#334155',
+                              color: '#fff',
+                              fontSize: '12px',
+                            }}
+                            title={row.comment ? 'コメント: ' + row.comment : 'コメント追加'}
+                          >
+                            💬 {row.comment ? 'コメント有' : 'コメント'}
                           </button>
                         </div>
                       </td>
@@ -2263,6 +2301,64 @@ export default function CaseNewPage() {
                   style={{ backgroundColor: '#28a745' }}
                 >
                   ✅ 確定
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ★ コメント挿入モーダル */}
+        {showCommentModal && (
+          <div style={modalOverlayStyle}>
+            <div style={{
+              ...modalContentStyle,
+              maxWidth: 500,
+            }}>
+              <h2>明細コメント</h2>
+
+              <div style={{
+                padding: 16,
+                backgroundColor: '#2d3748',
+                borderRadius: 4,
+                marginBottom: 16,
+              }}>
+                <label style={{ ...labelStyle, color: '#e2e8f0' }}>コメント内容</label>
+                <textarea
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: 120,
+                    padding: 12,
+                    backgroundColor: '#1a202c',
+                    color: '#fff',
+                    border: '1px solid #4a5568',
+                    borderRadius: 4,
+                    fontSize: 14,
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                  }}
+                  placeholder="このセクションについてのメモ、注記など..."
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => {
+                    setShowCommentModal(false)
+                    setCommentRowIndex(null)
+                    setCommentText('')
+                  }}
+                  className="btn-3d btn-reset"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleSaveComment}
+                  className="btn-3d btn-primary"
+                  style={{ backgroundColor: '#28a745' }}
+                >
+                  ✅ 保存
                 </button>
               </div>
             </div>

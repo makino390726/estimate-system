@@ -12,6 +12,7 @@ type Detail = {
   unit_price: number
   amount: number
   product_id: string | null
+  comment?: string  // コメント機能
 }
 
 type Staff = {
@@ -38,6 +39,9 @@ export default function ConfirmImportPage() {
   const [selectedStaffId, setSelectedStaffId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [showCommentModal, setShowCommentModal] = useState(false)
+  const [commentRowIndex, setCommentRowIndex] = useState<number | null>(null)
+  const [commentText, setCommentText] = useState<string>('')
 
   useEffect(() => {
     loadData()
@@ -56,8 +60,8 @@ export default function ConfirmImportPage() {
       const data = JSON.parse(dataStr)
       setImportData(data)
       
-      // 明細に product_id フィールドを追加
-      setDetails(data.details.map((d: any) => ({ ...d, product_id: null })))
+      // 明細に product_id と comment フィールドを追加
+      setDetails(data.details.map((d: any) => ({ ...d, product_id: null, comment: '' })))
 
       // 担当者リスト
       const { data: staffs } = await supabase.from('staffs').select('*').order('name')
@@ -91,6 +95,32 @@ export default function ConfirmImportPage() {
         return d
       })
     )
+  }
+
+  const handleOpenCommentModal = (index: number) => {
+    setCommentRowIndex(index)
+    setCommentText(details[index].comment || '')
+    setShowCommentModal(true)
+  }
+
+  const handleSaveComment = () => {
+    if (commentRowIndex === null) return
+    const newDetails = [...details]
+    newDetails[commentRowIndex].comment = commentText
+    setDetails(newDetails)
+    setShowCommentModal(false)
+    setCommentRowIndex(null)
+    setCommentText('')
+  }
+
+  const handleDeleteComment = () => {
+    if (commentRowIndex === null) return
+    const newDetails = [...details]
+    newDetails[commentRowIndex].comment = ''
+    setDetails(newDetails)
+    setShowCommentModal(false)
+    setCommentRowIndex(null)
+    setCommentText('')
   }
 
   const handleSave = async () => {
@@ -173,7 +203,8 @@ export default function ConfirmImportPage() {
         section: null,
         section_id: null,
         remarks: null,
-        coreplus_no: null
+        coreplus_no: null,
+        comment: d.comment || null  // コメントフィールドを追加
       }))
 
       const { error: detailErr } = await supabase.from('case_details').insert(detailRows)
@@ -306,6 +337,7 @@ export default function ConfirmImportPage() {
                 <th style={{ padding: '10px', textAlign: 'left' }}>単位</th>
                 <th style={{ padding: '10px', textAlign: 'right' }}>単価</th>
                 <th style={{ padding: '10px', textAlign: 'right' }}>金額</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>コメント</th>
               </tr>
             </thead>
             <tbody>
@@ -355,12 +387,28 @@ export default function ConfirmImportPage() {
                   <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>
                     ¥{detail.amount.toLocaleString('ja-JP')}
                   </td>
+                  <td style={{ padding: '8px', textAlign: 'center' }}>
+                    <button
+                      onClick={() => handleOpenCommentModal(idx)}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        backgroundColor: detail.comment ? '#4CAF50' : '#2196F3',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {detail.comment ? '💬 編集' : '💬 追加'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f9f9f9', fontWeight: 'bold', borderTop: '2px solid #333' }}>
-                <td colSpan={7} style={{ padding: '12px', textAlign: 'right' }}>
+                <td colSpan={8} style={{ padding: '12px', textAlign: 'right' }}>
                   合計:
                 </td>
                 <td style={{ padding: '12px', textAlign: 'right', fontSize: '16px' }}>
@@ -407,6 +455,110 @@ export default function ConfirmImportPage() {
           キャンセル
         </button>
       </div>
+
+      {/* コメント入力モーダル */}
+      {showCommentModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000
+          }}
+          onClick={() => {
+            setShowCommentModal(false)
+            setCommentRowIndex(null)
+            setCommentText('')
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              padding: '24px',
+              maxWidth: '600px',
+              width: '90%',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0 }}>💬 コメント入力</h3>
+            <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="コメントを入力してください..."
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '12px',
+                fontSize: '14px',
+                border: '2px solid #ddd',
+                borderRadius: '4px',
+                resize: 'vertical',
+                fontFamily: 'inherit'
+              }}
+            />
+            <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'space-between' }}>
+              <div>
+                <button
+                  onClick={handleDeleteComment}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    backgroundColor: '#f44336',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🗑️ 削除
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    setShowCommentModal(false)
+                    setCommentRowIndex(null)
+                    setCommentText('')
+                  }}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    backgroundColor: '#666',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleSaveComment}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✅ 保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

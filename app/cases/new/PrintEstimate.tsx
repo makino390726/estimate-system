@@ -12,6 +12,7 @@ export type PrintRow = {
   cost_price: number
   section_id: number | null
   remarks?: string  // ★ 備考フィールドを追加
+  comment?: string  // ★ コメントフィールドを追加
   unregistered_product?: string  // ★ 直接入力商品名
 }
 
@@ -454,7 +455,9 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
     sectionGroups.forEach((group, groupIndex) => {
       const sectionNumber = groupIndex + 1
-      const requiredRows = 1 + group.rows.length + 1
+      // ★ コメント行を考慮して計算
+      const commentRowsCount = group.rows.filter(r => r.comment).length
+      const requiredRows = 1 + group.rows.length + commentRowsCount + 1
       const emptyRowsCount = Math.max(0, DETAIL_BODY_ROWS - requiredRows)
 
       detailPages.push(
@@ -501,26 +504,37 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
               {/* 明細 */}
               {group.rows.map((row, idx) => (
-                <tr key={idx}>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>
-                    {row.spec ? `${row.item_name}・${row.spec}` : row.item_name}
-                  </td>
-                  <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: 11 }}>
-                    {row.quantity ? row.quantity.toLocaleString() : ''}
-                  </td>
-                  <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: 11 }}>
-                    {row.unit}
-                  </td>
-                  <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontSize: 11 }}>
-                    {row.unit_price ? row.unit_price.toLocaleString() : ''}
-                  </td>
-                  <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontSize: 11 }}>
-                    {row.amount ? row.amount.toLocaleString() : ''}
-                  </td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 10 }}>
-                    {(row.remarks || '').replace(/円$/g, '')}
-                  </td>
-                </tr>
+                <React.Fragment key={idx}>
+                  <tr>
+                    <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>
+                      {row.spec ? `${row.item_name}・${row.spec}` : row.item_name}
+                    </td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: 11 }}>
+                      {row.quantity ? row.quantity.toLocaleString() : ''}
+                    </td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: 11 }}>
+                      {row.unit}
+                    </td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontSize: 11 }}>
+                      {row.unit_price ? row.unit_price.toLocaleString() : ''}
+                    </td>
+                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontSize: 11 }}>
+                      {row.amount ? row.amount.toLocaleString() : ''}
+                    </td>
+                    <td style={{ border: '1px solid #000', padding: '4px', fontSize: 10 }}>
+                      {(row.remarks || '').replace(/円$/g, '')}
+                    </td>
+                  </tr>
+                  
+                  {/* ★ コメント行表示 */}
+                  {row.comment && (
+                    <tr>
+                      <td colSpan={6} style={{ border: '1px solid #000', padding: '6px 8px', fontSize: 10, backgroundColor: '#fffacd', fontStyle: 'italic' }}>
+                        {row.comment}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
 
               {/* 埋め行 */}
@@ -836,9 +850,30 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   // 縦様式
   // =========================
   const DATA_ROWS_PER_PAGE = MAX_ROWS_PER_PAGE || 20 // ★ propsから使用、デフォルト20
+  
+  // ★ コメント行を考慮したページ分割ロジック
   const pages: PrintRow[][] = []
-  for (let i = 0; i < rows.length; i += DATA_ROWS_PER_PAGE) {
-    pages.push(rows.slice(i, i + DATA_ROWS_PER_PAGE))
+  let currentPage: PrintRow[] = []
+  let currentPageRows = 0
+
+  for (const row of rows) {
+    const rowsForThisRow = 1 + (row.comment ? 1 : 0) // データ行 + コメント行（あれば）
+    
+    if (currentPageRows + rowsForThisRow > DATA_ROWS_PER_PAGE) {
+      // 新しいページに移動
+      if (currentPage.length > 0) {
+        pages.push(currentPage)
+      }
+      currentPage = [row]
+      currentPageRows = rowsForThisRow
+    } else {
+      currentPage.push(row)
+      currentPageRows += rowsForThisRow
+    }
+  }
+
+  if (currentPage.length > 0) {
+    pages.push(currentPage)
   }
   if (pages.length === 0) {
     pages.push([])
@@ -849,7 +884,9 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
       <style>{printStyleSheet}</style>
       {pages.map((pageRows, pageIndex) => {
         const isLast = pageIndex === pages.length - 1
-        const emptyCount = Math.max(0, DATA_ROWS_PER_PAGE - pageRows.length)
+        // ★ コメント行を考慮した埋め行計算
+        const filledRows = pageRows.reduce((sum, row) => sum + (1 + (row.comment ? 1 : 0)), 0)
+        const emptyCount = Math.max(0, DATA_ROWS_PER_PAGE - filledRows)
 
         return (
           <div
@@ -1111,30 +1148,41 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               </thead>
               <tbody>
                 {pageRows.map((row, idx) => (
-                  <tr key={idx}>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>
-                      {row.item_name}
-                      {row.spec && (
-                        <>
-                          <span style={{ display: 'inline-block', width: '5mm' }} />
-                          {row.spec}
-                        </>
-                      )}
-                    </td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
-                      {row.quantity ? row.quantity.toLocaleString() : ''}
-                    </td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', fontSize: 10, height: '6mm' }}>{row.unit}</td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
-                      {row.unit_price ? row.unit_price.toLocaleString() : ''}
-                    </td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
-                      {row.amount ? row.amount.toLocaleString() : ''}
-                    </td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>
-                      {(row.remarks || '').replace(/円$/g, '')}
-                    </td>
-                  </tr>
+                  <React.Fragment key={idx}>
+                    <tr>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>
+                        {row.item_name}
+                        {row.spec && (
+                          <>
+                            <span style={{ display: 'inline-block', width: '5mm' }} />
+                            {row.spec}
+                          </>
+                        )}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
+                        {row.quantity ? row.quantity.toLocaleString() : ''}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', fontSize: 10, height: '6mm' }}>{row.unit}</td>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
+                        {row.unit_price ? row.unit_price.toLocaleString() : ''}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
+                        {row.amount ? row.amount.toLocaleString() : ''}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>
+                        {(row.remarks || '').replace(/円$/g, '')}
+                      </td>
+                    </tr>
+                    
+                    {/* ★ コメント行表示（縦型用） */}
+                    {row.comment && (
+                      <tr>
+                        <td colSpan={6} style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 9, backgroundColor: '#fffacd', fontStyle: 'italic', height: 'auto' }}>
+                          {row.comment}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
 
                 {Array.from({ length: emptyCount }).map((_, idx) => (
