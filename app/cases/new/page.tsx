@@ -1821,18 +1821,20 @@ export default function CaseNewPage() {
               <h2>商品追加</h2>
 
               {/* ★ タブボタン */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #ddd' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #4a5568' }}>
                 <button
                   onClick={() => setProductModalTab('search')}
                   className="btn-3d"
                   style={{
-                    backgroundColor: productModalTab === 'search' ? '#007bff' : '#e9ecef',
-                    color: productModalTab === 'search' ? '#fff' : '#333',
+                    backgroundColor: productModalTab === 'search' ? '#3182ce' : '#4a5568',
+                    color: '#fff',
                     borderRadius: '4px 4px 0 0',
                     border: 'none',
                     padding: '8px 16px',
                     fontSize: 16,
                     fontWeight: 'bold',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
                   }}
                 >
                   📚 マスタから選択
@@ -1841,13 +1843,15 @@ export default function CaseNewPage() {
                   onClick={() => setProductModalTab('manual')}
                   className="btn-3d"
                   style={{
-                    backgroundColor: productModalTab === 'manual' ? '#007bff' : '#e9ecef',
-                    color: productModalTab === 'manual' ? '#fff' : '#333',
+                    backgroundColor: productModalTab === 'manual' ? '#3182ce' : '#4a5568',
+                    color: '#fff',
                     borderRadius: '4px 4px 0 0',
                     border: 'none',
                     padding: '8px 16px',
                     fontSize: 16,
                     fontWeight: 'bold',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
                   }}
                 >
                   ✏️ 直接入力
@@ -2108,18 +2112,20 @@ export default function CaseNewPage() {
               <h2>単価設定</h2>
 
               {/* タブボタン */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #ddd' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '2px solid #4a5568' }}>
                 <button
                   onClick={() => setPriceModalMode('calculate')}
                   className="btn-3d"
                   style={{
-                    backgroundColor: priceModalMode === 'calculate' ? '#007bff' : '#e9ecef',
-                    color: priceModalMode === 'calculate' ? '#fff' : '#333',
+                    backgroundColor: priceModalMode === 'calculate' ? '#3182ce' : '#4a5568',
+                    color: '#fff',
                     borderRadius: '4px 4px 0 0',
                     border: 'none',
                     padding: '8px 16px',
                     fontSize: 16,
                     fontWeight: 'bold',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
                   }}
                 >
                   📊 掛率計算
@@ -2128,13 +2134,15 @@ export default function CaseNewPage() {
                   onClick={() => setPriceModalMode('direct')}
                   className="btn-3d"
                   style={{
-                    backgroundColor: priceModalMode === 'direct' ? '#007bff' : '#e9ecef',
-                    color: priceModalMode === 'direct' ? '#fff' : '#333',
+                    backgroundColor: priceModalMode === 'direct' ? '#3182ce' : '#4a5568',
+                    color: '#fff',
                     borderRadius: '4px 4px 0 0',
                     border: 'none',
                     padding: '8px 16px',
                     fontSize: 16,
                     fontWeight: 'bold',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
                   }}
                 >
                   ✏️ 直接入力
@@ -2146,30 +2154,30 @@ export default function CaseNewPage() {
                 <>
               <div style={{
                 padding: 16,
-                backgroundColor: '#f8f9fa',
+                backgroundColor: '#2d3748',
                 borderRadius: 4,
                 marginBottom: 16,
               }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                   <div>
-                    <label style={labelStyle}>定価</label>
+                    <label style={{ ...labelStyle, color: '#e2e8f0' }}>定価</label>
                     <input
                       type="text"
                       value={priceModalListPrice ?? ''}
                       onChange={(e) => setPriceModalListPrice(e.target.value ? Number(e.target.value) : null)}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
                       placeholder="0"
                     />
                   </div>
                   <div>
-                    <label style={labelStyle}>掛率 (%)</label>
+                    <label style={{ ...labelStyle, color: '#e2e8f0' }}>掛率 (%)</label>
                     <input
                       type="text"
                       value={priceModalRate ?? ''}
                       onChange={(e) => setPriceModalRate(e.target.value ? Number(e.target.value) : null)}
                       className="input-inset"
-                      style={{ width: '100%', fontSize: 16 }}
+                      style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
                       placeholder="0"
                     />
                   </div>
@@ -2186,13 +2194,13 @@ export default function CaseNewPage() {
                 {priceModalCalculatedPrice !== null && (
                   <div style={{
                     padding: 12,
-                    backgroundColor: '#fff',
-                    border: '2px solid #28a745',
+                    backgroundColor: '#1a202c',
+                    border: '2px solid #48bb78',
                     borderRadius: 4,
                     textAlign: 'center',
                   }}>
-                    <span style={{ fontSize: 14, color: '#666' }}>計算結果</span>
-                    <div style={{ fontSize: 24, fontWeight: 'bold', color: '#28a745' }}>
+                    <span style={{ fontSize: 14, color: '#a0aec0' }}>計算結果</span>
+                    <div style={{ fontSize: 24, fontWeight: 'bold', color: '#48bb78' }}>
                       {priceModalCalculatedPrice.toLocaleString()} 円
                     </div>
                   </div>
@@ -2209,7 +2217,7 @@ export default function CaseNewPage() {
                   />
                   <label
                     htmlFor="showRemarksCheckbox"
-                    style={{ fontSize: 14, cursor: 'pointer', userSelect: 'none' }}
+                    style={{ fontSize: 14, cursor: 'pointer', userSelect: 'none', color: '#e2e8f0' }}
                   >
                     備考に定価を表示
                   </label>
@@ -2223,18 +2231,18 @@ export default function CaseNewPage() {
                 <>
               <div style={{
                 padding: 16,
-                backgroundColor: '#f8f9fa',
+                backgroundColor: '#2d3748',
                 borderRadius: 4,
                 marginBottom: 16,
               }}>
                 <div>
-                  <label style={labelStyle}>単価</label>
+                  <label style={{ ...labelStyle, color: '#e2e8f0' }}>単価</label>
                   <input
                     type="text"
                     value={priceModalDirectPrice ?? ''}
                     onChange={(e) => setPriceModalDirectPrice(e.target.value ? Number(e.target.value) : null)}
                     className="input-inset"
-                    style={{ width: '100%', fontSize: 16 }}
+                    style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
                     placeholder="0"
                   />
                 </div>

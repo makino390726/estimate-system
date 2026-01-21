@@ -145,7 +145,11 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
         setSections(data.sections)
       }
       
-      setDetails(data.details.map((d: any) => ({ ...d, product_id: null })))
+      console.log('[ConfirmImportPage] Details before mapping:', data.details.slice(0, 2))
+      const mappedDetails = data.details.map((d: any) => ({ ...d, product_id: null }))
+      console.log('[ConfirmImportPage] Details after mapping:', mappedDetails.slice(0, 2))
+      
+      setDetails(mappedDetails)
       setSearchQueries(Array(data.details.length).fill(''))
       setDropdownOpen(Array(data.details.length).fill(false))
       setPageIndex(Array(data.details.length).fill(0))
@@ -666,7 +670,7 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
                 <th style={{ padding: '8px', border: '1px solid #ddd', width: '140px' }}>品名</th>
                 <th style={{ padding: '8px', border: '1px solid #ddd', width: '200px' }}>商品検索</th>
                 <th style={{ padding: '8px', border: '1px solid #ddd', width: '120px' }}>規格</th>
-                <th style={{ padding: '8px', border: '1px solid #ddd', width: '45px' }}>数量</th>
+                <th style={{ padding: '8px', border: '1px solid #ddd', width: '80px' }}>数量</th>
                 <th style={{ padding: '8px', border: '1px solid #ddd', width: '55px' }}>単位</th>
                 <th style={{ padding: '8px', border: '1px solid #ddd', width: '90px' }}>単価</th>
                 <th style={{ padding: '8px', border: '1px solid #ddd', width: '100px' }}>金額</th>

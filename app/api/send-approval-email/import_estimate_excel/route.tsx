@@ -282,7 +282,7 @@ function findColumnsByHeader(ws: XLSX.WorkSheet, headerRow: number = 40) {
     const valueLower = value.toLowerCase()
     
     // デバッグ：原価・粗利関連のヘッダーをすべて表示
-    if (valueLower.includes('原価') || valueLower.includes('粗利') || valueLower.includes('定価') || valueLower.includes('仕切')) {
+    if (valueLower.includes('原価') || valueLower.includes('粗利') || valueLower.includes('定価') || valueLower.includes('仕切') || valueLower.includes('貴社')) {
       console.log(`[Excel Parse] 候補列発見: ${cellAddr}="${value}"`)
     }
     
@@ -298,13 +298,21 @@ function findColumnsByHeader(ws: XLSX.WorkSheet, headerRow: number = 40) {
       columns.grossMargin = col
       console.log(`[Excel Parse] ✓ 粗利率列確定: ${col}列`)
     }
-    if (!columns.wholesalePrice && (valueLower.includes('仕切') || valueLower.includes('帰社'))) {
+    if (!columns.wholesalePrice && (valueLower.includes('仕切') || valueLower.includes('帰社') || valueLower.includes('貴社'))) {
       columns.wholesalePrice = col
       console.log(`[Excel Parse] ✓ 仕切価格列確定: ${col}列 (キーワード: "${value}")`)
     }
   }
 
   console.log('[Excel Parse] 列検出結果:', columns)
+  
+  // ★デバッグ：仕切価格列が検出されなかった場合の警告
+  if (!columns.wholesalePrice) {
+    console.warn('[Excel Parse] ⚠ 警告: 仕切価格列が検出されませんでした。キーワード検索対象: "仕切", "帰社", "貴社"')
+  } else {
+    console.log(`[Excel Parse] ℹ 仕切価格列は${columns.wholesalePrice}列に検出されました`)
+  }
+  
   return columns
 }
 
@@ -805,6 +813,16 @@ function parseDetails(ws: XLSX.WorkSheet): { details: ParsedDetail[], lastDataRo
     }
   }
   
+  // ★40行目の実際のヘッダーを確認
+  console.log('[Excel Parse] ========== ヘッダー行40の内容確認 ==========')
+  for (let col = 0; col < 35; col++) {
+    const cellVal = normalizeText(getCell(ws, allCols[col] + '40'))
+    if (cellVal) {
+      console.log(`[Excel Parse] 40行 ${allCols[col]}列: "${cellVal}"`)
+    }
+  }
+  console.log('[Excel Parse] ==========================================')
+  
   for (const col of allCols.slice(0, 30)) { // A～AD列まで
     const cellVal = normalizeText(getCell(ws, col + String(headerRow)))
     if (cellVal.includes('品') && cellVal.includes('名')) {
@@ -836,7 +854,19 @@ function parseDetails(ws: XLSX.WorkSheet): { details: ParsedDetail[], lastDataRo
   // デバッグ：ヘッダ行と最初の数行をログ出力
   console.log('[Excel Parse] Scanning details from row', DETAIL.startRow)
   console.log(`[Excel Parse] 使用列: 品名=${colItemName}, 規格=${colSpec}, 数量=${colQty}, 単位=${colUnit}, 単価=${colPrice}, 金額=${colAmount}`)
-  
+  console.log(`[Excel Parse] 原価列: costPrice=${costColumns.costPrice}, costAmount=${costColumns.costAmount}, grossMargin=${costColumns.grossMargin}, wholesalePrice=${costColumns.wholesalePrice}`)
+
+  // データ確認
+  console.log('[Excel Parse] 41行目の実データ確認開始')
+  console.log(`[Excel Parse] 41行 品名 ${colItemName}: "${getCell(ws, colItemName + '41')}"`)
+  console.log(`[Excel Parse] 41行 数量 ${colQty}: "${getCell(ws, colQty + '41')}"`)
+  console.log(`[Excel Parse] 41行 単価 ${colPrice}: "${getCell(ws, colPrice + '41')}"`)
+  console.log(`[Excel Parse] 41行 金額 ${colAmount}: "${getCell(ws, colAmount + '41')}"`)
+  if (costColumns.costPrice) {
+    console.log(`[Excel Parse] 41行 原価単価 ${costColumns.costPrice}: "${getCell(ws, costColumns.costPrice + '41')}"`)
+  }
+  console.log('[Excel Parse] データ確認完了')
+
   let currentRow = DETAIL.startRow
   let sectionCount = 0
 
@@ -845,21 +875,14 @@ function parseDetails(ws: XLSX.WorkSheet): { details: ParsedDetail[], lastDataRo
     const spec = normalizeText(getCell(ws, colRow(colSpec, currentRow)))
     const qty = toNumber(getCell(ws, colRow(colQty, currentRow)))
     const unit = normalizeText(getCell(ws, colRow(colUnit, currentRow)))
-    let unitPrice = toNumber(getCell(ws, colRow(colPrice, currentRow)))
-    let amount = toNumber(getCell(ws, colRow(colAmount, currentRow)))
+    const unitPrice = toNumber(getCell(ws, colRow(colPrice, currentRow)))
+    const amount = toNumber(getCell(ws, colRow(colAmount, currentRow)))
     
     // 原価情報を動的列から取得
     const costPrice = costColumns.costPrice ? toNumber(getCell(ws, colRow(costColumns.costPrice, currentRow))) : null
     const costAmount = costColumns.costAmount ? toNumber(getCell(ws, colRow(costColumns.costAmount, currentRow))) : null
     const grossMargin = costColumns.grossMargin ? toNumber(getCell(ws, colRow(costColumns.grossMargin, currentRow))) : null
     const wholesalePrice = costColumns.wholesalePrice ? toNumber(getCell(ws, colRow(costColumns.wholesalePrice, currentRow))) : null
-    
-    // ★仕切価格がある場合、単価と金額を再計算
-    if (wholesalePrice !== null && wholesalePrice > 0 && qty !== null && qty > 0) {
-      unitPrice = Math.round(wholesalePrice / qty)
-      amount = wholesalePrice  // 金額は仕切価格を使用
-      console.log(`[Excel Parse] Row ${currentRow}: 仕切価格=${wholesalePrice}, 数量=${qty} → 計算単価=${unitPrice}, 金額=${amount}`)
-    }
 
     // デバッグ：最初のセクションの最初の10行を出力
     if (sectionCount === 0 && currentRow <= DETAIL.startRow + 10) {
@@ -951,12 +974,28 @@ function parseDetails(ws: XLSX.WorkSheet): { details: ParsedDetail[], lastDataRo
     let up = unitPrice ?? 0
     let am = amount ?? 0
     
-    // 仕切価格がある場合は金額・単価を逆算
+    // ★デバッグ：仕切価格の有無を確認
+    console.log(`[Excel Parse] Row ${currentRow} 事前チェック: wholesalePrice=${wholesalePrice}, q=${q}, up=${up}, am=${am}`)
+    
+    // 金額計算ロジック（統一版）
+    // 優先順：1. 仕切価格があれば使用 2. 仕切価格がなく金額がある → そのまま使用 3. 仕切価格もなく単価×数量で計算
     if (wholesalePrice !== null && wholesalePrice > 0) {
+      // ケース1: 仕切価格がある → 金額＝仕切価格、単価＝仕切価格/数量
       am = wholesalePrice
       if (q > 0) up = Math.round(wholesalePrice / q)
-    } else if (am === 0 && q > 0) {
+      console.log(`[Excel Parse] Row ${currentRow}: 🔄 ケース1(仕切価格優先) → 金額=${am}, 単価=${up}`)
+    } else if (am !== null && am > 0) {
+      // ケース2: 仕切価格なし、金額あり → 金額をそのまま使用、単価＝金額/数量
+      if (q > 0 && up === 0) {
+        up = Math.round(am / q)
+      }
+      console.log(`[Excel Parse] Row ${currentRow}: 🔄 ケース2(金額を使用) → 金額=${am}, 単価=${up}`)
+    } else if (up !== null && up > 0 && q > 0) {
+      // ケース3: 仕切価格もなく金額もない、単価あり → 金額＝単価×数量
       am = q * up
+      console.log(`[Excel Parse] Row ${currentRow}: 🔄 ケース3(単価から計算) → 金額=${am}, 単価=${up}`)
+    } else {
+      console.log(`[Excel Parse] Row ${currentRow}: ⚠️ ケース0(金額計算不可) → 金額=${am}, 単価=${up}`)
     }
 
     rows.push({
@@ -1749,6 +1788,7 @@ function parseDetailsFromHeaderDetectionWithPreset(
     const unitPriceRaw = toNumber(getCell(ws, `${colPrice}${currentRow}`))
     const amountRaw = toNumber(getCell(ws, `${colAmount}${currentRow}`))
     const wholesaleRaw = colWholesale ? toNumber(getCell(ws, `${colWholesale}${currentRow}`)) : null
+    const costPriceRaw = colCostPrice ? toNumber(getCell(ws, `${colCostPrice}${currentRow}`)) : null
 
     // ★商品名が空の場合、列B-X（最初の24列）をスキャンして最初の非空値を使用
     if (!itemName && (qty !== null || unitPriceRaw !== null || amountRaw !== null)) {
@@ -1870,9 +1910,13 @@ function parseDetailsFromHeaderDetectionWithPreset(
       let amount = amountRaw ?? 0
       const wholesale = wholesaleRaw ?? null
 
+      // ★仕切価格優先ロジック：仕切価格がある場合は必ず単価を再計算
       if (wholesale !== null && wholesale > 0) {
-        amount = wholesale
-        if (!unitPrice && q > 0) unitPrice = Math.round(wholesale / q)
+        amount = wholesale  // 金額 = 仕切価格
+        if (q > 0) unitPrice = Math.round(wholesale / q)  // 単価 = 仕切価格 ÷ 数量
+        if (currentRow <= headerRow + 10) {
+          console.log(`[Excel Parse] Row${currentRow}: 仕切価格適用 wholesale=${wholesale}, qty=${q} → unitPrice=${unitPrice}, amount=${amount}`)
+        }
       } else if (!amount) {
         amount = q * unitPrice
       }
@@ -1884,13 +1928,13 @@ function parseDetailsFromHeaderDetectionWithPreset(
         unit: unit || '式',
         unit_price: unitPrice,
         amount,
-        cost_price: null,
+        cost_price: costPriceRaw,
         wholesale_price: wholesale,
         section_name: currentSectionName || undefined
       })
 
       lastDataRow = currentRow
-      console.log(`[Excel Parse] Row${currentRow}: ${itemName} | qty=${q} | price=${unitPrice} | amount=${amount} | wholesale=${wholesale} | section="${currentSectionName}"`)
+      console.log(`[Excel Parse] Row${currentRow}: ${itemName} | qty=${q} | price=${unitPrice} | amount=${amount} | wholesale=${wholesale} | costPrice=${costPriceRaw} | section="${currentSectionName}"`)
     }
 
     currentRow++
@@ -2317,6 +2361,14 @@ export async function POST(req: Request) {
     }
 
     // ★★★ DBには登録せず、解析結果のみ返す ★★★
+    console.log('[Import Excel] Return JSON - details sample:', processResult.details.slice(0, 2).map(d => ({ 
+      item_name: d.item_name, 
+      quantity: d.quantity, 
+      unit_price: d.unit_price, 
+      amount: d.amount,
+      wholesale_price: d.wholesale_price
+    })))
+    
     return NextResponse.json({
       ok: true,
       parsed: true,  // 解析済みフラグ

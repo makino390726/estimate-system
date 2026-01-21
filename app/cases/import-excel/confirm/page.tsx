@@ -333,6 +333,61 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
       setIsSearching((prev) => prev.filter((_, idx) => idx !== index))
     }
   }
+
+  // 仕切価格から単価と金額を自動計算
+  const handleWholesalePriceChange = (index: number, value: number | null) => {
+    setDetails((prev) =>
+      prev.map((d, idx) => {
+        if (idx === index && value !== null && value > 0 && d.quantity > 0) {
+          const newUnitPrice = Math.round(value / d.quantity)
+          const newAmount = value
+          return {
+            ...d,
+            wholesale_price: value,
+            unit_price: newUnitPrice,
+            amount: newAmount
+          }
+        }
+        return d
+      })
+    )
+  }
+
+  // 単価から金額を自動計算
+  const handleUnitPriceChange = (index: number, value: number | null) => {
+    setDetails((prev) =>
+      prev.map((d, idx) => {
+        if (idx === index && value !== null && value >= 0) {
+          const newAmount = value * d.quantity
+          return {
+            ...d,
+            unit_price: value,
+            amount: newAmount,
+            wholesale_price: newAmount // 仕切価格も更新
+          }
+        }
+        return d
+      })
+    )
+  }
+
+  // 金額から単価を自動計算
+  const handleAmountChange = (index: number, value: number | null) => {
+    setDetails((prev) =>
+      prev.map((d, idx) => {
+        if (idx === index && value !== null && value >= 0 && d.quantity > 0) {
+          const newUnitPrice = Math.round(value / d.quantity)
+          return {
+            ...d,
+            amount: value,
+            unit_price: newUnitPrice,
+            wholesale_price: value // 仕切価格も更新
+          }
+        }
+        return d
+      })
+    )
+  }
   const handleSave = async () => {
     if (!selectedStaffId) {
       alert('担当者を選択してください')
@@ -882,6 +937,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                 <th style={{ padding: '8px', textAlign: 'left', color: '#ffffff', fontWeight: 'bold', width: '50px' }}>単位</th>
                 <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '80px' }}>単価</th>
                 <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', width: '90px' }}>金額</th>
+                <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#ff6f00', width: '90px' }}>仕切価格</th>
                 <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '80px' }}>原価単価</th>
                 <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '90px' }}>原価額</th>
                 <th style={{ padding: '8px', textAlign: 'right', color: '#ffffff', fontWeight: 'bold', backgroundColor: '#388e3c', width: '70px' }}>粗利率</th>
@@ -1042,11 +1098,66 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                   <td style={{ padding: '8px', fontSize: '12px', color: '#616161', width: '100px' }}>{detail.spec || '-'}</td>
                   <td style={{ padding: '8px', textAlign: 'right', color: '#212121', fontWeight: 'bold', width: '60px' }}>{detail.quantity}</td>
                   <td style={{ padding: '8px', color: '#424242', width: '50px' }}>{detail.unit || '-'}</td>
-                  <td style={{ padding: '8px', textAlign: 'right', color: '#1565c0', fontWeight: 'bold', width: '80px' }}>
-                    ¥{detail.unit_price.toLocaleString('ja-JP')}
+                  <td style={{ padding: '8px', width: '80px' }}>
+                    <input
+                      type="number"
+                      value={detail.unit_price || ''}
+                      onChange={(e) => handleUnitPriceChange(idx, Number(e.target.value) || null)}
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        border: '2px solid #1565c0',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        textAlign: 'right',
+                        fontWeight: 'bold',
+                        color: '#1565c0',
+                        backgroundColor: '#e3f2fd'
+                      }}
+                      min="0"
+                      step="1"
+                    />
                   </td>
-                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#c62828', fontSize: '14px', width: '90px' }}>
-                    ¥{detail.amount.toLocaleString('ja-JP')}
+                  <td style={{ padding: '8px', width: '90px' }}>
+                    <input
+                      type="number"
+                      value={detail.amount || ''}
+                      onChange={(e) => handleAmountChange(idx, Number(e.target.value) || null)}
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        border: '2px solid #c62828',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        textAlign: 'right',
+                        fontWeight: 'bold',
+                        color: '#c62828',
+                        backgroundColor: '#ffebee'
+                      }}
+                      min="0"
+                      step="1"
+                    />
+                  </td>
+                  <td style={{ padding: '8px', width: '90px' }}>
+                    <input
+                      type="number"
+                      value={detail.wholesale_price || ''}
+                      onChange={(e) => handleWholesalePriceChange(idx, Number(e.target.value) || null)}
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        border: '2px solid #ff6f00',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        textAlign: 'right',
+                        fontWeight: 'bold',
+                        color: '#ff6f00',
+                        backgroundColor: '#fff3e0'
+                      }}
+                      min="0"
+                      step="1"
+                      title="仕切価格を入力すると、自動的に単価と金額を計算します"
+                    />
                   </td>
                   <td style={{ padding: '8px', textAlign: 'right', color: '#2e7d32', fontWeight: 'bold', backgroundColor: '#e8f5e9', width: '80px' }}>
                     {detail.cost_price != null ? `¥${detail.cost_price.toLocaleString('ja-JP')}` : '-'}
@@ -1085,12 +1196,15 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                 </td>
                 <td style={{ padding: '12px', textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: '#ffeb3b' }}>
                   ¥{details.reduce((sum, d) => sum + d.amount, 0).toLocaleString('ja-JP')}
-                                </td>
-                                <td colSpan={2} style={{ padding: '12px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffffff', fontSize: '13px' }}>
-                                  原価計: ¥{details.reduce((sum, d) => sum + (d.cost_amount || 0), 0).toLocaleString('ja-JP')}
-                                </td>
-                                <td style={{ padding: '12px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffeb3b', fontSize: '14px', fontWeight: 'bold' }}>
-                                  粗利: ¥{(details.reduce((sum, d) => sum + d.amount, 0) - details.reduce((sum, d) => sum + (d.cost_amount || 0), 0)).toLocaleString('ja-JP')}
+                </td>
+                <td style={{ padding: '12px', textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: '#ffeb3b', backgroundColor: '#ff6f00' }}>
+                  ¥{details.reduce((sum, d) => sum + (d.wholesale_price || 0), 0).toLocaleString('ja-JP')}
+                </td>
+                <td colSpan={2} style={{ padding: '12px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffffff', fontSize: '13px' }}>
+                  原価計: ¥{details.reduce((sum, d) => sum + (d.cost_amount || 0), 0).toLocaleString('ja-JP')}
+                </td>
+                <td style={{ padding: '12px', textAlign: 'right', backgroundColor: '#2e7d32', color: '#ffeb3b', fontSize: '14px', fontWeight: 'bold' }}>
+                  粗利: ¥{(details.reduce((sum, d) => sum + d.amount, 0) - details.reduce((sum, d) => sum + (d.cost_amount || 0), 0)).toLocaleString('ja-JP')}
                 </td>
               </tr>
             </tfoot>
