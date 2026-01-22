@@ -58,9 +58,9 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
       detailsCount: data.details?.length
     })
   }
-  
+
   const router = useRouter()
-  
+
   const [importData, setImportData] = useState<any>(null)
   const [details, setDetails] = useState<Detail[]>([])
   const [sections, setSections] = useState<SectionDef[]>([])
@@ -81,7 +81,7 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
   const [taxRate, setTaxRate] = useState<number>(0.1)
   const [calculatedTaxAmount, setCalculatedTaxAmount] = useState<number>(0)
   const [calculatedTotalAmount, setCalculatedTotalAmount] = useState<number>(0)
-  
+
   const [editCustomerName, setEditCustomerName] = useState<string>('')
   const [editSubject, setEditSubject] = useState<string>('')
   const [editDeliveryPlace, setEditDeliveryPlace] = useState<string>('')
@@ -131,24 +131,24 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
       }
       setStampImage(data.stampImage || null)
       setEditEstimateNo(data.estimateNo || '')
-      
+
       debugDateValue('[loadData] data.estimateDate', data.estimateDate)
       const sanitizedDate = sanitizeDateString(data.estimateDate)
       setEditEstimateDate(sanitizedDate || '')
-      
+
       console.log('[ConfirmImportPage] EstimateNo and Date set:', {
         estimateNo: data.estimateNo,
         estimateDate: sanitizedDate
       })
-      
+
       if (data.sections) {
         setSections(data.sections)
       }
-      
+
       console.log('[ConfirmImportPage] Details before mapping:', data.details.slice(0, 2))
       const mappedDetails = data.details.map((d: any) => ({ ...d, product_id: null }))
       console.log('[ConfirmImportPage] Details after mapping:', mappedDetails.slice(0, 2))
-      
+
       setDetails(mappedDetails)
       setSearchQueries(Array(data.details.length).fill(''))
       setDropdownOpen(Array(data.details.length).fill(false))
@@ -267,14 +267,14 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
       const grossMargin = totalAmount > 0 ? grossProfitTotal / totalAmount : null
 
       let customerId = importData.customerId
-      
+
       if (!customerId) {
         const { data: newCustomer, error: custErr } = await supabase
           .from('customers')
           .insert({ name: editCustomerName || importData.customerName })
           .select('id')
           .single()
-        
+
         if (custErr) throw custErr
         customerId = newCustomer.id
       }
@@ -284,11 +284,11 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
         const rnd = Math.random().toString(16).slice(2, 10)
         return (ts + rnd).slice(0, 16)
       }
-      
+
       const case_id = generateCaseId()
       const todayStr = getTodayDateString()
       const created_date = getFirstValidDate(editEstimateDate, importData.estimateDate) || todayStr
-      
+
       const { error: caseErr } = await supabase.from('cases').insert({
         case_id,
         staff_id: staffIdNum,
@@ -316,7 +316,7 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
 
       const detailRows = details.map((d) => {
         const combinedSpec = d.spec ? `${d.item_name}\n${d.spec}` : d.item_name
-        
+
         return {
           case_id,
           staff_id: staffIdNum,
@@ -379,10 +379,10 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
   }
 
   return (
-    <div style={{ 
-      maxWidth: '1200px', 
-      margin: '20px auto', 
-      padding: '20px', 
+    <div style={{
+      maxWidth: '1200px',
+      margin: '20px auto',
+      padding: '20px',
       fontFamily: 'system-ui',
       minHeight: '100vh'
     }}>
@@ -409,10 +409,10 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
       </p>
 
       {/* 案件情報（全フィールド） */}
-      <div style={{ 
-        marginTop: '20px', 
-        padding: '20px', 
-        backgroundColor: '#e3f2fd', 
+      <div style={{
+        marginTop: '20px',
+        padding: '20px',
+        backgroundColor: '#e3f2fd',
         borderRadius: '8px',
         border: '2px solid #2196f3'
       }}>
@@ -565,15 +565,15 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
         </div>
 
         {/* 金額計算セクション */}
-        <div style={{ 
-          marginTop: '20px', 
-          padding: '16px', 
-          backgroundColor: '#fff9e6', 
+        <div style={{
+          marginTop: '20px',
+          padding: '16px',
+          backgroundColor: '#fff9e6',
           borderRadius: '6px',
           border: '2px solid #ffc107'
         }}>
           <h4 style={{ margin: '0 0 12px 0', color: '#f57c00', fontSize: '16px' }}>💰 金額計算</h4>
-          
+
           <div style={{ display: 'grid', gap: '12px' }}>
             {/* 小計（明細計） */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', backgroundColor: '#fff', borderRadius: '4px' }}>
@@ -654,10 +654,10 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
       </div>
 
       {/* 明細テーブル */}
-      <div style={{ 
-        marginTop: '24px', 
-        padding: '20px', 
-        backgroundColor: '#f5f5f5', 
+      <div style={{
+        marginTop: '24px',
+        padding: '20px',
+        backgroundColor: '#f5f5f5',
         borderRadius: '8px',
         border: '2px solid #757575'
       }}>
@@ -905,10 +905,10 @@ export default function ConfirmImportPageComponent({ data, onBack }: { data: any
       </div>
 
       {/* 担当者選択 */}
-      <div style={{ 
-        marginTop: '24px', 
-        padding: '20px', 
-        backgroundColor: '#fff3e0', 
+      <div style={{
+        marginTop: '24px',
+        padding: '20px',
+        backgroundColor: '#fff3e0',
         borderRadius: '8px',
         border: '3px solid #ff6f00'
       }}>

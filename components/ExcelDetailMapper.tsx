@@ -93,6 +93,11 @@ export default function ExcelDetailMapper({ details, sections, meta, onConfirm, 
         if (selectedField === 'quantity' || selectedField === 'unit_price') {
           updated.amount = (updated.quantity || 0) * (updated.unit_price || 0)
         }
+
+        // 金額をマッピングした場合、数量が入っていれば単価を自動算出（金額 ÷ 数量）
+        if (selectedField === 'amount' && updated.quantity) {
+          updated.unit_price = updated.quantity ? Math.round((updated.amount || 0) / updated.quantity) : updated.unit_price
+        }
         
         return updated
       }

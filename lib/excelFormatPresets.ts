@@ -10,7 +10,7 @@ export type ExcelFormatPreset = {
   name: string
   description: string
   layoutType: 'vertical' | 'horizontal'
-  
+
   // 表紙シートのセル位置設定
   cover: {
     customerName: string[]  // 候補セル位置（優先順）
@@ -26,7 +26,7 @@ export type ExcelFormatPreset = {
     taxAmount: string[]
     totalAmount: string[]
   }
-  
+
   // ラベルキーワード設定（動的検索用）
   labels: {
     subject: string[]
@@ -37,7 +37,7 @@ export type ExcelFormatPreset = {
     paymentTerms: string[]
     estimateDate: string[]
   }
-  
+
   // 明細シート設定
   details: {
     sheetName: string | string[]  // シート名（複数候補可）
@@ -45,7 +45,7 @@ export type ExcelFormatPreset = {
     startRow: number              // データ開始行
     maxRow: number                // 最大行数
     stopWords: string[]           // 終了判定キーワード
-    
+
     // 明細列のヘッダーキーワード
     columns: {
       productName: string[]
@@ -59,7 +59,7 @@ export type ExcelFormatPreset = {
       grossMargin?: string[]
       wholesalePrice?: string[]
     }
-    
+
     // デフォルト列位置（A, B, C...形式）
     defaultColumns?: {
       productName: string
@@ -69,7 +69,7 @@ export type ExcelFormatPreset = {
       amount: string
     }
   }
-  
+
   // セクション設定（目次シートなど）
   sections?: {
     sheetName: string
@@ -86,7 +86,7 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
   name: '標準縦見積書フォーマット',
   description: '現在の標準的な縦見積書フォーマット（表紙・目次・明細シート分割型）',
   layoutType: 'vertical',
-  
+
   cover: {
     customerName: ['D8', 'C8', 'D10', 'C10', 'E8'],
     subject: ['K27', 'C21', 'D21', 'C22', 'D22', 'D27'],
@@ -101,7 +101,7 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
     taxAmount: ['AJ60', 'AJ80', 'AK80', 'AL80', 'K72', 'L72'],
     totalAmount: ['AJ61', 'I14', 'AJ82', 'AK82', 'AL82', 'K74', 'L74']
   },
-  
+
   labels: {
     subject: ['件名', '工事名', '案件名', '品名'],
     deliveryPlace: ['受渡場所', '納入場所', '納品場所', '受け渡し場所'],
@@ -111,14 +111,14 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
     paymentTerms: ['御支払条件', '支払条件', 'お支払条件', '支払い条件'],
     estimateDate: ['見積日', '作成日', '発行日', '日付']
   },
-  
+
   details: {
     sheetName: ['明細', '見積明細', '詳細'],
     headerRow: 40,
     startRow: 41,
     maxRow: 220,
     stopWords: ['小計', '消費税', '合計', '値引'],
-    
+
     columns: {
       productName: ['商品名', '名称', '品名', '製品名', '項目'],
       spec: ['規格', '仕様', 'スペック'],
@@ -131,7 +131,7 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
       grossMargin: ['粗利', '粗利率', '利益率'],
       wholesalePrice: ['仕切', '仕切価格', '帰社', '貴社仕切価格', '貴社仕切金額', '備考']
     },
-    
+
     defaultColumns: {
       productName: 'D',
       spec: 'N',
@@ -140,7 +140,7 @@ export const DEFAULT_PRESET: ExcelFormatPreset = {
       amount: 'AJ'
     }
   },
-  
+
   sections: {
     sheetName: '目次',
     nameColumn: 'C',
@@ -156,7 +156,7 @@ export const SINGLE_SHEET_VERTICAL_PRESET: ExcelFormatPreset = {
   name: '単一シート縦見積書',
   description: '表紙と明細が1つのシートに含まれる縦見積書フォーマット',
   layoutType: 'vertical',
-  
+
   cover: {
     customerName: ['A6', 'B6', 'C6', 'D6', 'E6'],
     subject: ['B15', 'A15', 'C15', 'D15'],
@@ -171,7 +171,7 @@ export const SINGLE_SHEET_VERTICAL_PRESET: ExcelFormatPreset = {
     taxAmount: ['I50', 'I51', 'H51'],
     totalAmount: ['B31', 'I51', 'H51']
   },
-  
+
   labels: {
     subject: ['件名', '工事名', '案件名'],
     deliveryPlace: ['受渡場所', '納入場所', '納品場所'],
@@ -181,14 +181,14 @@ export const SINGLE_SHEET_VERTICAL_PRESET: ExcelFormatPreset = {
     paymentTerms: ['御支払条件', '支払条件'],
     estimateDate: ['見積日', '作成日', '発行日']
   },
-  
+
   details: {
     sheetName: ['Sheet1', '見積書', '明細', '自動巻上'],  // 任意のシート名に対応
     headerRow: 34,  // Row34にヘッダー
     startRow: 35,   // Row35からデータ開始
     maxRow: 200,
     stopWords: ['小計', '消費税', '合計', '値引', '※', '注記'],
-    
+
     columns: {
       productName: ['品名', '品　　　　　　名', '商品名', '製品名', '項目'],
       spec: ['規格', '規　　格　　寸　　法', '仕様', 'スペック'],
@@ -201,7 +201,7 @@ export const SINGLE_SHEET_VERTICAL_PRESET: ExcelFormatPreset = {
       grossMargin: ['粗利', '粗利率', '利益率'],
       wholesalePrice: ['仕切', '仕切価格', '仕切金額', '貴社仕切', '貴社仕切価格', '貴社仕切金額', '帰社', '卸値', '卸価格', '卸売価格', '特価']
     },
-    
+
     defaultColumns: {
       productName: 'D',
       spec: 'N',
@@ -220,7 +220,7 @@ export const MINAMIKYUSHU_PRESET: ExcelFormatPreset = {
   name: '南九州営業所見積書フォーマット',
   description: '南九州営業所の見積書フォーマット（列位置が異なる特殊フォーマット）',
   layoutType: 'vertical',
-  
+
   cover: {
     customerName: ['B5', 'C8', 'B8', 'D8', 'C9', 'D9'],
     subject: ['C21', 'J27', 'J26', 'J28', 'K27'],
@@ -235,7 +235,7 @@ export const MINAMIKYUSHU_PRESET: ExcelFormatPreset = {
     taxAmount: ['AL80', 'AL82', 'L80', 'M80'],
     totalAmount: ['AL82', 'AL84', 'L82', 'M82']
   },
-  
+
   labels: {
     subject: ['件　　　　 名', '件名', '工事名', '案件名'],
     deliveryPlace: ['受 渡 場 所', '受渡場所', '納入場所'],
@@ -245,14 +245,14 @@ export const MINAMIKYUSHU_PRESET: ExcelFormatPreset = {
     paymentTerms: ['御支払条件', '支払条件', 'お支払条件'],
     estimateDate: ['見積日', '作成日', '発行日']
   },
-  
+
   details: {
     sheetName: ['訂正後', '当初', '明細', '見積明細', '詳細'],
     headerRow: 40,
     startRow: 41,
     maxRow: 220,
     stopWords: ['小計', '消費税', '合計', '値引'],
-    
+
     columns: {
       productName: ['品　　　　名', '品名', '名　　　称', '名称', '商品名', '製品名'],
       spec: ['規　格　・寸　法', '規格・寸法', '規格寸法', '規格', '仕様'],
@@ -265,7 +265,7 @@ export const MINAMIKYUSHU_PRESET: ExcelFormatPreset = {
       grossMargin: ['粗利', '粗利率', '利益率'],
       wholesalePrice: ['貴社仕切金額', '仕切金額', '仕切', '仕切価格']
     },
-    
+
     defaultColumns: {
       productName: 'A',
       spec: 'L',
@@ -274,7 +274,7 @@ export const MINAMIKYUSHU_PRESET: ExcelFormatPreset = {
       amount: 'AJ'
     }
   },
-  
+
   sections: {
     sheetName: '目次',
     nameColumn: 'C',
@@ -290,7 +290,7 @@ export const HORIZONTAL_PRESET: ExcelFormatPreset = {
   name: '横見積書フォーマット',
   description: '単一シート型の横見積書フォーマット',
   layoutType: 'horizontal',
-  
+
   cover: {
     customerName: ['D8', 'C8', 'E8', 'D10'],
     subject: ['K27', 'K25', 'L27', 'K21'],
@@ -305,7 +305,7 @@ export const HORIZONTAL_PRESET: ExcelFormatPreset = {
     taxAmount: ['AJ80', 'K72', 'L72', 'M72'],
     totalAmount: ['AJ82', 'K74', 'L74', 'M74']
   },
-  
+
   labels: {
     subject: ['件名', '工事名', '案件名', '品名'],
     deliveryPlace: ['受渡場所', '納入場所', '納品場所'],
@@ -315,33 +315,33 @@ export const HORIZONTAL_PRESET: ExcelFormatPreset = {
     paymentTerms: ['御支払条件', '支払条件'],
     estimateDate: ['見積日', '作成日', '発行日']
   },
-  
+
   details: {
     sheetName: ['Sheet1', '見積書', '明細'],
-    headerRow: 15,
-    startRow: 16,
-    maxRow: 100,
-    stopWords: ['小計', '消費税', '合計'],
-    
+    headerRow: 1,  // 実際の横見積はRow1がヘッダー
+    startRow: 2,   // データはRow2から
+    maxRow: 1000, // 横様式の複数ページ・縦長帳票に備えて上限を拡大
+    stopWords: ['合計'], // 横様式では「小計」が途中に出現するため除外
+
     columns: {
-      productName: ['品名', '商品名', '製品名'],
+      productName: ['品名', '商品名', '製品名', '名称並びに仕様・規格', '名　称　並　び　に　仕　様'],
       spec: ['規格', '仕様'],
       unit: ['単位'],
       quantity: ['数量'],
-      unitPrice: ['単価'],
-      amount: ['金額'],
+      unitPrice: ['単価', '単　価'],
+      amount: ['金額', '金　額'],
       costPrice: ['原価単価', '原価'],
       costAmount: ['原価金額'],
       grossMargin: ['粗利率'],
-      wholesalePrice: ['仕切価格']
+      wholesalePrice: ['仕切価格', '仕切金額', '貴社仕切金額']
     },
-    
+
     defaultColumns: {
-      productName: 'D',
-      spec: 'N',
-      quantity: 'X',
-      unitPrice: 'AE',
-      amount: 'AJ'
+      productName: 'C',  // 実際のファイルではC列
+      spec: 'B',         // B列にセクション名（規格的な情報）
+      quantity: 'AA',    // AA列が数量
+      unitPrice: 'AC',   // AC列が単価
+      amount: 'AD'       // AD列が金額
     }
   }
 }
@@ -354,7 +354,7 @@ export const SIMPLE_PRESET: ExcelFormatPreset = {
   name: 'シンプル見積書',
   description: '簡易的な見積書フォーマット（最小限の項目）',
   layoutType: 'vertical',
-  
+
   cover: {
     customerName: ['B5', 'C5', 'D5', 'B6', 'C6'],
     subject: ['B10', 'C10', 'D10', 'B8', 'C8'],
@@ -369,7 +369,7 @@ export const SIMPLE_PRESET: ExcelFormatPreset = {
     taxAmount: ['G52', 'H52', 'I52'],
     totalAmount: ['G54', 'H54', 'I54']
   },
-  
+
   labels: {
     subject: ['件名', '工事名', '品名'],
     deliveryPlace: ['納入場所', '場所'],
@@ -379,14 +379,14 @@ export const SIMPLE_PRESET: ExcelFormatPreset = {
     paymentTerms: ['支払条件'],
     estimateDate: ['見積日', '日付']
   },
-  
+
   details: {
     sheetName: ['Sheet1', '明細', '見積'],
     headerRow: 25,
     startRow: 26,
     maxRow: 150,
     stopWords: ['小計', '合計', '総合計'],
-    
+
     columns: {
       productName: ['品名', '項目'],
       spec: ['規格', '仕様', '備考'],
@@ -395,7 +395,7 @@ export const SIMPLE_PRESET: ExcelFormatPreset = {
       unitPrice: ['単価'],
       amount: ['金額', '合計']
     },
-    
+
     defaultColumns: {
       productName: 'B',
       spec: 'C',
@@ -442,7 +442,7 @@ export function detectPreset(workbook: any): ExcelFormatPreset {
   const hasCover = sheetNames.some((n: string) => n.includes('表紙'))
   const hasIndex = sheetNames.some((n: string) => n.includes('目次'))
   const hasDetails = sheetNames.some((n: string) => n.includes('明細'))
-  
+
   // ★Row40でヘッダーを探して南九州フォーマットを判定（新基準）
   const sheet = workbook.Sheets[sheetNames[0]]
   if (sheet) {
@@ -451,16 +451,16 @@ export function detectPreset(workbook: any): ExcelFormatPreset {
     const w40 = normalize(sheet['W40']?.v || '')
     const aa40 = normalize(sheet['AA40']?.v || '')
     const ad40 = normalize(sheet['AD40']?.v || '')
-    
+
     // Row40: 品名(A40), 規格・寸法(L40), 数量(W40), 単位(AA40), 単価(AD40)
-    if ((a40.includes('品名') || a40.includes('品')) && 
-        (l40.includes('規格') || l40.includes('寸法')) && 
-        (w40.includes('数量') || w40.includes('数'))) {
+    if ((a40.includes('品名') || a40.includes('品')) &&
+      (l40.includes('規格') || l40.includes('寸法')) &&
+      (w40.includes('数量') || w40.includes('数'))) {
       console.log('[Preset Detection] 南九州営業所フォーマットを検出（Row40: A=品名, L=規格, W=数量）')
       return MINAMIKYUSHU_PRESET
     }
   }
-  
+
   if (hasCover && hasDetails) {
     // 明細シート候補の中から実体を取得
     const detailName = sheetNames.find((n: string) => normalize(n).includes('明細') || normalize(n).includes('見積明細') || normalize(n).includes('詳細'))
@@ -481,12 +481,12 @@ export function detectPreset(workbook: any): ExcelFormatPreset {
         return DEFAULT_PRESET
       }
     }
-    
+
     // デフォルトは標準フォーマット
     console.log('[Preset Detection] 標準縦見積書フォーマットを使用（デフォルト）')
     return DEFAULT_PRESET
   }
-  
+
   // 単一シートの場合、Row30-50でヘッダーを探索して判定
   if (sheetNames.length === 1) {
     const firstSheet = workbook.Sheets[sheetNames[0]]
@@ -500,24 +500,24 @@ export function detectPreset(workbook: any): ExcelFormatPreset {
         const cellG = firstSheet[`G${r}`]?.v || ''
         const cellH = firstSheet[`H${r}`]?.v || ''
         const cellI = firstSheet[`I${r}`]?.v || ''
-        
+
         // 「品名」「数量」「単価」「金額」などがあれば単一シート縦見積
         const hasProductCol = cellA.includes('品')
         const hasQtyCol = cellF.includes('数') || cellG.includes('単位') || cellH.includes('単価')
         const hasPriceCol = cellH.includes('単価') || cellI.includes('価格')
-        
+
         if (hasProductCol && hasQtyCol && hasPriceCol) {
           console.log(`[Preset Detection] 単一シート縦見積書フォーマットを検出（Row${r}にヘッダー）`)
           return SINGLE_SHEET_VERTICAL_PRESET
         }
       }
     }
-    
+
     // ヘッダーが見つからない場合は横見積の可能性
     console.log('[Preset Detection] 横見積書フォーマットを検出（単一シート）')
     return HORIZONTAL_PRESET
   }
-  
+
   // デフォルトにフォールバック
   console.log('[Preset Detection] デフォルトプリセットを使用')
   return DEFAULT_PRESET
