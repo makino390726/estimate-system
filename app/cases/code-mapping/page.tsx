@@ -275,7 +275,7 @@ export default function Page() {
           remarks: (r.remarks ?? '').toString(),
           section: (r.section ?? '').toString(),
           section_id: r.section_id ?? null,
-          mapped_code: pid,
+          mapped_code: pid, // 初期値は現在のproduct_id
         }
       })
 
@@ -290,6 +290,7 @@ export default function Page() {
   }
 
   function setRowCode(detailId: number, code: string) {
+    console.log('setRowCode:', { detailId, code })
     setDetails((prev) =>
       prev.map((r) => (r.detailId === detailId ? { ...r, mapped_code: code } : r))
     )
@@ -318,6 +319,7 @@ export default function Page() {
   }
 
   function handleSelectProduct(productId: string) {
+    console.log('handleSelectProduct:', { productId, selectedRowId })
     if (selectedRowId !== null) {
       setRowCode(selectedRowId, productId)
       setShowProductModal(false)
@@ -338,9 +340,29 @@ export default function Page() {
       return
     }
 
-    const changed = details.filter((r) => r.mapped_code !== r.current_product_id)
+    // mapped_codeが設定されており、かつcurrent_product_idと異なる行のみを変更対象とする
+    const changed = details.filter((r) => 
+      r.mapped_code && 
+      r.mapped_code.trim() !== '' && 
+      r.mapped_code !== r.current_product_id
+    )
+    
+    console.log('変更検出:', { 
+      total: details.length, 
+      changed: changed.length,
+      sample: changed[0] ? {
+        detailId: changed[0].detailId,
+        current: changed[0].current_product_id,
+        mapped: changed[0].mapped_code
+      } : null
+    })
+    
     if (changed.length === 0) {
       setMessage('変更がありません')
+      return
+    }
+
+    if (!confirm(`${changed.length}件の商品コードを更新します。よろしいですか？`)) {
       return
     }
 
@@ -364,6 +386,7 @@ export default function Page() {
       }
 
       setMessage(`更新完了: OK=${ok} / NG=${ng}`)
+      alert(`✅ 更新完了\nOK: ${ok}件 / NG: ${ng}件`)
 
       // 品名は変えず、UI上の現在コードのみを更新
       if (ok > 0) {
