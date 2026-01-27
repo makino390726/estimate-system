@@ -12,7 +12,7 @@ function generateCaseId(): string {
   return `${timestamp}${randomPart}`.substring(0, 16)
 }
 
-type Product = { 
+type Product = {
   id: string
   name: string
   spec: string
@@ -524,7 +524,7 @@ export default function CaseNewPage() {
     setTaxRate(0.1)
     setLayoutType(caseData.layout_type || 'vertical')
 
-    setEstimateNo('')
+    setEstimateNo(caseData.case_no || '')
     setEstimateDate(
       caseData.created_date || new Date().toISOString().split('T')[0]
     )
@@ -555,14 +555,13 @@ export default function CaseNewPage() {
 
     setRows(loadedRows)
     setShowPastCaseModal(false)
-    
+
     // ★ 更新モードを有効化
     setIsUpdateMode(true)
     setLoadedCaseId(caseId)
 
     alert(
-      `過去案件「${caseData.subject}」の情報を読み込みました\n顧客: ${
-        caseData.customer_id || '不明'
+      `過去案件「${caseData.subject}」の情報を読み込みました\n顧客: ${caseData.customer_id || '不明'
       }\n担当者: ${staffData?.name || '不明'}\n\n保存時に「更新」または「新規登録」を選択できます。`
     )
   }
@@ -584,20 +583,20 @@ export default function CaseNewPage() {
   // ★ 単価計算モーダルを開く
   const handleOpenPriceModal = (index: number) => {
     setPriceModalRowIndex(index)
-    
+
     const row = rows[index]
     const product = products.find(p => p.id === row.product_id)
-    
+
     // ★ product_idがあればproductsテーブルからretail_priceを取得
     const retailPrice = (product?.retail_price && product.retail_price > 0) ? product.retail_price : null
-    
+
     // ★ case_detailのunit_price（現在の単価）を直接入力欄に表示
     const currentUnitPrice = row.unit_price && row.unit_price > 0 ? row.unit_price : null
-    
+
     // ★ 過去案件読込時：掛率計算の定価欄にはretail_price、直接入力欄にはunit_priceを表示
     // 新規追加時：retail_priceを初期値として表示
     setPriceModalDirectPrice(currentUnitPrice)  // ★ 直接入力用の値を保持
-    
+
     if (currentUnitPrice && retailPrice) {
       // 過去案件読込時：掛率計算モードでretail_priceを表示
       setPriceModalListPrice(retailPrice)
@@ -611,7 +610,7 @@ export default function CaseNewPage() {
       setPriceModalListPrice(retailPrice)
       setPriceModalMode('calculate')
     }
-    
+
     setPriceModalRate(null)
     setPriceModalCalculatedPrice(null)
     setPriceModalShowRemarksCheckbox(true)
@@ -672,12 +671,12 @@ export default function CaseNewPage() {
           .from('products')
           .update({ retail_price: priceModalListPrice })
           .eq('id', row.product_id)
-        
+
         if (error) {
           console.error('retail_price更新エラー:', error)
         } else {
           // 商品リストを更新（ローカル）
-          const updatedProducts = products.map(p => 
+          const updatedProducts = products.map(p =>
             p.id === row.product_id ? { ...p, retail_price: priceModalListPrice } : p
           )
           setProducts(updatedProducts)
@@ -728,7 +727,7 @@ export default function CaseNewPage() {
 
   const handleSaveComment = () => {
     if (commentRowIndex === null) return
-    
+
     const newRows = [...rows]
     newRows[commentRowIndex].comment = commentText
     setRows(newRows)
@@ -957,19 +956,18 @@ export default function CaseNewPage() {
 
       const actionText = mode === 'update' ? '更新' : '保存'
       alert(`見積書を${actionText}しました`)
-      
+
       // 更新モードをリセット
       if (mode === 'update') {
         setIsUpdateMode(false)
         setLoadedCaseId(null)
       }
-      
+
       router.push(`/cases/approval/${targetCaseId}`)
     } catch (error) {
       console.error('保存エラー:', error)
       alert(
-        `保存に失敗しました: ${
-          error instanceof Error ? error.message : '不明なエラー'
+        `保存に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'
         }`
       )
     }
@@ -989,7 +987,7 @@ export default function CaseNewPage() {
     if (!subject.trim()) return alert('件名未入力')
     if (rows.length === 0) return alert('明細がありません')
     if (layoutType === 'horizontal' && rows.some(r => r.section_id === null)) return alert('横様式は全明細にセクション必須')
-    
+
     // ★ 少し遅延させて印刷を実行
     setTimeout(() => {
       if (!printRef.current) {
@@ -1401,17 +1399,17 @@ export default function CaseNewPage() {
               <thead>
                 <tr>
                   {layoutType === 'horizontal' && (
-                    <th style={{...thStyle, minWidth: '180px'}}>セクション</th>
+                    <th style={{ ...thStyle, minWidth: '180px' }}>セクション</th>
                   )}
-                  <th style={{...thStyle, minWidth: '250px'}}>商品名</th>
-                  <th style={{...thStyle, minWidth: '200px'}}>規格</th>
-                  <th style={{...thStyle, width: '80px'}}>単位</th>
-                  <th style={{...thStyle, width: '100px'}}>数量</th>
-                  <th style={{...thStyle, width: '150px'}}>単価</th>
-                  <th style={{...thStyle, width: '150px'}}>金額</th>
-                  <th style={{...thStyle, width: '150px'}}>原価額</th>
-                  <th style={{...thStyle, width: '150px'}}>粗利額</th>
-                  <th style={{...thStyle, width: '100px'}}>操作</th>
+                  <th style={{ ...thStyle, minWidth: '250px' }}>商品名</th>
+                  <th style={{ ...thStyle, minWidth: '200px' }}>規格</th>
+                  <th style={{ ...thStyle, width: '80px' }}>単位</th>
+                  <th style={{ ...thStyle, width: '100px' }}>数量</th>
+                  <th style={{ ...thStyle, width: '150px' }}>単価</th>
+                  <th style={{ ...thStyle, width: '150px' }}>金額</th>
+                  <th style={{ ...thStyle, width: '150px' }}>原価額</th>
+                  <th style={{ ...thStyle, width: '150px' }}>粗利額</th>
+                  <th style={{ ...thStyle, width: '100px' }}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -1445,7 +1443,7 @@ export default function CaseNewPage() {
                       )}
                       <td style={tdStyle}>{row.item_name}</td>
                       <td style={tdStyle}>{row.spec}</td>
-                      <td style={{...tdStyle, textAlign: 'center'}}>{row.unit}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{row.unit}</td>
                       <td style={tdStyle}>
                         <input
                           type="number"
@@ -1470,10 +1468,10 @@ export default function CaseNewPage() {
                           {row.unit_price ? row.unit_price.toLocaleString() : '未入力'}
                         </button>
                       </td>
-                      <td style={{...tdStyle, textAlign: 'right'}}>{row.amount.toLocaleString()}</td>
-                      <td style={{...tdStyle, textAlign: 'right'}}>{costAmount.toLocaleString()}</td>
-                      <td style={{...tdStyle, textAlign: 'right'}}>{grossProfit.toLocaleString()}</td>
-                      <td style={{...tdStyle, textAlign: 'center'}}>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.amount.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{costAmount.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{grossProfit.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                           <button
                             onClick={() => handleOpenEditRowModal(index)}
@@ -1549,7 +1547,7 @@ export default function CaseNewPage() {
             <span>粗利率</span>
             <span>{grossProfitRate.toFixed(1)} %</span>
           </div>
-          <div style={{...sumRowStyle, padding: '10px'}}>
+          <div style={{ ...sumRowStyle, padding: '10px' }}>
             <span>出精値引き</span>
             <input
               type="number"
@@ -1562,7 +1560,7 @@ export default function CaseNewPage() {
             <span>値引後小計</span>
             <span>{subtotalAfterDiscount.toLocaleString()} 円</span>
           </div>
-          <div style={{...sumRowStyle, padding: '10px'}}>
+          <div style={{ ...sumRowStyle, padding: '10px' }}>
             <span>消費税率</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <input
@@ -1899,241 +1897,241 @@ export default function CaseNewPage() {
               {/* ★ マスタから選択タブ */}
               {productModalTab === 'search' && (
                 <>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                <input
-                  type="text"
-                  placeholder="商品名で検索"
-                  value={productSearchName}
-                  onChange={(e) => setProductSearchName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
-                  className="input-inset"
-                  style={{ flex: 1, fontSize: 16 }}
-                />
-                <input
-                  type="text"
-                  placeholder="規格で検索"
-                  value={productSearchSpec}
-                  onChange={(e) => setProductSearchSpec(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
-                  className="input-inset"
-                  style={{ flex: 1, fontSize: 16 }}
-                />
-                <button
-                  onClick={handleProductSearch}
-                  className="btn-3d btn-search"
-                >
-                  検索
-                </button>
-              </div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                    <input
+                      type="text"
+                      placeholder="商品名で検索"
+                      value={productSearchName}
+                      onChange={(e) => setProductSearchName(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
+                      className="input-inset"
+                      style={{ flex: 1, fontSize: 16 }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="規格で検索"
+                      value={productSearchSpec}
+                      onChange={(e) => setProductSearchSpec(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
+                      className="input-inset"
+                      style={{ flex: 1, fontSize: 16 }}
+                    />
+                    <button
+                      onClick={handleProductSearch}
+                      className="btn-3d btn-search"
+                    >
+                      検索
+                    </button>
+                  </div>
 
-              {/* ★ ページネーション情報 */}
-              <div style={{ marginBottom: 8, fontSize: 14, color: '#666' }}>
-                全 {productTotalCount} 件中 {productPage * productPageSize + 1} 〜 {Math.min((productPage + 1) * productPageSize, productTotalCount)} 件を表示
-              </div>
+                  {/* ★ ページネーション情報 */}
+                  <div style={{ marginBottom: 8, fontSize: 14, color: '#666' }}>
+                    全 {productTotalCount} 件中 {productPage * productPageSize + 1} 〜 {Math.min((productPage + 1) * productPageSize, productTotalCount)} 件を表示
+                  </div>
 
-              <div style={{ maxHeight: 400, overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle}>商品コード</th>
-                      <th style={thStyle}>商品名</th>
-                      <th style={thStyle}>規格</th>
-                      <th style={thStyle}>単位</th>
-                      <th style={thStyle}>原価</th>
-                      <th style={thStyle}>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map((product) => (
-                      <tr key={product.id}>
-                        <td style={tdStyle}>{product.id}</td>
-                        <td style={tdStyle}>{product.name}</td>
-                        <td style={tdStyle}>{product.spec || '-'}</td>
-                        <td style={tdStyle}>{product.unit || '-'}</td>
-                        <td style={tdStyle}>
-                          {(product.cost_price || 0).toLocaleString()}
-                        </td>
-                        <td style={tdStyle}>
-                          <button
-                            onClick={() => handleSelectProduct(product)}
-                            className="btn-3d btn-primary"
-                            style={{ fontSize: 15 }}
-                          >
-                            選択
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>商品コード</th>
+                          <th style={thStyle}>商品名</th>
+                          <th style={thStyle}>規格</th>
+                          <th style={thStyle}>単位</th>
+                          <th style={thStyle}>原価</th>
+                          <th style={thStyle}>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {products.map((product) => (
+                          <tr key={product.id}>
+                            <td style={tdStyle}>{product.id}</td>
+                            <td style={tdStyle}>{product.name}</td>
+                            <td style={tdStyle}>{product.spec || '-'}</td>
+                            <td style={tdStyle}>{product.unit || '-'}</td>
+                            <td style={tdStyle}>
+                              {(product.cost_price || 0).toLocaleString()}
+                            </td>
+                            <td style={tdStyle}>
+                              <button
+                                onClick={() => handleSelectProduct(product)}
+                                className="btn-3d btn-primary"
+                                style={{ fontSize: 15 }}
+                              >
+                                選択
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-              {/* ★ ページネーションボタン */}
-              {productTotalPages > 1 && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center', alignItems: 'center' }}>
-                  <button
-                    disabled={productPage === 0}
-                    onClick={() => fetchProducts(0)}
-                    className="btn-3d"
-                    style={{ fontSize: 14, padding: '4px 8px' }}
-                  >
-                    最初
-                  </button>
-                  <button
-                    disabled={productPage === 0}
-                    onClick={() => fetchProducts(productPage - 1)}
-                    className="btn-3d"
-                    style={{ fontSize: 14, padding: '4px 8px' }}
-                  >
-                    ← 前へ
-                  </button>
-                  <span style={{ fontSize: 16, fontWeight: 'bold' }}>
-                    {productPage + 1} / {productTotalPages}
-                  </span>
-                  <button
-                    disabled={productPage === productTotalPages - 1}
-                    onClick={() => fetchProducts(productPage + 1)}
-                    className="btn-3d"
-                    style={{ fontSize: 14, padding: '4px 8px' }}
-                  >
-                    次へ →
-                  </button>
-                  <button
-                    disabled={productPage === productTotalPages - 1}
-                    onClick={() => fetchProducts(productTotalPages - 1)}
-                    className="btn-3d"
-                    style={{ fontSize: 14, padding: '4px 8px' }}
-                  >
-                    最後
-                  </button>
-                </div>
-              )}
+                  {/* ★ ページネーションボタン */}
+                  {productTotalPages > 1 && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center', alignItems: 'center' }}>
+                      <button
+                        disabled={productPage === 0}
+                        onClick={() => fetchProducts(0)}
+                        className="btn-3d"
+                        style={{ fontSize: 14, padding: '4px 8px' }}
+                      >
+                        最初
+                      </button>
+                      <button
+                        disabled={productPage === 0}
+                        onClick={() => fetchProducts(productPage - 1)}
+                        className="btn-3d"
+                        style={{ fontSize: 14, padding: '4px 8px' }}
+                      >
+                        ← 前へ
+                      </button>
+                      <span style={{ fontSize: 16, fontWeight: 'bold' }}>
+                        {productPage + 1} / {productTotalPages}
+                      </span>
+                      <button
+                        disabled={productPage === productTotalPages - 1}
+                        onClick={() => fetchProducts(productPage + 1)}
+                        className="btn-3d"
+                        style={{ fontSize: 14, padding: '4px 8px' }}
+                      >
+                        次へ →
+                      </button>
+                      <button
+                        disabled={productPage === productTotalPages - 1}
+                        onClick={() => fetchProducts(productTotalPages - 1)}
+                        className="btn-3d"
+                        style={{ fontSize: 14, padding: '4px 8px' }}
+                      >
+                        最後
+                      </button>
+                    </div>
+                  )}
 
-              <div style={{ marginTop: 16, textAlign: 'right' }}>
-                <button
-                  onClick={() => {
-                    setProductSearchName('')
-                    setProductSearchSpec('')
-                    setProducts([])
-                    setProductPage(0)
-                    setProductTotalCount(0)
-                  }}
-                  className="btn-3d btn-reset"
-                  style={{ marginRight: 8 }}
-                >
-                  リセット
-                </button>
-                <button
-                  onClick={() => setShowProductModal(false)}
-                  className="btn-3d btn-reset"
-                >
-                  閉じる
-                </button>
-              </div>
+                  <div style={{ marginTop: 16, textAlign: 'right' }}>
+                    <button
+                      onClick={() => {
+                        setProductSearchName('')
+                        setProductSearchSpec('')
+                        setProducts([])
+                        setProductPage(0)
+                        setProductTotalCount(0)
+                      }}
+                      className="btn-3d btn-reset"
+                      style={{ marginRight: 8 }}
+                    >
+                      リセット
+                    </button>
+                    <button
+                      onClick={() => setShowProductModal(false)}
+                      className="btn-3d btn-reset"
+                    >
+                      閉じる
+                    </button>
+                  </div>
                 </>
               )}
 
               {/* ★ 直接入力タブ */}
               {productModalTab === 'manual' && (
                 <>
-              <div style={{
-                padding: 16,
-                backgroundColor: '#0f172a',
-                borderRadius: 4,
-                marginBottom: 16,
-              }}>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: 12,
-                }}>
-                  <div>
-                    <label style={labelStyle}>商品名 <span style={{ color: '#ef4444' }}>*</span></label>
-                    <input
-                      type="text"
-                      value={manualProductName}
-                      onChange={(e) => setManualProductName(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
-                      className="input-inset"
-                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
-                      placeholder="商品名を入力"
-                    />
+                  <div style={{
+                    padding: 16,
+                    backgroundColor: '#0f172a',
+                    borderRadius: 4,
+                    marginBottom: 16,
+                  }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 12,
+                    }}>
+                      <div>
+                        <label style={labelStyle}>商品名 <span style={{ color: '#ef4444' }}>*</span></label>
+                        <input
+                          type="text"
+                          value={manualProductName}
+                          onChange={(e) => setManualProductName(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
+                          className="input-inset"
+                          style={{ ...inputStyle, width: '100%', fontSize: 16 }}
+                          placeholder="商品名を入力"
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>規格</label>
+                        <input
+                          type="text"
+                          value={manualProductSpec}
+                          onChange={(e) => setManualProductSpec(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
+                          className="input-inset"
+                          style={{ ...inputStyle, width: '100%', fontSize: 16 }}
+                          placeholder="例: 1000x2000"
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>単位</label>
+                        <input
+                          type="text"
+                          value={manualProductUnit}
+                          onChange={(e) => setManualProductUnit(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
+                          className="input-inset"
+                          style={{ ...inputStyle, width: '100%', fontSize: 16 }}
+                          placeholder="例: 個、m、kg"
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>数量</label>
+                        <input
+                          type="text"
+                          value={manualProductQuantity}
+                          onChange={(e) => setManualProductQuantity(Number(e.target.value) || 0)}
+                          className="input-inset"
+                          style={{ ...inputStyle, width: '100%', fontSize: 16 }}
+                          placeholder="1"
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>単価</label>
+                        <input
+                          type="text"
+                          value={manualProductUnitPrice ?? ''}
+                          onChange={(e) => setManualProductUnitPrice(e.target.value ? Number(e.target.value) : null)}
+                          className="input-inset"
+                          style={{ ...inputStyle, width: '100%', fontSize: 16 }}
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>原価</label>
+                        <input
+                          type="text"
+                          value={manualProductCostPrice}
+                          onChange={(e) => setManualProductCostPrice(Number(e.target.value) || 0)}
+                          className="input-inset"
+                          style={{ ...inputStyle, width: '100%', fontSize: 16 }}
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label style={labelStyle}>規格</label>
-                    <input
-                      type="text"
-                      value={manualProductSpec}
-                      onChange={(e) => setManualProductSpec(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
-                      className="input-inset"
-                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
-                      placeholder="例: 1000x2000"
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>単位</label>
-                    <input
-                      type="text"
-                      value={manualProductUnit}
-                      onChange={(e) => setManualProductUnit(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddManualProduct()}
-                      className="input-inset"
-                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
-                      placeholder="例: 個、m、kg"
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>数量</label>
-                    <input
-                      type="text"
-                      value={manualProductQuantity}
-                      onChange={(e) => setManualProductQuantity(Number(e.target.value) || 0)}
-                      className="input-inset"
-                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
-                      placeholder="1"
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>単価</label>
-                    <input
-                      type="text"
-                      value={manualProductUnitPrice ?? ''}
-                      onChange={(e) => setManualProductUnitPrice(e.target.value ? Number(e.target.value) : null)}
-                      className="input-inset"
-                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>原価</label>
-                    <input
-                      type="text"
-                      value={manualProductCostPrice}
-                      onChange={(e) => setManualProductCostPrice(Number(e.target.value) || 0)}
-                      className="input-inset"
-                      style={{ ...inputStyle, width: '100%', fontSize: 16 }}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-              </div>
 
-              <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => setShowProductModal(false)}
-                  className="btn-3d btn-reset"
-                >
-                  キャンセル
-                </button>
-                <button
-                  onClick={handleAddManualProduct}
-                  className="btn-3d btn-primary"
-                  style={{ backgroundColor: '#28a745' }}
-                >
-                  ✅ 追加
-                </button>
-              </div>
+                  <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => setShowProductModal(false)}
+                      className="btn-3d btn-reset"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      onClick={handleAddManualProduct}
+                      className="btn-3d btn-primary"
+                      style={{ backgroundColor: '#28a745' }}
+                    >
+                      ✅ 追加
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -2190,101 +2188,101 @@ export default function CaseNewPage() {
               {/* 掛率計算モード */}
               {priceModalMode === 'calculate' && (
                 <>
-              <div style={{
-                padding: 16,
-                backgroundColor: '#2d3748',
-                borderRadius: 4,
-                marginBottom: 16,
-              }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <div>
-                    <label style={{ ...labelStyle, color: '#e2e8f0' }}>定価</label>
-                    <input
-                      type="text"
-                      value={priceModalListPrice ?? ''}
-                      onChange={(e) => setPriceModalListPrice(e.target.value ? Number(e.target.value) : null)}
-                      className="input-inset"
-                      style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label style={{ ...labelStyle, color: '#e2e8f0' }}>掛率 (%)</label>
-                    <input
-                      type="text"
-                      value={priceModalRate ?? ''}
-                      onChange={(e) => setPriceModalRate(e.target.value ? Number(e.target.value) : null)}
-                      className="input-inset"
-                      style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleCalculatePrice}
-                  className="btn-3d btn-primary"
-                  style={{ width: '100%', marginBottom: 12 }}
-                >
-                  計算
-                </button>
-
-                {priceModalCalculatedPrice !== null && (
                   <div style={{
-                    padding: 12,
-                    backgroundColor: '#1a202c',
-                    border: '2px solid #48bb78',
+                    padding: 16,
+                    backgroundColor: '#2d3748',
                     borderRadius: 4,
-                    textAlign: 'center',
+                    marginBottom: 16,
                   }}>
-                    <span style={{ fontSize: 14, color: '#a0aec0' }}>計算結果</span>
-                    <div style={{ fontSize: 24, fontWeight: 'bold', color: '#48bb78' }}>
-                      {priceModalCalculatedPrice.toLocaleString()} 円
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                      <div>
+                        <label style={{ ...labelStyle, color: '#e2e8f0' }}>定価</label>
+                        <input
+                          type="text"
+                          value={priceModalListPrice ?? ''}
+                          onChange={(e) => setPriceModalListPrice(e.target.value ? Number(e.target.value) : null)}
+                          className="input-inset"
+                          style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ ...labelStyle, color: '#e2e8f0' }}>掛率 (%)</label>
+                        <input
+                          type="text"
+                          value={priceModalRate ?? ''}
+                          onChange={(e) => setPriceModalRate(e.target.value ? Number(e.target.value) : null)}
+                          className="input-inset"
+                          style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleCalculatePrice}
+                      className="btn-3d btn-primary"
+                      style={{ width: '100%', marginBottom: 12 }}
+                    >
+                      計算
+                    </button>
+
+                    {priceModalCalculatedPrice !== null && (
+                      <div style={{
+                        padding: 12,
+                        backgroundColor: '#1a202c',
+                        border: '2px solid #48bb78',
+                        borderRadius: 4,
+                        textAlign: 'center',
+                      }}>
+                        <span style={{ fontSize: 14, color: '#a0aec0' }}>計算結果</span>
+                        <div style={{ fontSize: 24, fontWeight: 'bold', color: '#48bb78' }}>
+                          {priceModalCalculatedPrice.toLocaleString()} 円
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 備考に定価を表示するチェックボックス */}
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        id="showRemarksCheckbox"
+                        checked={priceModalShowRemarksCheckbox}
+                        onChange={(e) => setPriceModalShowRemarksCheckbox(e.target.checked)}
+                        style={{ width: 18, height: 18, cursor: 'pointer' }}
+                      />
+                      <label
+                        htmlFor="showRemarksCheckbox"
+                        style={{ fontSize: 14, cursor: 'pointer', userSelect: 'none', color: '#e2e8f0' }}
+                      >
+                        備考に定価を表示
+                      </label>
                     </div>
                   </div>
-                )}
-
-                {/* 備考に定価を表示するチェックボックス */}
-                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    id="showRemarksCheckbox"
-                    checked={priceModalShowRemarksCheckbox}
-                    onChange={(e) => setPriceModalShowRemarksCheckbox(e.target.checked)}
-                    style={{ width: 18, height: 18, cursor: 'pointer' }}
-                  />
-                  <label
-                    htmlFor="showRemarksCheckbox"
-                    style={{ fontSize: 14, cursor: 'pointer', userSelect: 'none', color: '#e2e8f0' }}
-                  >
-                    備考に定価を表示
-                  </label>
-                </div>
-              </div>
                 </>
               )}
 
               {/* 直接入力モード */}
               {priceModalMode === 'direct' && (
                 <>
-              <div style={{
-                padding: 16,
-                backgroundColor: '#2d3748',
-                borderRadius: 4,
-                marginBottom: 16,
-              }}>
-                <div>
-                  <label style={{ ...labelStyle, color: '#e2e8f0' }}>単価</label>
-                  <input
-                    type="text"
-                    value={priceModalDirectPrice ?? ''}
-                    onChange={(e) => setPriceModalDirectPrice(e.target.value ? Number(e.target.value) : null)}
-                    className="input-inset"
-                    style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
-                    placeholder="0"
-                  />
-                </div>
-              </div>
+                  <div style={{
+                    padding: 16,
+                    backgroundColor: '#2d3748',
+                    borderRadius: 4,
+                    marginBottom: 16,
+                  }}>
+                    <div>
+                      <label style={{ ...labelStyle, color: '#e2e8f0' }}>単価</label>
+                      <input
+                        type="text"
+                        value={priceModalDirectPrice ?? ''}
+                        onChange={(e) => setPriceModalDirectPrice(e.target.value ? Number(e.target.value) : null)}
+                        className="input-inset"
+                        style={{ width: '100%', fontSize: 16, backgroundColor: '#1a202c', color: '#fff', border: '1px solid #4a5568' }}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -2488,7 +2486,7 @@ export default function CaseNewPage() {
               }}
             >
               <h2 style={{ marginBottom: 24, textAlign: 'center' }}>保存方法を選択してください</h2>
-              
+
               <div style={{ marginBottom: 24, padding: 16, backgroundColor: '#f8f9fa', borderRadius: 8 }}>
                 <p style={{ margin: 0, fontSize: 14, color: '#666' }}>
                   過去案件から読み込んだデータです。<br />
@@ -2509,7 +2507,7 @@ export default function CaseNewPage() {
                 >
                   既存案件を更新する
                 </button>
-                
+
                 <button
                   onClick={() => performSave('new')}
                   className="btn-3d btn-primary"
@@ -2699,42 +2697,42 @@ export default function CaseNewPage() {
             </div>
           </div>
         )}
-{/* ここまでが画面本体 */}
-</div>
+        {/* ここまでが画面本体 */}
+      </div>
 
-{/* 印刷コンポーネント（画面外に配置） */}
-<div style={{ position: 'absolute', top: 0, left: '-9999px' }}>
-  <PrintEstimate
-    ref={printRef}
-    printRef={printRef}
-    customerName={customerName || ''}
-    estimateNo={estimateNo}
-    estimateDate={estimateDate}
-    subject={subject}
-    deliveryPlace={deliveryPlace}
-    deliveryDeadline={deliveryDeadline}
-    deliveryTerms={deliveryTerms}
-    validityText={validityText}
-    paymentTerms={paymentTerms}
-    rows={rows}
-    sections={sections}
-    discount={discount}
-    taxRate={0.1}
-    subtotal={subtotal}
-    subtotalAfterDiscount={subtotalAfterDiscount}
-    taxAmount={taxAmount}
-    totalAmount={totalAmount}
-    layoutType={layoutType}
-    MAX_ROWS_PER_PAGE={15}  // ★ ここで1ページ15行に設定
-    approvalStamps={approvalStamps}
-    stampUrls={{
-      staff: approvalStamps.staff ? '/stamps/staff.png' : null,
-      manager: approvalStamps.manager ? '/stamps/manager.png' : null,
-      director: approvalStamps.director ? '/stamps/director.png' : null,
-      president: approvalStamps.president ? '/stamps/president.png' : null,
-    }}
-  />
-</div>
+      {/* 印刷コンポーネント（画面外に配置） */}
+      <div style={{ position: 'absolute', top: 0, left: '-9999px' }}>
+        <PrintEstimate
+          ref={printRef}
+          printRef={printRef}
+          customerName={customerName || ''}
+          estimateNo={estimateNo}
+          estimateDate={estimateDate}
+          subject={subject}
+          deliveryPlace={deliveryPlace}
+          deliveryDeadline={deliveryDeadline}
+          deliveryTerms={deliveryTerms}
+          validityText={validityText}
+          paymentTerms={paymentTerms}
+          rows={rows}
+          sections={sections}
+          discount={discount}
+          taxRate={0.1}
+          subtotal={subtotal}
+          subtotalAfterDiscount={subtotalAfterDiscount}
+          taxAmount={taxAmount}
+          totalAmount={totalAmount}
+          layoutType={layoutType}
+          MAX_ROWS_PER_PAGE={15}  // ★ ここで1ページ15行に設定
+          approvalStamps={approvalStamps}
+          stampUrls={{
+            staff: approvalStamps.staff ? '/stamps/staff.png' : null,
+            manager: approvalStamps.manager ? '/stamps/manager.png' : null,
+            director: approvalStamps.director ? '/stamps/director.png' : null,
+            president: approvalStamps.president ? '/stamps/president.png' : null,
+          }}
+        />
+      </div>
     </>
   )
 }

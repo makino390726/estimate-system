@@ -59,7 +59,7 @@ export default function ConfirmImportPage() {
 
       const data = JSON.parse(dataStr)
       setImportData(data)
-      
+
       // 明細に product_id と comment フィールドを追加
       setDetails(data.details.map((d: any) => ({ ...d, product_id: null, comment: '' })))
 
@@ -133,7 +133,7 @@ export default function ConfirmImportPage() {
     try {
       // ★★★ 顧客を確保（新規 or 既存） ★★★
       let customerId = importData.customerId
-      
+
       if (!customerId) {
         // 新規顧客を作成
         const { data: newCustomer, error: custErr } = await supabase
@@ -141,7 +141,7 @@ export default function ConfirmImportPage() {
           .insert({ name: importData.customerName })
           .select('id')
           .single()
-        
+
         if (custErr) throw custErr
         customerId = newCustomer.id
       }
@@ -152,7 +152,7 @@ export default function ConfirmImportPage() {
         const rnd = Math.random().toString(16).slice(2, 10)
         return (ts + rnd).slice(0, 16)
       }
-      
+
       const case_id = generateCaseId()
       const now = new Date()
       const created_date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(

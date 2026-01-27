@@ -86,9 +86,9 @@ export default function ExcelDetailMapper({ details, sections, meta, onConfirm, 
         if (field.type === 'number') {
           value = parseFloat(cellValue.replace(/,/g, '')) || 0
         }
-        
+
         const updated = { ...d, [selectedField]: value }
-        
+
         // 数量または単価が変更された場合、金額を再計算
         if (selectedField === 'quantity' || selectedField === 'unit_price') {
           updated.amount = (updated.quantity || 0) * (updated.unit_price || 0)
@@ -98,7 +98,7 @@ export default function ExcelDetailMapper({ details, sections, meta, onConfirm, 
         if (selectedField === 'amount' && updated.quantity) {
           updated.unit_price = updated.quantity ? Math.round((updated.amount || 0) / updated.quantity) : updated.unit_price
         }
-        
+
         return updated
       }
       return d
