@@ -1314,7 +1314,12 @@ export default function CaseNewPage() {
         {/* 顧客・担当者 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 16 }}>
           <div>
-            <label style={labelStyle}>顧客:</label>
+            <label style={labelStyle}>
+              顧客:
+              <span style={{ marginLeft: 8, fontSize: 11, color: '#ef4444', fontWeight: 'normal' }}>
+                ※印刷時に2行に分けたい場合、分割するところに、2つ以上スペースを空けてください
+              </span>
+            </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"

@@ -80,6 +80,33 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   const taxAmount = Math.floor(subtotalAfterDiscount * taxRate)
   const totalAmount = subtotalAfterDiscount + taxAmount
 
+  // 顧客名を2行に分割する関数（スペース区切り）
+  const formatCustomerName = (name: string, honorific: string): React.ReactNode => {
+    if (!name) return `${honorific}`
+
+    // 連続する2つ以上のスペースが含まれているかチェック
+    const hasDoubleSpace = /\s{2,}/.test(name)
+
+    // 連続スペース2つ以上ある場合のみ2行表示
+    if (hasDoubleSpace) {
+      // 連続スペースで分割
+      const parts = name.split(/\s{2,}/).filter(p => p)
+      const firstLine = parts.slice(0, -1).join('  ') // 連続スペースで再結合
+      const lastPart = parts[parts.length - 1]
+
+      return (
+        <>
+          {firstLine}
+          <br />
+          {lastPart}　　　{honorific}
+        </>
+      )
+    }
+
+    // 連続スペースがない場合は1行表示
+    return <>{name}　　　{honorific}</>
+  }
+
   // ★ 印刷用スタイルを返す
   const printStyleSheet = `
     @media print {
@@ -525,7 +552,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                       {(row.remarks || '').replace(/円$/g, '')}
                     </td>
                   </tr>
-                  
+
                   {/* ★ コメント行表示 */}
                   {row.comment && (
                     <tr>
@@ -642,7 +669,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   paddingBottom: 4,
                 }}
               >
-                {customerName}　御中
+                {formatCustomerName(customerName, '御中')}
               </div>
             </div>
 
@@ -850,7 +877,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   // 縦様式
   // =========================
   const DATA_ROWS_PER_PAGE = MAX_ROWS_PER_PAGE || 20 // ★ propsから使用、デフォルト20
-  
+
   // ★ コメント行を考慮したページ分割ロジック
   const pages: PrintRow[][] = []
   let currentPage: PrintRow[] = []
@@ -858,7 +885,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
   for (const row of rows) {
     const rowsForThisRow = 1 + (row.comment ? 1 : 0) // データ行 + コメント行（あれば）
-    
+
     if (currentPageRows + rowsForThisRow > DATA_ROWS_PER_PAGE) {
       // 新しいページに移動
       if (currentPage.length > 0) {
@@ -943,7 +970,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                     paddingBottom: 2,
                   }}
                 >
-                  {customerName}　　　様
+                  {formatCustomerName(customerName, '様')}
                 </div>
               </div>
 
@@ -1173,7 +1200,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                         {(row.remarks || '').replace(/円$/g, '')}
                       </td>
                     </tr>
-                    
+
                     {/* ★ コメント行表示（縦型用） */}
                     {row.comment && (
                       <tr>
