@@ -65,16 +65,33 @@ export default function MasterSelectorPage() {
             </div>
           </div>
 
-          {/* 案件一覧・承認 */}
+          {/* 案件一覧 */}
           <div className="selector-card">
             <div className="selector-card-header">
               <FiArchive className="icon" />
-              <h2>案件一覧・承認</h2>
+              <h2>案件一覧</h2>
             </div>
-            <p>案件一覧・承認、見積書の進捗（ステータス）、明細表示から承認依頼も行えます。</p>
+            <p>案件一覧、見積書の進捗（ステータス）、明細表示が行えます。</p>
             <div className="selector-card-buttons">
               <Link href="/cases/list" className="selector-button primary">
-                案件一覧・承認
+                案件一覧
+              </Link>
+            </div>
+          </div>
+
+          {/* 承認・ルール */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiFileText className="icon" />
+              <h2>承認・ルール</h2>
+            </div>
+            <p>案件の承認依頼、決済ルールの確認・管理が行えます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/cases/approval" className="selector-button primary">
+                承認依頼
+              </Link>
+              <Link href="/settlement-rules" className="selector-button primary">
+                決済ルール
               </Link>
             </div>
           </div>

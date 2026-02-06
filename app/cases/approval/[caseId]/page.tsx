@@ -47,6 +47,7 @@ export default function CaseApprovalPage() {
   const [sectionsData, setSectionsData] = useState<any[]>([])  // ★ セクションステートを追加
   const [staffName, setStaffName] = useState<string>('担当者不明')
   const [customerName, setCustomerName] = useState<string>('')
+  const [honorific, setHonorific] = useState<string>('様')  // ★ 敬称
   const [approvalHistory, setApprovalHistory] = useState<any[]>([])  // ★ 承認履歴
 
   // ★ approversステートを追加
@@ -147,6 +148,11 @@ export default function CaseApprovalPage() {
 
     if (caseDataResult) {
       setCaseData(caseDataResult)
+
+      // ★ 敬称を読み込み
+      if (caseDataResult.honorific) {
+        setHonorific(caseDataResult.honorific)
+      }
 
       // ★ 顧客名を取得（customer_idから顧客マスタを参照）
       if (caseDataResult.customer_id) {
@@ -814,6 +820,7 @@ export default function CaseApprovalPage() {
                   estimateNo={caseData?.case_no || ''}
                   estimateDate={caseData?.created_date || ''}
                   customerName={customerName}
+                  honorific={honorific}
                   subject={caseData?.subject || ''}
                   deliveryDeadline={caseData?.delivery_deadline || ''}
                   deliveryPlace={caseData?.delivery_place || ''}

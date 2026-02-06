@@ -46,6 +46,7 @@ export default function CaseNewPage() {
 
   const [customerId, setCustomerId] = useState<string>('')
   const [customerName, setCustomerName] = useState<string>('')
+  const [honorific, setHonorific] = useState<string>('様')  // ★ 敬称
   const [staffId, setStaffId] = useState<number | null>(null)
   const [staffName, setStaffName] = useState<string>('')
   const [subject, setSubject] = useState('')
@@ -320,23 +321,52 @@ export default function CaseNewPage() {
         ),
       ]
 
-      const { data: staffsData } = await supabase
-        .from('staffs')
-        .select('id, name')
-        .in('id', staffIds)
+      console.log('【過去案件読込】担当者ID:', staffIds)
+      console.log('【過去案件読込】顧客ID:', customerIds)
 
-      const { data: customersData } = await supabase
-        .from('customers')
-        .select('id, name')
-        .in('id', customerIds)
+      let staffsData: any[] = []
+      let customersData: any[] = []
 
-      const staffMap = new Map(staffsData?.map((s) => [s.id, s.name]))
-      const customerMap = new Map(customersData?.map((c) => [c.id, c.name]))
+      if (staffIds.length > 0) {
+        const result = await supabase
+          .from('staffs')
+          .select('id, name')
+          .in('id', staffIds)
+        console.log('【過去案件読込】担当者データ取得結果:', result)
+        console.log('【過去案件読込】担当者エラー:', result.error)
+        if (result.error) {
+          console.error('【過去案件読込】担当者データ取得エラー詳細:', result.error.message)
+        }
+        staffsData = result.data || []
+      }
+
+      if (customerIds.length > 0) {
+        console.log('【過去案件読込】顧客クエリ開始: カラムサイズ=', customerIds.length)
+        const result = await supabase
+          .from('customers')
+          .select('id, name')
+          .in('id', customerIds)
+        console.log('【過去案件読込】顧客データ取得結果:', result)
+        console.log('【過去案件読込】顧客エラー:', result.error)
+        if (result.error) {
+          console.error('【過去案件読込】顧客データ取得エラー詳細:', result.error.message)
+        }
+        customersData = result.data || []
+      }
+
+      console.log('【過去案件読込】最終staffsData:', staffsData)
+      console.log('【過去案件読込】最終customersData:', customersData)
+
+      const staffMap = new Map(staffsData.map((s) => [String(s.id), s.name]))
+      const customerMap = new Map(customersData.map((c) => [String(c.id), c.name]))
+
+      console.log('【過去案件読込】staffMap:', Array.from(staffMap.entries()))
+      console.log('【過去案件読込】customerMap:', Array.from(customerMap.entries()))
 
       const enrichedCases = data.map((c) => ({
         ...c,
-        customer_name: customerMap.get(c.customer_id) || '-',
-        staff_name: staffMap.get(c.staff_id) || '-',
+        customer_name: customerMap.get(String(c.customer_id)) || c.customer_id || '-',
+        staff_name: staffMap.get(String(c.staff_id)) || c.staff_id || '-',
       }))
 
       setPastCases(enrichedCases)
@@ -459,6 +489,22 @@ export default function CaseNewPage() {
       }
     }
 
+    // ★ 顧客情報取得
+    let customerName = ''
+    if (caseData.customer_id) {
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('name')
+        .eq('id', caseData.customer_id)
+        .single()
+
+      if (!customerError && customerData) {
+        customerName = customerData.name
+      } else {
+        customerName = caseData.customer_id
+      }
+    }
+
     // 明細
     const { data: detailsData, error: detailsError } = await supabase
       .from('case_details')
@@ -515,8 +561,9 @@ export default function CaseNewPage() {
     })
 
     // ★ 保存仕様に合わせ、customer_idには顧客名を保持する
-    setCustomerId(caseData.customer_name || caseData.customer_id || '')
-    setCustomerName(caseData.customer_name || caseData.customer_id || '')
+    setCustomerId(customerName)
+    setCustomerName(customerName)
+    setHonorific(caseData.honorific || '様')  // ★ 敬称を読み込み
     setStaffId(staffData?.id || null)
     setStaffName(staffData?.name || '')
     setSubject(caseData.subject || '')
@@ -856,6 +903,7 @@ export default function CaseNewPage() {
             delivery_terms: deliveryTerms,
             validity_text: validityText,
             payment_terms: paymentTerms,
+            honorific: honorific,  // ★ 敬称を保存
           })
           .eq('case_id', loadedCaseId)
 
@@ -891,6 +939,7 @@ export default function CaseNewPage() {
           delivery_terms: deliveryTerms,
           validity_text: validityText,
           payment_terms: paymentTerms,
+          honorific: honorific,  // ★ 敬称を保存
           approve_staff: null,
           approve_manager: null,
           approve_director: null,
@@ -1320,7 +1369,7 @@ export default function CaseNewPage() {
                 ※印刷時に2行に分けたい場合、分割するところに、2つ以上スペースを空けてください
               </span>
             </label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 type="text"
                 value={customerName}
@@ -1331,9 +1380,23 @@ export default function CaseNewPage() {
               <button
                 onClick={() => setShowCustomerModal(true)}
                 className="selector-button primary"
+                style={{ padding: '8px 16px', fontSize: '13px' }}
               >
                 顧客選択
               </button>
+              <select
+                value={honorific}
+                onChange={(e) => setHonorific(e.target.value)}
+                style={{
+                  ...inputStyle,
+                  width: '80px',
+                  padding: '8px',
+                  fontSize: '14px'
+                }}
+              >
+                <option value="様">様</option>
+                <option value="御中">御中</option>
+              </select>
             </div>
           </div>
 
@@ -2407,13 +2470,12 @@ export default function CaseNewPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
+                      <th style={thStyle}>案件ID</th>
                       <th style={thStyle}>案件No</th>
+                      <th style={thStyle}>作成日</th>
                       <th style={thStyle}>件名</th>
                       <th style={thStyle}>顧客名</th>
                       <th style={thStyle}>担当者</th>
-                      <th style={thStyle}>作成日</th>
-                      <th style={thStyle}>受渡場所</th>
-                      <th style={thStyle}>受渡期限</th>
                       <th style={thStyle}>操作</th>
                     </tr>
                   </thead>
@@ -2421,22 +2483,19 @@ export default function CaseNewPage() {
                     {pastCases.map((c) => (
                       <tr key={c.case_id}>
                         <td style={tdStyle}>
+                          {c.case_id || '-'}
+                        </td>
+                        <td style={tdStyle}>
                           {c.case_no || '未採番'}
+                        </td>
+                        <td style={tdStyle}>
+                          {c.created_date || '-'}
                         </td>
                         <td style={tdStyle}>{c.subject || '-'}</td>
                         <td style={tdStyle}>
                           {c.customer_name || '-'}
                         </td>
                         <td style={tdStyle}>{c.staff_name || '-'}</td>
-                        <td style={tdStyle}>
-                          {c.created_date || '-'}
-                        </td>
-                        <td style={tdStyle}>
-                          {c.delivery_place || '-'}
-                        </td>
-                        <td style={tdStyle}>
-                          {c.delivery_deadline || '-'}
-                        </td>
                         <td style={tdStyle}>
                           <button
                             onClick={() =>
@@ -2453,7 +2512,7 @@ export default function CaseNewPage() {
                     {pastCases.length === 0 && (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={7}
                           style={{
                             ...tdStyle,
                             textAlign: 'center',
@@ -2711,6 +2770,7 @@ export default function CaseNewPage() {
           ref={printRef}
           printRef={printRef}
           customerName={customerName || ''}
+          honorific={honorific}  // ★ 敬称を追加
           estimateNo={estimateNo}
           estimateDate={estimateDate}
           subject={subject}

@@ -192,6 +192,29 @@ export default function HomePage() {
                 </p>
               </div>
             </Link>
+
+            <Link href="/settlement-rules" className="selector-card">
+              <div>
+                <h4
+                  style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 600,
+                  }}
+                >
+                  📋 決済ルール管理
+                </h4>
+                <p
+                  style={{
+                    margin: "4px 0 0 0",
+                    fontSize: 13,
+                    color: "#777",
+                  }}
+                >
+                  営業所別の決済ルールPDFを管理
+                </p>
+              </div>
+            </Link>
           </div>
         </div>
       </main>

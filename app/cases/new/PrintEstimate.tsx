@@ -21,6 +21,7 @@ export type PrintSection = { id: number; name: string }
 export type PrintEstimateProps = {
   printRef: React.RefObject<HTMLDivElement | null>
   customerName: string
+  honorific: string  // ★ 敬称（様・御中）
   estimateNo: string
   estimateDate: string  // ★ 追加
   subject: string
@@ -59,6 +60,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
     estimateNo,
     estimateDate,
     customerName,
+    honorific,  // ★ 敬称を取得
     subject,
     deliveryPlace,
     deliveryDeadline,
@@ -81,7 +83,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   const totalAmount = subtotalAfterDiscount + taxAmount
 
   // 顧客名を2行に分割する関数（スペース区切り）
-  const formatCustomerName = (name: string, honorific: string): React.ReactNode => {
+  const formatCustomerName = (name: string): React.ReactNode => {
     if (!name) return `${honorific}`
 
     // 連続する2つ以上のスペースが含まれているかチェック
@@ -98,13 +100,13 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
         <>
           {firstLine}
           <br />
-          {lastPart}　　　{honorific}
+          {lastPart}　{honorific}
         </>
       )
     }
 
     // 連続スペースがない場合は1行表示
-    return <>{name}　　　{honorific}</>
+    return <>{name}　{honorific}</>
   }
 
   // ★ 印刷用スタイルを返す
@@ -669,7 +671,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   paddingBottom: 4,
                 }}
               >
-                {formatCustomerName(customerName, '御中')}
+                {formatCustomerName(customerName)}
               </div>
             </div>
 
@@ -970,7 +972,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                     paddingBottom: 2,
                   }}
                 >
-                  {formatCustomerName(customerName, '様')}
+                  {formatCustomerName(customerName)}
                 </div>
               </div>
 
