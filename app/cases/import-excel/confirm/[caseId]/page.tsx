@@ -195,6 +195,8 @@ export default function ConfirmImportPage() {
         unit: d.unit || null,
         quantity: d.quantity,
         unit_price: d.unit_price,
+        price_rate: null,
+        exclude_from_total: false,
         amount: d.amount,
         cost_unit_price: null,
         cost_amount: null,

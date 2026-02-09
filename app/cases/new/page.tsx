@@ -32,6 +32,8 @@ type Row = {
   unit: string
   quantity: number
   unit_price: number | null
+  price_rate?: number | null
+  exclude_from_total?: boolean
   amount: number
   cost_price: number
   section_id: number | null
@@ -419,6 +421,8 @@ export default function CaseNewPage() {
       unit: product.unit || '',
       quantity: product.quantity || 1,  // ★ undefined の場合は 1
       unit_price: null,  // ★ 単価は初期値null
+      price_rate: null,
+      exclude_from_total: false,
       amount: 0,  // ★ 金額は0で初期化
       cost_price: product.cost_price || 0,  // ★ 原価は保持
       section_id: null,
@@ -442,6 +446,8 @@ export default function CaseNewPage() {
       unit: manualProductUnit.trim() || '個',
       quantity: manualProductQuantity > 0 ? manualProductQuantity : 1,
       unit_price: manualProductUnitPrice,  // ★ null許容型で保持
+      price_rate: null,
+      exclude_from_total: false,
       amount: (manualProductUnitPrice ?? 0) * (manualProductQuantity > 0 ? manualProductQuantity : 1),
       cost_price: manualProductCostPrice >= 0 ? manualProductCostPrice : 0,
       section_id: null,
@@ -552,6 +558,8 @@ export default function CaseNewPage() {
         unit: product?.unit || detail.unit || '',
         quantity: detail.quantity || 1,
         unit_price: detail.unit_price || 0,
+        price_rate: detail.price_rate ?? null,
+        exclude_from_total: detail.exclude_from_total ?? false,
         amount: detail.amount || 0,
         cost_price: detail.cost_unit_price || 0,
         section_id: detail.section_id || null,
@@ -623,6 +631,7 @@ export default function CaseNewPage() {
   const handleUnitPriceChange = (index: number, unitPrice: number | null) => {
     const newRows = [...rows]
     newRows[index].unit_price = unitPrice
+    newRows[index].price_rate = null
     newRows[index].amount = newRows[index].quantity * (unitPrice ?? 0)
     setRows(newRows)
   }
@@ -736,6 +745,7 @@ export default function CaseNewPage() {
     newRows[priceModalRowIndex].unit_price = finalPrice
     newRows[priceModalRowIndex].amount = newRows[priceModalRowIndex].quantity * (finalPrice ?? 0)
     newRows[priceModalRowIndex].remarks = remarks
+    newRows[priceModalRowIndex].price_rate = priceModalMode === 'calculate' ? priceModalRate : null
     setRows(newRows)
 
     setShowPriceModal(false)
@@ -981,6 +991,8 @@ export default function CaseNewPage() {
         unit: row.unit,
         quantity: row.quantity,
         unit_price: row.unit_price,
+        price_rate: row.price_rate ?? null,
+        exclude_from_total: row.exclude_from_total ?? false,
         amount: row.amount,
         cost_unit_price: row.cost_price,
         section_id: row.section_id,
@@ -1048,8 +1060,11 @@ export default function CaseNewPage() {
   }
 
   // 小計等計算
-  const subtotal = rows.reduce((s, r) => s + r.amount, 0)
-  const totalCostAmount = rows.reduce((s, r) => s + r.cost_price * r.quantity, 0)
+  const subtotal = rows.reduce((s, r) => s + (r.exclude_from_total ? 0 : r.amount), 0)
+  const totalCostAmount = rows.reduce((s, r) => {
+    const costUnitPrice = r.exclude_from_total ? (r.unit_price ?? 0) : r.cost_price
+    return s + costUnitPrice * r.quantity
+  }, 0)
   const totalGrossProfit = subtotal - totalCostAmount
   const grossProfitRate = subtotal > 0 ? (totalGrossProfit / subtotal) * 100 : 0
   const subtotalAfterDiscount = subtotal - discount
@@ -1466,6 +1481,7 @@ export default function CaseNewPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
               <thead>
                 <tr>
+                  <th style={{ ...thStyle, width: '80px' }}>見積除外</th>
                   {layoutType === 'horizontal' && (
                     <th style={{ ...thStyle, minWidth: '180px' }}>セクション</th>
                   )}
@@ -1482,11 +1498,24 @@ export default function CaseNewPage() {
               </thead>
               <tbody>
                 {rows.map((row, index) => {
-                  const costAmount = row.cost_price * row.quantity
-                  const grossProfit = row.amount - costAmount
+                  const costUnitPrice = row.exclude_from_total ? (row.unit_price ?? 0) : row.cost_price
+                  const costAmount = costUnitPrice * row.quantity
+                  const displayAmount = row.exclude_from_total ? 0 : row.amount
+                  const grossProfit = displayAmount - costAmount
 
                   return (
                     <tr key={index}>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!row.exclude_from_total}
+                          onChange={(e) => {
+                            const newRows = [...rows]
+                            newRows[index].exclude_from_total = e.target.checked
+                            setRows(newRows)
+                          }}
+                        />
+                      </td>
                       {layoutType === 'horizontal' && (
                         <td style={tdStyle}>
                           <select
@@ -1536,7 +1565,7 @@ export default function CaseNewPage() {
                           {row.unit_price ? row.unit_price.toLocaleString() : '未入力'}
                         </button>
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>{row.amount.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>{displayAmount.toLocaleString()}</td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>{costAmount.toLocaleString()}</td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>{grossProfit.toLocaleString()}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
@@ -2663,7 +2692,7 @@ export default function CaseNewPage() {
                     <input
                       type="number"
                       value={editRowData.unit_price ?? ''}
-                      onChange={(e) => setEditRowData({ ...editRowData, unit_price: e.target.value ? Number(e.target.value) : null })}
+                      onChange={(e) => setEditRowData({ ...editRowData, unit_price: e.target.value ? Number(e.target.value) : null, price_rate: null })}
                       style={{ ...inputStyle, width: '100%', textAlign: 'right' }}
                     />
                   </div>

@@ -50,9 +50,9 @@ type ConfirmImportPageProps = {
 export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmImportPageProps = {}) {
   console.log('[ConfirmPage] Component rendered with propsData:', !!propsData)
   console.log('[ConfirmPage] propsData keys:', propsData ? Object.keys(propsData) : 'undefined')
-  
+
   const router = useRouter()
-  
+
   // ダークモード対策：body背景を白に明示的に設定
   useEffect(() => {
     document.body.style.backgroundColor = '#ffffff'
@@ -62,7 +62,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
       document.body.style.color = ''
     }
   }, [])
-  
+
   const [importData, setImportData] = useState<any>(null)
   const [details, setDetails] = useState<Detail[]>([])
   const [sections, setSections] = useState<SectionDef[]>([])
@@ -83,7 +83,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
   const [taxRate, setTaxRate] = useState<number>(0.1)
   const [calculatedTaxAmount, setCalculatedTaxAmount] = useState<number>(0)
   const [calculatedTotalAmount, setCalculatedTotalAmount] = useState<number>(0)
-  
+
   // 修正可能なフィールド
   const [editCustomerName, setEditCustomerName] = useState<string>('')
   const [editSubject, setEditSubject] = useState<string>('')
@@ -139,7 +139,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
     const discountedSubtotal = Math.max(0, subtotal - specialDiscount)
     const taxAmount = Math.round(discountedSubtotal * taxRate)
     const totalAmount = discountedSubtotal + taxAmount
-    
+
     setCalculatedTaxAmount(taxAmount)
     setCalculatedTotalAmount(totalAmount)
   }, [importData, details, specialDiscount, taxRate])
@@ -152,11 +152,11 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
     try {
       // propsDataが渡されていればそれを使用、なければURL パラメータから取得
       let data = propsData
-      
+
       if (!data && typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search)
         const dataStr = params.get('data')
-        
+
         if (!dataStr) {
           alert('データが見つかりません。最初からやり直してください。')
           setLoading(false)
@@ -167,16 +167,16 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
         const decoded = Buffer.from(dataStr, 'base64').toString('utf-8')
         data = JSON.parse(decoded)
       }
-      
+
       if (!data) {
         alert('データが見つかりません。')
         setLoading(false)
         return
       }
-      
+
       console.log('[ConfirmPage] Data loaded successfully')
       console.log('[ConfirmPage] Full data:', JSON.stringify(data, null, 2))
-      
+
       setImportData(data)
       setSpecialDiscount(Number(data.specialDiscount) || 0)
       // Excel側の消費税から税率を推定して初期反映
@@ -186,15 +186,15 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
         if (Number.isFinite(inferredRate)) setTaxRate(inferredRate)
       }
       setStampImage(data.stampImage || null)
-      
+
       // ★API側で複数セル値が連結されている場合、それを反映
       setEditEstimateNo(data.estimateNo || data.coverData?.estimateNumber || '')
-      
+
       // 日付のサニタイズとバリデーション
       debugDateValue('[loadData] data.estimateDate', data.estimateDate)
       const sanitizedDate = sanitizeDateString(data.estimateDate || data.coverData?.estimateDate)
       setEditEstimateDate(sanitizedDate || '')
-      
+
       // 顧客名と件名を設定
       setEditCustomerName(data.customerName || data.coverData?.customerName || '')
       setEditSubject(data.subject || data.coverData?.subject || '')
@@ -203,7 +203,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
       setEditDeliveryTerms(data.deliveryTerms || data.coverData?.deliveryTerms || '')
       setEditValidityText(data.validityText || data.coverData?.validityText || '')
       setEditPaymentTerms(data.paymentTerms || data.coverData?.paymentTerms || '')
-      
+
       console.log('[ConfirmPage] Edit states:', {
         estimateNo: data.estimateNo,
         estimateDate: sanitizedDate,
@@ -215,13 +215,13 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
         paymentTerms: data.paymentTerms,
         details: data.details?.length || 0
       })
-      
+
       // セクション定義を設定
       if (data.sections) {
         setSections(data.sections)
         console.log('[ConfirmPage] Sections:', data.sections)
       }
-      
+
       // 明細に product_id フィールドを追加
       setDetails(data.details.map((d: any) => ({ ...d, product_id: null })))
       setSearchQueries(Array(data.details.length).fill(''))
@@ -281,18 +281,18 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
     setIsSearching((prev) => prev.map((v, i) => (i === index ? true : v)))
     try {
       let query = supabase.from('products').select('*').order('name').limit(500)
-      
+
       if (keyword.trim()) {
         query = query.ilike('name', `%${keyword.trim()}%`)
       }
-      
+
       const { data, error } = await query
-      
+
       if (error) {
         console.error('Search error:', error)
         return
       }
-      
+
       setFilteredOptions((prev) => {
         const next = [...(prev || [])]
         next[index] = data || []
@@ -413,7 +413,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
 
       // ★★★ 顧客を確保（新規 or 既存） ★★★
       let customerId = importData.customerId
-      
+
       if (!customerId) {
         // 新規顧客を作成
         const { data: newCustomer, error: custErr } = await supabase
@@ -421,7 +421,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
           .insert({ name: editCustomerName || importData.customerName })
           .select('id')
           .single()
-        
+
         if (custErr) throw custErr
         customerId = newCustomer.id
       }
@@ -432,16 +432,16 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
         const rnd = Math.random().toString(16).slice(2, 10)
         return (ts + rnd).slice(0, 16)
       }
-      
+
       const case_id = generateCaseId()
       const todayStr = getTodayDateString()
-      
+
       // 日付のサニタイズ（複数候補から最初の有効な値を使用）
       debugDateValue('[handleSave] editEstimateDate', editEstimateDate)
       debugDateValue('[handleSave] importData.estimateDate', importData.estimateDate)
-      
+
       const created_date = getFirstValidDate(editEstimateDate, importData.estimateDate) || todayStr
-      
+
       console.log('[handleSave] created_date resolved to:', created_date)
 
       // ★★★ cases テーブルに登録 ★★★
@@ -475,7 +475,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
       const detailRows = details.map((d) => {
         // 商品名を規格に含める（商品名 + 規格の形式）
         const combinedSpec = d.spec ? `${d.item_name}\n${d.spec}` : d.item_name
-        
+
         return {
           case_id,
           staff_id: staffIdNum,
@@ -485,6 +485,8 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
           unit: d.unit || null,
           quantity: d.quantity,
           unit_price: d.unit_price,
+          price_rate: null,
+          exclude_from_total: false,
           amount: d.amount,
           cost_unit_price: d.cost_price || null,
           cost_amount: d.cost_amount || null,
@@ -522,10 +524,10 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
   }
 
   return (
-    <div style={{ 
-      maxWidth: '1200px', 
-      margin: '20px auto', 
-      padding: '20px', 
+    <div style={{
+      maxWidth: '1200px',
+      margin: '20px auto',
+      padding: '20px',
       fontFamily: 'system-ui',
       backgroundColor: '#ffffff',
       color: '#1a1a1a',
@@ -554,10 +556,10 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
       </p>
 
       {/* 案件情報 */}
-      <div style={{ 
-        marginTop: '20px', 
-        padding: '20px', 
-        backgroundColor: '#e3f2fd', 
+      <div style={{
+        marginTop: '20px',
+        padding: '20px',
+        backgroundColor: '#e3f2fd',
         borderRadius: '8px',
         border: '2px solid #2196f3'
       }}>
@@ -583,7 +585,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                   }}
                 />
                 {importData.customerStatus === 'new' && (
-                  <div style={{ 
+                  <div style={{
                     marginTop: '8px',
                     color: '#ffffff',
                     backgroundColor: '#ff6f00',
@@ -597,7 +599,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
                   </div>
                 )}
                 {importData.customerStatus === 'existing' && (
-                  <div style={{ 
+                  <div style={{
                     marginTop: '8px',
                     color: '#ffffff',
                     backgroundColor: '#2e7d32',
@@ -810,9 +812,9 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
 
       {/* セクション一覧表示 */}
       {sections.length > 0 && (
-        <div style={{ 
-          marginTop: '30px', 
-          padding: '20px', 
+        <div style={{
+          marginTop: '30px',
+          padding: '20px',
           border: '2px solid #1976d2',
           borderRadius: '8px',
           backgroundColor: '#e3f2fd'
@@ -848,10 +850,10 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
       )}
 
       {/* 担当者選択 */}
-      <div style={{ 
-        marginTop: '24px', 
-        padding: '20px', 
-        backgroundColor: '#fff3e0', 
+      <div style={{
+        marginTop: '24px',
+        padding: '20px',
+        backgroundColor: '#fff3e0',
         borderRadius: '8px',
         border: '3px solid #ff6f00',
         display: 'flex',
@@ -946,7 +948,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
             </thead>
             <tbody>
               {details.map((detail, idx) => (
-                <tr key={idx} style={{ 
+                <tr key={idx} style={{
                   borderBottom: '1px solid #e0e0e0',
                   backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f5f5f5'
                 }}>

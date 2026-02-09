@@ -11,6 +11,7 @@ export type PrintRow = {
   amount: number
   cost_price: number
   section_id: number | null
+  exclude_from_total?: boolean
   remarks?: string  // ★ 備考フィールドを追加
   comment?: string  // ★ コメントフィールドを追加
   unregistered_product?: string  // ★ 直接入力商品名
@@ -75,8 +76,10 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
     MAX_ROWS_PER_PAGE, // ★ propsから取得
   } = props
 
+  const visibleRows = rows.filter((row) => !row.exclude_from_total)
+
   // ★ 金額計算を追加
-  const subtotal = rows.reduce((sum, row) => sum + (row.amount || 0), 0)
+  const subtotal = visibleRows.reduce((sum, row) => sum + (row.amount || 0), 0)
   const taxRate = 0.1
   const subtotalAfterDiscount = subtotal - discount
   const taxAmount = Math.floor(subtotalAfterDiscount * taxRate)
@@ -175,7 +178,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
     let currentSectionId: number | null = null
     let currentGroup: PrintRow[] = []
 
-    rows.forEach((row) => {
+    visibleRows.forEach((row) => {
       if (row.section_id !== currentSectionId) {
         if (currentGroup.length > 0) {
           const sectionSubtotal = currentGroup.reduce((sum, r) => sum + r.amount, 0)
@@ -885,7 +888,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   let currentPage: PrintRow[] = []
   let currentPageRows = 0
 
-  for (const row of rows) {
+  for (const row of visibleRows) {
     const rowsForThisRow = 1 + (row.comment ? 1 : 0) // データ行 + コメント行（あれば）
 
     if (currentPageRows + rowsForThisRow > DATA_ROWS_PER_PAGE) {

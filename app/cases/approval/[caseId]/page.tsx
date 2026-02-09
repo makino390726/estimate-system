@@ -16,7 +16,9 @@ type CaseDetail = {
   unit: string
   quantity: number
   unit_price: number
+  price_rate?: number | null
   retail_price?: number | null
+  exclude_from_total?: boolean
   cost_unit_price: number
   amount: number
   cost_amount: number
@@ -228,6 +230,8 @@ export default function CaseApprovalPage() {
               unit: product?.unit || detail.unit || '-',
               cost_price: detail.cost_unit_price ?? product?.cost_price ?? 0,
               retail_price: product?.retail_price ?? null,
+              price_rate: detail.price_rate ?? null,
+              exclude_from_total: detail.exclude_from_total ?? false,
               remarks: detail.remarks || undefined,  // ★ remarks を保持
             }
           })
@@ -241,6 +245,8 @@ export default function CaseApprovalPage() {
             product_name: d.unregistered_product || '-',
             cost_price: d.cost_unit_price ?? 0,
             retail_price: null,
+            price_rate: d.price_rate ?? null,
+            exclude_from_total: d.exclude_from_total ?? false,
             remarks: d.remarks || undefined,  // ★ remarks を保持
           })))
         }
@@ -724,19 +730,11 @@ export default function CaseApprovalPage() {
   const taxAmount = Math.floor(subtotalAfterDiscount * taxRate)
   const totalAmount = subtotalAfterDiscount + taxAmount
 
-  const extractListPrice = (remarks?: string) => {
-    if (!remarks) return null
-    const match = remarks.match(/定価[:：]\s*([0-9,]+)/)
-    if (!match) return null
-    const value = Number(match[1].replace(/,/g, ''))
-    return Number.isFinite(value) && value > 0 ? value : null
-  }
-
   const getPriceBasisText = (row: CaseDetail) => {
-    const listPrice = row.retail_price && row.retail_price > 0 ? row.retail_price : extractListPrice(row.remarks)
-    if (!listPrice || !row.unit_price || row.unit_price <= 0) return '-'
-    const rate = (row.unit_price / listPrice) * 100
-    return `定価: ${listPrice.toLocaleString()} / 仕切率: ${rate.toFixed(1)}%`
+    if (!row.price_rate || row.price_rate <= 0) return '-'
+    const listPrice = row.retail_price && row.retail_price > 0 ? row.retail_price : null
+    if (!listPrice) return `掛率: ${row.price_rate.toFixed(1)}%`
+    return `定価: ${listPrice.toLocaleString()} / 掛率: ${row.price_rate.toFixed(1)}%`
   }
 
   // ★ 縦様式用のページ分割（PrintEstimateに渡すrowsを使用）
@@ -751,6 +749,7 @@ export default function CaseApprovalPage() {
     cost_price: d.cost_unit_price || 0,
     section_id: d.section_id,
     remarks: d.remarks || undefined,
+    exclude_from_total: d.exclude_from_total ?? false,
     unregistered_product: d.unregistered_product || undefined,
   }))
 
@@ -863,6 +862,7 @@ export default function CaseApprovalPage() {
                     cost_price: d.cost_price || 0,
                     section_id: d.section_id || null,
                     remarks: d.remarks || undefined,
+                    exclude_from_total: d.exclude_from_total ?? false,
                     unregistered_product: d.unregistered_product || undefined,
                   }))}
                   sections={sectionsData.map(s => ({
