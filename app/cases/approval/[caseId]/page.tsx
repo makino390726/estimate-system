@@ -16,6 +16,7 @@ type CaseDetail = {
   unit: string
   quantity: number
   unit_price: number
+  retail_price?: number | null
   cost_unit_price: number
   amount: number
   cost_amount: number
@@ -198,7 +199,7 @@ export default function CaseApprovalPage() {
         if (productIds.length > 0) {
           const { data: productsData, error: productsError } = await supabase
             .from('products')
-            .select('id, name, unit, cost_price')
+            .select('id, name, unit, cost_price, retail_price')
             .in('id', productIds)
 
           if (productsError) {
@@ -206,7 +207,7 @@ export default function CaseApprovalPage() {
           }
           console.log('productsData:', productsData)
 
-          const byId: Record<string, { id: any; name: string; unit: string | null; cost_price: number | null }> = {}
+          const byId: Record<string, { id: any; name: string; unit: string | null; cost_price: number | null; retail_price: number | null }> = {}
           for (const p of (productsData || [])) {
             byId[String(p.id)] = p
           }
@@ -226,6 +227,7 @@ export default function CaseApprovalPage() {
               product_name: displayName,
               unit: product?.unit || detail.unit || '-',
               cost_price: detail.cost_unit_price ?? product?.cost_price ?? 0,
+              retail_price: product?.retail_price ?? null,
               remarks: detail.remarks || undefined,  // ★ remarks を保持
             }
           })
@@ -238,6 +240,7 @@ export default function CaseApprovalPage() {
             ...d,
             product_name: d.unregistered_product || '-',
             cost_price: d.cost_unit_price ?? 0,
+            retail_price: null,
             remarks: d.remarks || undefined,  // ★ remarks を保持
           })))
         }
@@ -721,6 +724,21 @@ export default function CaseApprovalPage() {
   const taxAmount = Math.floor(subtotalAfterDiscount * taxRate)
   const totalAmount = subtotalAfterDiscount + taxAmount
 
+  const extractListPrice = (remarks?: string) => {
+    if (!remarks) return null
+    const match = remarks.match(/定価[:：]\s*([0-9,]+)/)
+    if (!match) return null
+    const value = Number(match[1].replace(/,/g, ''))
+    return Number.isFinite(value) && value > 0 ? value : null
+  }
+
+  const getPriceBasisText = (row: CaseDetail) => {
+    const listPrice = row.retail_price && row.retail_price > 0 ? row.retail_price : extractListPrice(row.remarks)
+    if (!listPrice || !row.unit_price || row.unit_price <= 0) return '-'
+    const rate = (row.unit_price / listPrice) * 100
+    return `定価: ${listPrice.toLocaleString()} / 仕切率: ${rate.toFixed(1)}%`
+  }
+
   // ★ 縦様式用のページ分割（PrintEstimateに渡すrowsを使用）
   const printRows = detailsData.map(d => ({
     product_id: d.product_id,
@@ -931,7 +949,7 @@ export default function CaseApprovalPage() {
                 <tr>
                   <th style={thStyle}>商品名</th>
                   {/* ★ 規格列を削除 */}
-                  <th style={thStyle}>単位</th>
+                  <th style={thStyle}>単価設定根拠</th>
                   <th style={thStyle}>数量</th>
                   <th style={thStyle}>単価</th>
                   <th style={thStyle}>金額</th>
@@ -950,7 +968,7 @@ export default function CaseApprovalPage() {
                   return (
                     <tr key={row.id || `row-${index}`}>
                       <td style={tdStyle}>{row.product_name || '-'}</td>
-                      <td style={tdStyle}>{row.unit}</td>
+                      <td style={tdStyle}>{getPriceBasisText(row)}</td>
                       <td style={tdStyle}>{row.quantity}</td>
                       <td style={tdStyle}>{row.unit_price ? row.unit_price.toLocaleString() : ''}</td>
                       <td style={tdStyle}>{row.amount.toLocaleString()}</td>
