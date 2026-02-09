@@ -755,6 +755,41 @@ export default function CaseNewPage() {
     setRows(rows.filter((_, i) => i !== index))
   }
 
+  const handleInsertRow = (index: number) => {
+    const baseSectionId = rows[index]?.section_id ?? null
+    const newRow: Row = {
+      product_id: '',
+      item_name: '',
+      spec: '',
+      unit: '',
+      quantity: 1,
+      unit_price: null,
+      price_rate: null,
+      exclude_from_total: false,
+      amount: 0,
+      cost_price: 0,
+      section_id: baseSectionId,
+      remarks: undefined,
+      unregistered_product: undefined,
+      comment: undefined,
+    }
+
+    const newRows = [...rows]
+    newRows.splice(index + 1, 0, newRow)
+    setRows(newRows)
+  }
+
+  const handleCopyRow = (index: number) => {
+    const source = rows[index]
+    const copied: Row = {
+      ...source,
+      amount: source.quantity * (source.unit_price ?? 0),
+    }
+    const newRows = [...rows]
+    newRows.splice(index + 1, 0, copied)
+    setRows(newRows)
+  }
+
   const handleOpenEditRowModal = (index: number) => {
     setEditRowIndex(index)
     setEditRowData({ ...rows[index] })
@@ -1580,7 +1615,14 @@ export default function CaseNewPage() {
                       <td style={{ ...tdStyle, textAlign: 'right' }}>{costAmount.toLocaleString()}</td>
                       <td style={{ ...tdStyle, textAlign: 'right' }}>{grossProfit.toLocaleString()}</td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: '6px',
+                            justifyItems: 'center',
+                          }}
+                        >
                           <button
                             onClick={() => handleOpenEditRowModal(index)}
                             className="selector-button"
@@ -1588,9 +1630,49 @@ export default function CaseNewPage() {
                               backgroundColor: '#0284c7',
                               borderColor: '#0369a1',
                               color: '#fff',
+                              width: 52,
+                              height: 52,
+                              padding: 0,
+                              fontSize: 13,
+                              lineHeight: 1.1,
+                              textAlign: 'center',
                             }}
                           >
                             編集
+                          </button>
+                          <button
+                            onClick={() => handleInsertRow(index)}
+                            className="selector-button"
+                            style={{
+                              backgroundColor: '#0ea5e9',
+                              borderColor: '#0284c7',
+                              color: '#fff',
+                              width: 52,
+                              height: 52,
+                              padding: 0,
+                              fontSize: 13,
+                              lineHeight: 1.1,
+                              textAlign: 'center',
+                            }}
+                          >
+                            挿入
+                          </button>
+                          <button
+                            onClick={() => handleCopyRow(index)}
+                            className="selector-button"
+                            style={{
+                              backgroundColor: '#7c3aed',
+                              borderColor: '#6d28d9',
+                              color: '#fff',
+                              width: 52,
+                              height: 52,
+                              padding: 0,
+                              fontSize: 13,
+                              lineHeight: 1.1,
+                              textAlign: 'center',
+                            }}
+                          >
+                            複製
                           </button>
                           <button
                             onClick={() => handleDeleteRow(index)}
@@ -1599,6 +1681,12 @@ export default function CaseNewPage() {
                               backgroundColor: '#dc2626',
                               borderColor: '#991b1b',
                               color: '#fff',
+                              width: 52,
+                              height: 52,
+                              padding: 0,
+                              fontSize: 13,
+                              lineHeight: 1.1,
+                              textAlign: 'center',
                             }}
                           >
                             削除
@@ -1610,7 +1698,12 @@ export default function CaseNewPage() {
                               backgroundColor: row.comment ? '#16a34a' : '#475569',
                               borderColor: row.comment ? '#15803d' : '#334155',
                               color: '#fff',
-                              fontSize: '12px',
+                              width: 52,
+                              height: 52,
+                              padding: 0,
+                              fontSize: 12,
+                              lineHeight: 1.1,
+                              textAlign: 'center',
                             }}
                             title={row.comment ? 'コメント: ' + row.comment : 'コメント追加'}
                           >
