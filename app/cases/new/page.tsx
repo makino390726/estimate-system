@@ -553,7 +553,7 @@ export default function CaseNewPage() {
       return {
         product_id: detail.product_id || '',
         item_name:
-          product?.name || detail.unregistered_product || `削除された商品(ID:${detail.product_id})`,
+          detail.unregistered_product || product?.name || `削除された商品(ID:${detail.product_id})`,
         spec: detail.spec || '',
         unit: product?.unit || detail.unit || '',
         quantity: detail.quantity || 1,
@@ -764,9 +764,20 @@ export default function CaseNewPage() {
   const handleSaveEditRow = () => {
     if (editRowIndex === -1 || !editRowData) return
 
+    const trimmedName = (editRowData.item_name || '').trim()
+    const matchedProduct = editRowData.product_id
+      ? products.find((p) => p.id === editRowData.product_id)
+      : null
+    const defaultName = matchedProduct?.name || ''
+    const shouldKeepName = trimmedName.length > 0
+    const resolvedUnregisteredName = editRowData.product_id
+      ? (shouldKeepName && trimmedName !== defaultName ? trimmedName : undefined)
+      : (shouldKeepName ? trimmedName : undefined)
+
     const newRows = [...rows]
     newRows[editRowIndex] = {
       ...editRowData,
+      unregistered_product: resolvedUnregisteredName,
       amount: editRowData.quantity * (editRowData.unit_price ?? 0)
     }
     setRows(newRows)

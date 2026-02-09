@@ -218,11 +218,7 @@ export default function CaseApprovalPage() {
             const pid = detail.product_id ? String(detail.product_id) : ''
             const product = pid ? byId[pid] : null
 
-            let displayName = product?.name || detail.unregistered_product || '-'
-            const specText = (detail.spec || '').trim()
-            if (displayName !== '-' && specText) {
-              displayName = `${displayName} ${specText}`
-            }
+            const displayName = detail.unregistered_product || product?.name || '-'
 
             return {
               ...detail,
@@ -967,7 +963,9 @@ export default function CaseApprovalPage() {
 
                   return (
                     <tr key={row.id || `row-${index}`}>
-                      <td style={tdStyle}>{row.product_name || '-'}</td>
+                      <td style={tdStyle}>
+                        {row.spec ? `${row.product_name || '-'} ${row.spec}` : (row.product_name || '-')}
+                      </td>
                       <td style={tdStyle}>{getPriceBasisText(row)}</td>
                       <td style={tdStyle}>{row.quantity}</td>
                       <td style={tdStyle}>{row.unit_price ? row.unit_price.toLocaleString() : ''}</td>
