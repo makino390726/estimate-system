@@ -52,10 +52,9 @@ export default function CaseListPage() {
     const startTime = performance.now()
 
     try {
-      // 案件データを取得
       const { data: casesData, error: casesError } = await supabase
-        .from('cases')
-        .select('*')
+        .from('cases_with_names')
+        .select('case_id, case_no, subject, created_date, status, customer_name, staff_name, approve_staff, approve_manager, approve_director, approve_president')
         .order('created_date', { ascending: false })
 
       if (casesError) {
@@ -64,66 +63,9 @@ export default function CaseListPage() {
         return
       }
 
-      // ★ 担当者IDのリストを取得
-      const staffIds = casesData
-        ?.map((c: any) => c.staff_id)
-        .filter((id: any) => id) || []
-
-      console.log('担当者ID一覧:', staffIds)
-
-      // ★ 顧客IDのリストを取得
-      const customerIds = casesData
-        ?.map((c: any) => c.customer_id)
-        .filter((id: any) => id) || []
-
-      console.log('顧客ID一覧:', customerIds)
-
-      // ★ 担当者マスタ（staffsテーブル）から名前を取得
-      let staffMap: { [key: string]: string } = {}
-
-      if (staffIds.length > 0) {
-        const { data: staffData, error: staffError } = await supabase
-          .from('staffs')  // ★ users → staffs に変更
-          .select('id, name')
-          .in('id', staffIds)
-
-        console.log('取得した担当者データ:', staffData)
-        console.log('担当者取得エラー:', staffError)
-
-        if (!staffError && staffData) {
-          staffData.forEach((staff: any) => {
-            staffMap[staff.id] = staff.name
-          })
-        }
-      }
-
-      console.log('担当者マップ:', staffMap)
-
-      // ★ 顧客マスタ（customersテーブル）から名前を取得
-      let customerMap: { [key: string]: string } = {}
-
-      if (customerIds.length > 0) {
-        const { data: customerData, error: customerError } = await supabase
-          .from('customers')
-          .select('id, name')
-          .in('id', customerIds)
-
-        console.log('取得した顧客データ:', customerData)
-        console.log('顧客取得エラー:', customerError)
-
-        if (!customerError && customerData) {
-          customerData.forEach((customer: any) => {
-            customerMap[customer.id] = customer.name
-          })
-        }
-      }
-
-      console.log('顧客マップ:', customerMap)
-
-      // データを整形
-      const formattedCases: CaseWithDetails[] = casesData.map((c: any) => {
+      const formattedCases: CaseWithDetails[] = (casesData || []).map((c: any) => {
         let approvalStatus = 'pending'
-        
+
         if (c.approve_president) {
           approvalStatus = 'approved'
         } else if (c.approve_director) {
@@ -140,8 +82,8 @@ export default function CaseListPage() {
           subject: c.subject,
           created_date: c.created_date,
           status: c.status,
-          customer_name: customerMap[c.customer_id] || c.customer_id || '不明',  // ★ 顧客名を表示
-          staff_name: staffMap[c.staff_id] || c.staff_id || '不明',  // ★ 担当者名を表示
+          customer_name: c.customer_name || '不明',
+          staff_name: c.staff_name || '不明',
           approve_staff: c.approve_staff,
           approve_manager: c.approve_manager,
           approve_director: c.approve_director,
@@ -171,7 +113,7 @@ export default function CaseListPage() {
 
     // ★ 確認ダイアログを表示
     const confirmed = window.confirm(`ステータスを「${currentStatus}」から「${newStatus}」に変更しますか？`)
-    
+
     if (!confirmed) {
       // No を選択した場合、元の値に戻す（再レンダリングで元に戻る）
       setCases([...cases])
