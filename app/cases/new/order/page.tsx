@@ -14,7 +14,7 @@ function generateOrderId(): string {
   return `${ts}${rand.toString().padStart(3, '0')}` // 最大16桁の数値文字列
 }
 
-type Product = { 
+type Product = {
   id: string
   name: string
   spec: string
@@ -86,22 +86,22 @@ function PurchaseOrderPageContent() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [staffs, setStaffs] = useState<Staff[]>([])
   const [products, setProducts] = useState<Product[]>([])
-  const [warehouseStocks, setWarehouseStocks] = useState<Array<{product_id: string; product_name: string; stock_qty: number; unit: string; spec: string; cost_price: number}>>([])
+  const [warehouseStocks, setWarehouseStocks] = useState<Array<{ product_id: string; product_name: string; stock_qty: number; unit: string; spec: string; cost_price: number }>>([])
   const [estimates, setEstimates] = useState<any[]>([])
 
   const [supplierSearchName, setSupplierSearchName] = useState('')
   const [productSearchName, setProductSearchName] = useState('')
   const [productSearchSpec, setProductSearchSpec] = useState('')
   const [stockSearchName, setStockSearchName] = useState('')
-  
+
   const [showStockEditModal, setShowStockEditModal] = useState(false)
-  const [editingStock, setEditingStock] = useState<{product_id: string; product_name: string; stock_qty: number; spec: string; unit: string; cost_price: number} | null>(null)
+  const [editingStock, setEditingStock] = useState<{ product_id: string; product_name: string; stock_qty: number; spec: string; unit: string; cost_price: number } | null>(null)
   const [editSpec, setEditSpec] = useState('')
   const [editUnit, setEditUnit] = useState('')
   const [editCostPrice, setEditCostPrice] = useState<number>(0)
   const [estimateSearchSubject, setEstimateSearchSubject] = useState('')
   const [printReady, setPrintReady] = useState(false)
-  
+
   const [isNewSupplier, setIsNewSupplier] = useState(false)
   const [newSupplierName, setNewSupplierName] = useState('')
 
@@ -130,7 +130,7 @@ function PurchaseOrderPageContent() {
   const modeAlertTimer = useRef<number | null>(null)
   const [destinationWarehouseId, setDestinationWarehouseId] = useState<string>('')
   const [destinationWarehouseName, setDestinationWarehouseName] = useState<string>('')
-  const [warehouses, setWarehouses] = useState<Array<{id: string; name: string}>>([])
+  const [warehouses, setWarehouses] = useState<Array<{ id: string; name: string }>>([])
   const [transferSourceWarehouseId, setTransferSourceWarehouseId] = useState<string>('')
   const [transferSourceWarehouseName, setTransferSourceWarehouseName] = useState<string>('')
   const [warehouseMoveStaffId, setWarehouseMoveStaffId] = useState<string>('')
@@ -214,13 +214,13 @@ function PurchaseOrderPageContent() {
     fetchStaffs()
     fetchProducts(0)
     fetchWarehouses()
-    
+
     // URLパラメータからモードを取得して設定
     const modeParam = searchParams.get('mode')
     if (modeParam === 'order' || modeParam === 'transfer-slip' || modeParam === 'warehouse-move') {
       setTitleMode(modeParam)
     }
-    
+
     // URLパラメータから見積ID/注文IDを取得して読み込む
     const caseId = searchParams.get('caseId') || searchParams.get('id')
     if (caseId) {
@@ -302,7 +302,7 @@ function PurchaseOrderPageContent() {
       .from('warehouses')
       .select('id, name')
       .order('id')
-    
+
     if (error) {
       console.error('倉庫取得エラー:', error)
       return
@@ -369,7 +369,7 @@ function PurchaseOrderPageContent() {
 
       const { data, error } = await query
       if (error) throw error
-      
+
       const stockData = (data || []).map((r: any) => ({
         product_id: String(r.product_id),
         product_name: r.product_name || '',
@@ -383,9 +383,9 @@ function PurchaseOrderPageContent() {
           .from('products')
           .select('id, unit, spec, cost_price')
           .in('id', productIds)
-        
+
         const productMap = new Map((productsData || []).map((p: any) => [p.id, p]))
-        
+
         setWarehouseStocks(stockData.map(s => {
           const product = productMap.get(s.product_id)
           return {
@@ -708,22 +708,19 @@ function PurchaseOrderPageContent() {
       setIsUpdateMode(true)
       setLoadedOrderId(caseId)
       alert(
-        `注文「${caseData.subject}」を読み込みました（更新モード）\n発注先: ${
-          caseData.customer_id || '不明'
+        `注文「${caseData.subject}」を読み込みました（更新モード）\n発注先: ${caseData.customer_id || '不明'
         }\n担当者: ${staffData?.name || '不明'}`
       )
     } else if (caseData.status === '倉庫移動') {
       setLoadedOrderId(caseId)
       console.log('✓ 倉庫移動読込：loadedOrderIdをセット:', caseId)
       alert(
-        `倉庫移動「${caseData.subject}」を読み込みました\n移動元: ${
-          caseData.source_warehouse_name || caseData.source_warehouse_id || '不明'
+        `倉庫移動「${caseData.subject}」を読み込みました\n移動元: ${caseData.source_warehouse_name || caseData.source_warehouse_id || '不明'
         }\n移動先: ${caseData.destination_warehouse_name || caseData.destination_warehouse_id || '不明'}`
       )
     } else {
       alert(
-        `見積「${caseData.subject}」の情報を読み込みました\n発注先: ${
-          caseData.customer_id || '不明'
+        `見積「${caseData.subject}」の情報を読み込みました\n発注先: ${caseData.customer_id || '不明'
         }\n担当者: ${staffData?.name || '不明'}`
       )
     }
@@ -732,7 +729,7 @@ function PurchaseOrderPageContent() {
   const handleQuantityChange = (index: number, quantity: number) => {
     const newRows = [...rows]
     const row = newRows[index]
-    
+
     // 移動伝票モードで在庫数チェック
     if (titleMode === 'transfer-slip' && row.max_stock_qty !== undefined) {
       if (quantity > row.max_stock_qty) {
@@ -740,7 +737,7 @@ function PurchaseOrderPageContent() {
         quantity = row.max_stock_qty
       }
     }
-    
+
     newRows[index].quantity = quantity
     newRows[index].amount = quantity * (newRows[index].unit_price ?? 0)
     setRows(newRows)
@@ -755,15 +752,15 @@ function PurchaseOrderPageContent() {
 
   const handleOpenPriceModal = (index: number) => {
     setPriceModalRowIndex(index)
-    
+
     const row = rows[index]
     const product = products.find(p => p.id === row.product_id)
-    
+
     const retailPrice = (product?.retail_price && product.retail_price > 0) ? product.retail_price : null
     const currentUnitPrice = row.unit_price && row.unit_price > 0 ? row.unit_price : null
-    
+
     setPriceModalDirectPrice(currentUnitPrice)
-    
+
     if (currentUnitPrice && retailPrice) {
       setPriceModalListPrice(retailPrice)
       setPriceModalMode('calculate')
@@ -774,7 +771,7 @@ function PurchaseOrderPageContent() {
       setPriceModalListPrice(retailPrice)
       setPriceModalMode('calculate')
     }
-    
+
     setPriceModalRate(null)
     setPriceModalCalculatedPrice(null)
 
@@ -818,7 +815,7 @@ function PurchaseOrderPageContent() {
     const row = rows[priceModalRowIndex]
     if (row.product_id && priceModalListPrice && priceModalListPrice > 0) {
       // 商品マスタは変更せず、ローカル状態のみ更新
-      const updatedProducts = products.map(p => 
+      const updatedProducts = products.map(p =>
         p.id === row.product_id ? { ...p, retail_price: priceModalListPrice } : p
       )
       setProducts(updatedProducts)
@@ -893,7 +890,7 @@ function PurchaseOrderPageContent() {
 
   const handleSave = async () => {
     console.log('保存開始：titleMode=', titleMode, 'loadedOrderId=', loadedOrderId)
-    
+
     // 倉庫移動モード時のバリデーション
     if (titleMode === 'warehouse-move') {
       console.log('✓ 倉庫移動モード検出')
@@ -1038,22 +1035,22 @@ function PurchaseOrderPageContent() {
                 .select('warehouse_id, product_id, stock_qty')
                 .eq('warehouse_id', transferSourceWarehouseId)
                 .in('product_id', productIds)
-              
+
               const { data: products } = await supabase
                 .from('products')
                 .select('id, name')
                 .in('id', productIds)
-              
+
               const stockMap = new Map<string, number>()
-              ;(currentStocks || []).forEach((s: any) => {
-                stockMap.set(`${s.warehouse_id}__${s.product_id}`, Number(s.stock_qty || 0))
-              })
-              
+                ; (currentStocks || []).forEach((s: any) => {
+                  stockMap.set(`${s.warehouse_id}__${s.product_id}`, Number(s.stock_qty || 0))
+                })
+
               const productsMap = new Map<string, string>()
-              ;(products || []).forEach((p: any) => {
-                productsMap.set(String(p.id), p.name || '')
-              })
-              
+                ; (products || []).forEach((p: any) => {
+                  productsMap.set(String(p.id), p.name || '')
+                })
+
               const historyRecords = outboundRecords.map((rec: any) => {
                 const productId = String(rec.product_id)
                 const productName = productsMap.get(productId) || productId
@@ -1213,9 +1210,9 @@ function PurchaseOrderPageContent() {
           .from('warehouse_inbounds')
           .select('*')
           .limit(1)
-        
+
         console.log('入庫サンプル取得:', { sampleInbound, error: sampleInboundError?.message })
-        
+
         if (sampleInbound && sampleInbound.length > 0) {
           const sample = sampleInbound[0]
           if ('stock_qty' in sample) inboundQtyColumnName = 'stock_qty'
@@ -1247,7 +1244,7 @@ function PurchaseOrderPageContent() {
             .from('warehouse_inbounds')
             .insert(inboundRecords)
             .select()
-          
+
           if (inboundInsertError) {
             console.error('入庫記録のエラー:', inboundInsertError)
             const detail = (inboundInsertError as any)?.details || ''
@@ -1325,48 +1322,48 @@ function PurchaseOrderPageContent() {
             // 履歴記録（倉庫移動）- 移動元と移動先の2レコードを作成
             try {
               const productIds = outboundRecords.map((r: any) => String(r.product_id))
-              
+
               // 移動元と移動先の両方の在庫を取得
               const { data: sourceStocks } = await supabase
                 .from('warehouse_stocks')
                 .select('warehouse_id, product_id, stock_qty')
                 .eq('warehouse_id', supplierId)
                 .in('product_id', productIds)
-              
+
               const { data: destStocks } = await supabase
                 .from('warehouse_stocks')
                 .select('warehouse_id, product_id, stock_qty')
                 .eq('warehouse_id', destinationWarehouseId)
                 .in('product_id', productIds)
-              
+
               const { data: products } = await supabase
                 .from('products')
                 .select('id, name')
                 .in('id', productIds)
-              
+
               const sourceStockMap = new Map<string, number>()
-              ;(sourceStocks || []).forEach((s: any) => {
-                sourceStockMap.set(String(s.product_id), Number(s.stock_qty || 0))
-              })
-              
+                ; (sourceStocks || []).forEach((s: any) => {
+                  sourceStockMap.set(String(s.product_id), Number(s.stock_qty || 0))
+                })
+
               const destStockMap = new Map<string, number>()
-              ;(destStocks || []).forEach((s: any) => {
-                destStockMap.set(String(s.product_id), Number(s.stock_qty || 0))
-              })
-              
+                ; (destStocks || []).forEach((s: any) => {
+                  destStockMap.set(String(s.product_id), Number(s.stock_qty || 0))
+                })
+
               const productsMap = new Map<string, string>()
-              ;(products || []).forEach((p: any) => {
-                productsMap.set(String(p.id), p.name || '')
-              })
-              
+                ; (products || []).forEach((p: any) => {
+                  productsMap.set(String(p.id), p.name || '')
+                })
+
               const historyRecords: any[] = []
-              
+
               outboundRecords.forEach((rec: any) => {
                 const productId = String(rec.product_id)
                 const productName = productsMap.get(productId) || productId
                 const sourceCurrentStock = sourceStockMap.get(productId) ?? 0
                 const destCurrentStock = destStockMap.get(productId) ?? 0
-                
+
                 // 移動元の履歴（出庫）
                 historyRecords.push({
                   warehouse_id: supplierId,
@@ -1378,7 +1375,7 @@ function PurchaseOrderPageContent() {
                   inbound_qty: 0,
                   stock_qty_after: Math.max(0, sourceCurrentStock - rec.quantity),
                 })
-                
+
                 // 移動先の履歴（入庫）
                 historyRecords.push({
                   warehouse_id: destinationWarehouseId,
@@ -1391,7 +1388,7 @@ function PurchaseOrderPageContent() {
                   stock_qty_after: destCurrentStock + rec.quantity,
                 })
               })
-              
+
               const { error: histErr } = await supabase
                 .from('warehouse_stocks_history')
                 .insert(historyRecords)
@@ -1410,10 +1407,10 @@ function PurchaseOrderPageContent() {
 
       // 結果メッセージ
       let message = `倉庫移動処理が完了しました\n移動元: ${supplierName}\n移動先: ${destinationWarehouseName}\n対象品目数: ${rows.length}件`
-      
+
       message += `\n✓ 出庫登録: ${successOutboundCount}件`
       message += `\n✓ 入庫登録: ${successInboundCount}件`
-      
+
       if (errorMessages.length > 0) {
         message += `\n\n⚠️ エラー:\n${errorMessages.join('\n')}`
       }
@@ -1500,7 +1497,7 @@ function PurchaseOrderPageContent() {
       // 倉庫移動の明細をcase_detailsへ登録
       if (newCaseId) {
         try {
-          const detailsToInsert = rows.map((row) => ({
+          const detailsToInsert = rows.map((row, index) => ({
             case_id: newCaseId,
             coreplus_no: coreplusNo || null,
             product_id: row.product_id || null,
@@ -1513,6 +1510,7 @@ function PurchaseOrderPageContent() {
             section_id: row.section_id,
             unregistered_product: row.unregistered_product || null,
             remarks: row.remarks || null,
+            display_order: index + 1,
           }))
 
           const { error: detailsError } = await supabase
@@ -1528,7 +1526,7 @@ function PurchaseOrderPageContent() {
       } else {
         console.warn('case_idが取得できなかったため、明細登録をスキップしました')
       }
-      
+
       console.log('=== 倉庫移動保存完了 ===')
       alert(message)
       if (returnTo) {
@@ -1541,8 +1539,7 @@ function PurchaseOrderPageContent() {
     } catch (error) {
       console.error('倉庫移動保存エラー:', error)
       alert(
-        `倉庫移動の保存に失敗しました: ${
-          error instanceof Error ? error.message : '不明なエラー'
+        `倉庫移動の保存に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'
         }`
       )
     }
@@ -1710,7 +1707,7 @@ function PurchaseOrderPageContent() {
 
       const actionText = mode === 'update' ? '更新' : '保存'
       alert(`発注書を${actionText}しました`)
-      
+
       if (mode === 'update') {
         setIsUpdateMode(false)
         setLoadedOrderId(null)
@@ -1725,8 +1722,7 @@ function PurchaseOrderPageContent() {
     } catch (error) {
       console.error('保存エラー:', error)
       alert(
-        `保存に失敗しました: ${
-          error instanceof Error ? error.message : '不明なエラー'
+        `保存に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'
         }`
       )
     }
@@ -1745,7 +1741,7 @@ function PurchaseOrderPageContent() {
     if (!subject.trim()) return alert('件名未入力')
     if (rows.length === 0) return alert('明細がありません')
     if (layoutType === 'horizontal' && rows.some(r => r.section_id === null)) return alert('横様式は全明細にセクション必須')
-    
+
     setTimeout(() => {
       if (!printRef.current) {
         console.warn('printRef が未設定です')
@@ -2058,71 +2054,71 @@ function PurchaseOrderPageContent() {
 
         {/* 発注先・担当者 (倉庫移動では非表示) */}
         {titleMode !== 'warehouse-move' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 16 }}>
-          <div>
-            <label style={labelStyle}>発注先:</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                value={supplierName}
-                readOnly
-                style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
-                placeholder="発注先を選択してください"
-              />
-              <button
-                onClick={() => setShowSupplierModal(true)}
-                className="selector-button primary"
-              >
-                発注先選択
-              </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 16 }}>
+            <div>
+              <label style={labelStyle}>発注先:</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  value={supplierName}
+                  readOnly
+                  style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
+                  placeholder="発注先を選択してください"
+                />
+                <button
+                  onClick={() => setShowSupplierModal(true)}
+                  className="selector-button primary"
+                >
+                  発注先選択
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label style={labelStyle}>担当者:</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                value={staffName}
-                readOnly
-                style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
-                placeholder="担当者を選択してください"
-              />
-              <button
-                onClick={() => setShowStaffModal(true)}
-                className="selector-button primary"
-              >
-                担当者選択
-              </button>
+            <div>
+              <label style={labelStyle}>担当者:</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  value={staffName}
+                  readOnly
+                  style={{ ...inputStyle, flex: 1, backgroundColor: '#334155' }}
+                  placeholder="担当者を選択してください"
+                />
+                <button
+                  onClick={() => setShowStaffModal(true)}
+                  className="selector-button primary"
+                >
+                  担当者選択
+                </button>
+              </div>
             </div>
           </div>
-        </div>
         )}
 
         {/* 件名・備考 (倉庫移動では非表示) */}
         {titleMode !== 'warehouse-move' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
-          <div>
-            <label style={labelStyle}>件名:</label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              style={{ ...inputStyle, width: '100%' }}
-              placeholder="例: ○○工事発注"
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+            <div>
+              <label style={labelStyle}>件名:</label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                style={{ ...inputStyle, width: '100%' }}
+                placeholder="例: ○○工事発注"
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>備考:</label>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                style={{ ...inputStyle, width: '100%' }}
+                placeholder="備考を入力"
+              />
+            </div>
           </div>
-          <div>
-            <label style={labelStyle}>備考:</label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              style={{ ...inputStyle, width: '100%' }}
-              placeholder="備考を入力"
-            />
-          </div>
-        </div>
         )}
 
         {/* 明細 */}
@@ -2171,21 +2167,21 @@ function PurchaseOrderPageContent() {
               <thead>
                 <tr>
                   {titleMode !== 'warehouse-move' && layoutType === 'horizontal' && (
-                    <th style={{...thStyle, minWidth: '180px'}}>セクション</th>
+                    <th style={{ ...thStyle, minWidth: '180px' }}>セクション</th>
                   )}
-                  <th style={{...thStyle, minWidth: '250px'}}>品名</th>
-                  <th style={{...thStyle, minWidth: '200px'}}>規格</th>
-                  <th style={{...thStyle, width: '80px'}}>単位</th>
-                  <th style={{...thStyle, width: '100px'}}>数量</th>
+                  <th style={{ ...thStyle, minWidth: '250px' }}>品名</th>
+                  <th style={{ ...thStyle, minWidth: '200px' }}>規格</th>
+                  <th style={{ ...thStyle, width: '80px' }}>単位</th>
+                  <th style={{ ...thStyle, width: '100px' }}>数量</th>
                   {titleMode !== 'warehouse-move' && (
                     <>
-                      <th style={{...thStyle, width: '150px'}}>単価</th>
-                      <th style={{...thStyle, width: '150px'}}>金額</th>
-                      <th style={{...thStyle, width: '150px'}}>原価額</th>
-                      <th style={{...thStyle, width: '150px'}}>粗利額</th>
+                      <th style={{ ...thStyle, width: '150px' }}>単価</th>
+                      <th style={{ ...thStyle, width: '150px' }}>金額</th>
+                      <th style={{ ...thStyle, width: '150px' }}>原価額</th>
+                      <th style={{ ...thStyle, width: '150px' }}>粗利額</th>
                     </>
                   )}
-                  <th style={{...thStyle, width: '100px'}}>操作</th>
+                  <th style={{ ...thStyle, width: '100px' }}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -2226,7 +2222,7 @@ function PurchaseOrderPageContent() {
                         )}
                       </td>
                       <td style={tdStyle}>{row.spec}</td>
-                      <td style={{...tdStyle, textAlign: 'center'}}>{row.unit}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>{row.unit}</td>
                       <td style={tdStyle}>
                         <input
                           type="number"
@@ -2253,12 +2249,12 @@ function PurchaseOrderPageContent() {
                               {row.unit_price ? row.unit_price.toLocaleString() : '未入力'}
                             </button>
                           </td>
-                          <td style={{...tdStyle, textAlign: 'right'}}>{row.amount.toLocaleString()}</td>
-                          <td style={{...tdStyle, textAlign: 'right'}}>{costAmount.toLocaleString()}</td>
-                          <td style={{...tdStyle, textAlign: 'right'}}>{grossProfit.toLocaleString()}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{row.amount.toLocaleString()}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{costAmount.toLocaleString()}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{grossProfit.toLocaleString()}</td>
                         </>
                       )}
-                      <td style={{...tdStyle, textAlign: 'center'}}>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <button
                           onClick={() => handleDeleteRow(index)}
                           className="selector-button"
@@ -2281,68 +2277,68 @@ function PurchaseOrderPageContent() {
 
         {/* 合計 (倉庫移動では非表示) */}
         {titleMode !== 'warehouse-move' && (
-        <div
-          style={{
-            marginLeft: 'auto',
-            width: '100%',
-            maxWidth: 450,
-            marginBottom: 24,
-            backgroundColor: '#1e293b',
-            borderRadius: 8,
-            padding: '8px',
-            border: '1px solid #334155',
-          }}
-        >
-          <div style={sumRowStyle}>
-            <span>小計</span>
-            <span>{subtotal.toLocaleString()} 円</span>
-          </div>
-          <div style={sumRowStyle}>
-            <span>総原価額</span>
-            <span>{totalCostAmount.toLocaleString()} 円</span>
-          </div>
-          <div style={sumRowStyle}>
-            <span>粗利額</span>
-            <span>{totalGrossProfit.toLocaleString()} 円</span>
-          </div>
-          <div style={sumRowStyle}>
-            <span>粗利率</span>
-            <span>{grossProfitRate.toFixed(1)} %</span>
-          </div>
-          <div style={{...sumRowStyle, padding: '10px'}}>
-            <span>出精値引き</span>
-            <input
-              type="number"
-              value={discount}
-              onChange={(e) => setDiscount(Number(e.target.value))}
-              style={{ ...inputStyle, width: 140, textAlign: 'right' }}
-            />
-          </div>
-          <div style={sumRowStyle}>
-            <span>値引後小計</span>
-            <span>{subtotalAfterDiscount.toLocaleString()} 円</span>
-          </div>
-          <div style={sumRowStyle}>
-            <span>消費税 ({(taxRate * 100).toFixed(0)}%)</span>
-            <span>{taxAmount.toLocaleString()} 円</span>
-          </div>
           <div
             style={{
-              ...sumRowStyle,
-              fontWeight: 'bold',
-              fontSize: 20,
-              backgroundColor: '#0f172a',
-              padding: '12px',
-              marginTop: '8px',
-              borderRadius: '4px'
+              marginLeft: 'auto',
+              width: '100%',
+              maxWidth: 450,
+              marginBottom: 24,
+              backgroundColor: '#1e293b',
+              borderRadius: 8,
+              padding: '8px',
+              border: '1px solid #334155',
             }}
           >
-            <span>合計金額</span>
-            <span style={{ color: '#60a5fa' }}>
-              {totalAmount.toLocaleString()} 円
-            </span>
+            <div style={sumRowStyle}>
+              <span>小計</span>
+              <span>{subtotal.toLocaleString()} 円</span>
+            </div>
+            <div style={sumRowStyle}>
+              <span>総原価額</span>
+              <span>{totalCostAmount.toLocaleString()} 円</span>
+            </div>
+            <div style={sumRowStyle}>
+              <span>粗利額</span>
+              <span>{totalGrossProfit.toLocaleString()} 円</span>
+            </div>
+            <div style={sumRowStyle}>
+              <span>粗利率</span>
+              <span>{grossProfitRate.toFixed(1)} %</span>
+            </div>
+            <div style={{ ...sumRowStyle, padding: '10px' }}>
+              <span>出精値引き</span>
+              <input
+                type="number"
+                value={discount}
+                onChange={(e) => setDiscount(Number(e.target.value))}
+                style={{ ...inputStyle, width: 140, textAlign: 'right' }}
+              />
+            </div>
+            <div style={sumRowStyle}>
+              <span>値引後小計</span>
+              <span>{subtotalAfterDiscount.toLocaleString()} 円</span>
+            </div>
+            <div style={sumRowStyle}>
+              <span>消費税 ({(taxRate * 100).toFixed(0)}%)</span>
+              <span>{taxAmount.toLocaleString()} 円</span>
+            </div>
+            <div
+              style={{
+                ...sumRowStyle,
+                fontWeight: 'bold',
+                fontSize: 20,
+                backgroundColor: '#0f172a',
+                padding: '12px',
+                marginTop: '8px',
+                borderRadius: '4px'
+              }}
+            >
+              <span>合計金額</span>
+              <span style={{ color: '#60a5fa' }}>
+                {totalAmount.toLocaleString()} 円
+              </span>
+            </div>
           </div>
-        </div>
         )}
 
         {/* ボタン */}
@@ -2828,7 +2824,7 @@ function PurchaseOrderPageContent() {
                             <tr key={stk.product_id} style={hasIssue ? { backgroundColor: '#422006' } : {}}>
                               <td style={tdStyle}>{stk.product_id}</td>
                               <td style={tdStyle}>{stk.product_name}</td>
-                              <td 
+                              <td
                                 style={{ ...tdStyle, cursor: !stk.spec ? 'pointer' : 'default' }}
                                 onClick={() => {
                                   if (!stk.spec) {
@@ -2842,7 +2838,7 @@ function PurchaseOrderPageContent() {
                               >
                                 {stk.spec || <span style={{ color: '#fbbf24', fontSize: 12 }}>未登録 - クリックで入力</span>}
                               </td>
-                              <td 
+                              <td
                                 style={{ ...tdStyle, cursor: !stk.unit ? 'pointer' : 'default' }}
                                 onClick={() => {
                                   if (!stk.unit) {
@@ -2857,7 +2853,7 @@ function PurchaseOrderPageContent() {
                                 {stk.unit ? stk.unit : <span style={{ color: '#f87171', fontSize: 12 }}>データなし - クリックで入力</span>}
                               </td>
                               <td style={{ ...tdStyle, textAlign: 'right' }}>{stk.stock_qty}</td>
-                              <td 
+                              <td
                                 style={{ ...tdStyle, textAlign: 'right', cursor: stk.cost_price <= 0 ? 'pointer' : 'default' }}
                                 onClick={() => {
                                   if (stk.cost_price <= 0) {
@@ -3391,10 +3387,10 @@ function PurchaseOrderPageContent() {
           <div style={modalOverlayStyle}>
             <div style={{ ...modalContentStyle, maxWidth: 600 }}>
               <h2>商品情報の入力</h2>
-            <div style={{ marginBottom: 16, color: '#94a3b8', fontSize: 14 }}>
-              商品「{editingStock.product_name}」の規格・単位・原価を入力してください<br/>
-              <span style={{ fontSize: 12, color: '#64748b' }}>※商品マスタは変更せず、この伝票の明細のみに反映されます</span>
-            </div>
+              <div style={{ marginBottom: 16, color: '#94a3b8', fontSize: 14 }}>
+                商品「{editingStock.product_name}」の規格・単位・原価を入力してください<br />
+                <span style={{ fontSize: 12, color: '#64748b' }}>※商品マスタは変更せず、この伝票の明細のみに反映されます</span>
+              </div>
 
               <div style={{ padding: 16, backgroundColor: '#0f172a', borderRadius: 4, marginBottom: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>

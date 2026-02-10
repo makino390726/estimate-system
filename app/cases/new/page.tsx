@@ -40,6 +40,7 @@ type Row = {
   remarks?: string
   unregistered_product?: string  // ★ 直接入力された商品名
   comment?: string  // ★ コメント機能
+  display_order?: number
 }
 
 export default function CaseNewPage() {
@@ -428,7 +429,7 @@ export default function CaseNewPage() {
       section_id: null,
     }
 
-    setRows((prev) => [...prev, newRow])
+    setRows((prev) => normalizeRowOrder([...prev, newRow]))
     setShowProductModal(false)
   }
 
@@ -454,7 +455,7 @@ export default function CaseNewPage() {
       unregistered_product: manualProductName.trim(),  // ★ 直接入力商品名を保存
     }
 
-    setRows((prev) => [...prev, newRow])
+    setRows((prev) => normalizeRowOrder([...prev, newRow]))
 
     // フォームをリセット
     setManualProductName('')
@@ -516,6 +517,8 @@ export default function CaseNewPage() {
       .from('case_details')
       .select('*')
       .eq('case_id', caseId)
+      .order('display_order', { ascending: true })
+      .order('id', { ascending: true })
 
     if (detailsError || !detailsData || detailsData.length === 0) {
       alert('この案件には明細データがありません')
@@ -547,7 +550,7 @@ export default function CaseNewPage() {
       return [...prev, ...newProducts]
     })
 
-    const loadedRows: Row[] = detailsData.map((detail) => {
+    const loadedRows: Row[] = detailsData.map((detail, index) => {
       const product = productMap.get(detail.product_id)
 
       return {
@@ -565,6 +568,7 @@ export default function CaseNewPage() {
         section_id: detail.section_id || null,
         remarks: detail.remarks || undefined,
         unregistered_product: detail.unregistered_product || undefined,
+        display_order: detail.display_order ?? index + 1,
       }
     })
 
@@ -608,7 +612,7 @@ export default function CaseNewPage() {
       setSections([])
     }
 
-    setRows(loadedRows)
+    setRows(normalizeRowOrder(loadedRows))
     setShowPastCaseModal(false)
 
     // ★ 更新モードを有効化
@@ -751,8 +755,34 @@ export default function CaseNewPage() {
     setShowPriceModal(false)
   }
 
+  const normalizeRowOrder = (list: Row[]) =>
+    list.map((row, index) => ({
+      ...row,
+      display_order: index + 1,
+    }))
+
   const handleDeleteRow = (index: number) => {
-    setRows(rows.filter((_, i) => i !== index))
+    const nextRows = rows.filter((_, i) => i !== index)
+    setRows(normalizeRowOrder(nextRows))
+  }
+
+  const handleChangeRowOrder = (index: number, nextOrder: number) => {
+    if (!Number.isFinite(nextOrder)) {
+      setRows(normalizeRowOrder(rows))
+      return
+    }
+
+    const total = rows.length
+    const clamped = Math.min(Math.max(Math.floor(nextOrder), 1), total)
+    if (clamped === index + 1) {
+      setRows(normalizeRowOrder(rows))
+      return
+    }
+
+    const newRows = [...rows]
+    const [moved] = newRows.splice(index, 1)
+    newRows.splice(clamped - 1, 0, moved)
+    setRows(normalizeRowOrder(newRows))
   }
 
   const handleInsertRow = (index: number) => {
@@ -776,7 +806,7 @@ export default function CaseNewPage() {
 
     const newRows = [...rows]
     newRows.splice(index + 1, 0, newRow)
-    setRows(newRows)
+    setRows(normalizeRowOrder(newRows))
   }
 
   const handleCopyRow = (index: number) => {
@@ -787,7 +817,7 @@ export default function CaseNewPage() {
     }
     const newRows = [...rows]
     newRows.splice(index + 1, 0, copied)
-    setRows(newRows)
+    setRows(normalizeRowOrder(newRows))
   }
 
   const handleOpenEditRowModal = (index: number) => {
@@ -815,7 +845,7 @@ export default function CaseNewPage() {
       unregistered_product: resolvedUnregisteredName,
       amount: editRowData.quantity * (editRowData.unit_price ?? 0)
     }
-    setRows(newRows)
+    setRows(normalizeRowOrder(newRows))
     setShowEditRowModal(false)
     setEditRowIndex(-1)
     setEditRowData(null)
@@ -1029,7 +1059,7 @@ export default function CaseNewPage() {
         }
       }
 
-      const detailsToInsert = rows.map((row) => ({
+      const detailsToInsert = rows.map((row, index) => ({
         case_id: targetCaseId,
         coreplus_no: null,
         product_id: row.product_id || null,
@@ -1045,6 +1075,7 @@ export default function CaseNewPage() {
         unregistered_product: row.unregistered_product || null,
         remarks: row.remarks || null,
         comment: row.comment || null,  // ★ コメントを追加
+        display_order: row.display_order ?? index + 1,
       }))
 
       const { error: detailsError } = await supabase
@@ -1527,7 +1558,8 @@ export default function CaseNewPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle, width: '80px' }}>見積除外</th>
+                  <th style={{ ...thStyle, width: '60px' }}>順番</th>
+                  <th style={{ ...thStyle, width: '60px' }}>除外</th>
                   {layoutType === 'horizontal' && (
                     <th style={{ ...thStyle, minWidth: '180px' }}>セクション</th>
                   )}
@@ -1551,6 +1583,31 @@ export default function CaseNewPage() {
 
                   return (
                     <tr key={index}>
+                      <td style={tdStyle}>
+                        <input
+                          type="number"
+                          min={1}
+                          max={rows.length}
+                          value={row.display_order ?? index + 1}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            const newRows = [...rows]
+                            newRows[index].display_order = value === '' ? undefined : Number(value)
+                            setRows(newRows)
+                          }}
+                          onBlur={() => {
+                            const targetOrder = row.display_order ?? index + 1
+                            handleChangeRowOrder(index, targetOrder)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const targetOrder = row.display_order ?? index + 1
+                              handleChangeRowOrder(index, targetOrder)
+                            }
+                          }}
+                          style={{ ...inputStyle, width: '80px', textAlign: 'right' }}
+                        />
+                      </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
                         <input
                           type="checkbox"

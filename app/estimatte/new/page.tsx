@@ -169,7 +169,7 @@ export default function EstimateNewPage() {
   const handleDeleteSection = (id: number) => {
     // このセクションを使用している明細があるかチェック
     const usedInRows = rows.some(row => row.section_id === id)
-    
+
     if (usedInRows) {
       alert('このセクションは明細で使用されているため削除できません')
       return
@@ -257,7 +257,7 @@ export default function EstimateNewPage() {
       }
 
       // ★ case_detailsテーブルに明細を挿入（section_idを追加）
-      const detailsToInsert = rows.map((row) => ({
+      const detailsToInsert = rows.map((row, index) => ({
         case_id: newCaseId,
         product_id: row.product_id,
         product_name: row.product_name,
@@ -270,6 +270,7 @@ export default function EstimateNewPage() {
         cost_amount: row.cost_amount,
         gross_profit: row.gross_profit,
         section_id: row.section_id,  // ★ セクションIDを保存
+        display_order: index + 1,
       }))
 
       const { error: detailsError } = await supabase
@@ -335,7 +336,7 @@ export default function EstimateNewPage() {
             />
             横様式（セクションあり）
           </label>
-          
+
           {layoutType === 'horizontal' && (
             <button
               onClick={() => setShowSectionModal(true)}
@@ -546,7 +547,7 @@ export default function EstimateNewPage() {
         <div style={modalOverlayStyle}>
           <div style={modalContentStyle}>
             <h2>セクション設定</h2>
-            
+
             <div style={{ marginBottom: 16 }}>
               <label>セクション名:</label>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -617,7 +618,7 @@ export default function EstimateNewPage() {
         <div style={modalOverlayStyle}>
           <div style={modalContentStyle}>
             <h2>商品選択</h2>
-            
+
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <input
                 type="text"

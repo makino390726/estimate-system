@@ -186,7 +186,7 @@ export default function ConfirmImportPage() {
       if (caseErr) throw caseErr
 
       // ★★★ case_details テーブルに登録 ★★★
-      const detailRows = details.map((d) => ({
+      const detailRows = details.map((d, index) => ({
         case_id,
         staff_id: selectedStaffId,
         product_id: d.product_id,
@@ -206,7 +206,8 @@ export default function ConfirmImportPage() {
         section_id: null,
         remarks: null,
         coreplus_no: null,
-        comment: d.comment || null  // コメントフィールドを追加
+        comment: d.comment || null,  // コメントフィールドを追加
+        display_order: index + 1,
       }))
 
       const { error: detailErr } = await supabase.from('case_details').insert(detailRows)

@@ -472,7 +472,7 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
       if (caseErr) throw caseErr
 
       // ★★★ case_details テーブルに登録 ★★★
-      const detailRows = details.map((d) => {
+      const detailRows = details.map((d, index) => {
         // 商品名を規格に含める（商品名 + 規格の形式）
         const combinedSpec = d.spec ? `${d.item_name}\n${d.spec}` : d.item_name
 
@@ -495,7 +495,8 @@ export default function ConfirmImportPage({ data: propsData, onBack }: ConfirmIm
           section: null,
           section_id: null,
           remarks: null,
-          coreplus_no: null
+          coreplus_no: null,
+          display_order: index + 1,
         }
       })
 

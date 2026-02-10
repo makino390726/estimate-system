@@ -193,6 +193,8 @@ export default function CaseApprovalPage() {
         .from('case_details')
         .select('*')
         .eq('case_id', caseId)
+        .order('display_order', { ascending: true })
+        .order('id', { ascending: true })
 
       if (!detailsError && details) {
         const productIds = [...new Set(details.map(d => d.product_id ? String(d.product_id) : '').filter(Boolean))]
