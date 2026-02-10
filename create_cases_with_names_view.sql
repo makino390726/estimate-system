@@ -12,7 +12,7 @@ SELECT
   c.approve_manager,
   c.approve_director,
   c.approve_president,
-  COALESCE(cu.name, '') AS customer_name,
+  COALESCE(cu.name, c.customer_id::text, '') AS customer_name,
   COALESCE(s.name, '') AS staff_name
 FROM cases AS c
 LEFT JOIN customers AS cu ON cu.id::text = c.customer_id::text

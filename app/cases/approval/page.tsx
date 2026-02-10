@@ -57,9 +57,9 @@ export default function ApprovalRequestListPage() {
           .in('id', staffIds)
 
         if (staffError) throw staffError
-        ;(staffData || []).forEach((s: StaffRow) => {
-          staffMap[s.id] = s.name
-        })
+          ; (staffData || []).forEach((s: StaffRow) => {
+            staffMap[s.id] = s.name
+          })
       }
 
       if (customerIds.length > 0) {
@@ -69,9 +69,9 @@ export default function ApprovalRequestListPage() {
           .in('id', customerIds)
 
         if (customerError) throw customerError
-        ;(customerData || []).forEach((c: CustomerRow) => {
-          customerMap[c.id] = c.name
-        })
+          ; (customerData || []).forEach((c: CustomerRow) => {
+            customerMap[c.id] = c.name
+          })
       }
 
       const viewRows: CaseView[] = (casesData || []).map(c => ({
@@ -143,6 +143,36 @@ export default function ApprovalRequestListPage() {
     textDecoration: 'none',
   }
 
+  const getStatusBadge = (status?: string) => {
+    const normalized = status || ''
+    const labels: Record<string, string> = {
+      draft: '下書き',
+      pending: '申請中',
+      approved: '承認済',
+      rejected: '差戻し',
+    }
+    const baseStyle: React.CSSProperties = {
+      display: 'inline-block',
+      padding: '4px 10px',
+      borderRadius: 999,
+      fontSize: 12,
+      fontWeight: 600,
+      border: '1px solid #475569',
+    }
+    const approvedStyle: React.CSSProperties = {
+      backgroundColor: '#334155',
+      border: '1px solid #3b82f6',
+      color: '#e2e8f0',
+    }
+    const defaultStyle: React.CSSProperties = {
+      backgroundColor: '#0f172a',
+      color: '#cbd5e1',
+    }
+
+    const style = normalized === 'approved' ? { ...baseStyle, ...approvedStyle } : { ...baseStyle, ...defaultStyle }
+    return <span style={style}>{labels[normalized] || normalized || '-'}</span>
+  }
+
   return (
     <div style={containerStyle}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -211,7 +241,7 @@ export default function ApprovalRequestListPage() {
                     <td style={tdStyle}>{c.customer_name || '-'}</td>
                     <td style={tdStyle}>{c.staff_name || '-'}</td>
                     <td style={tdStyle}>{c.created_date || '-'}</td>
-                    <td style={tdStyle}>{c.status || '-'}</td>
+                    <td style={tdStyle}>{getStatusBadge(c.status)}</td>
                     <td style={tdStyle}>
                       <Link href={`/cases/approval/${c.case_id}`} style={buttonStyle}>
                         承認画面へ

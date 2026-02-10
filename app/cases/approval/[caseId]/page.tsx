@@ -788,6 +788,45 @@ export default function CaseApprovalPage() {
     }
   }
 
+  const getApproverCardStyle = (approved: boolean, oralRequested: boolean): React.CSSProperties => {
+    if (approved) {
+      return {
+        padding: '12px 20px',
+        backgroundColor: '#334155',
+        border: '2px solid #3b82f6',
+        borderRadius: 8,
+        minWidth: 160,
+      }
+    }
+
+    if (oralRequested) {
+      return {
+        padding: '12px 20px',
+        backgroundColor: '#fff3cd',
+        border: '2px solid #ffc107',
+        borderRadius: 8,
+        minWidth: 160,
+      }
+    }
+
+    return {
+      padding: '12px 20px',
+      backgroundColor: '#fff',
+      border: '2px solid #ddd',
+      borderRadius: 8,
+      minWidth: 160,
+    }
+  }
+
+  const getApproverTextColors = (approved: boolean) => {
+    return {
+      label: { fontSize: 12, color: approved ? '#94a3b8' : '#666' },
+      name: { fontWeight: 'bold', fontSize: 16, color: approved ? '#fff' : '#111827' },
+      email: { fontSize: 11, color: approved ? '#cbd5e1' : '#555' },
+      approved: { fontSize: 11, color: approved ? '#93c5fd' : '#28a745' },
+    }
+  }
+
   const higherApprovalDisabled = !!caseData?.skip_higher_approval
 
   return (
@@ -1038,11 +1077,11 @@ export default function CaseApprovalPage() {
               {approvers.sectionHead && (
                 <>
                   <span style={{ fontSize: 24, color: '#999' }}>→</span>
-                  <div style={{ padding: '12px 20px', backgroundColor: caseData?.approve_manager ? '#d4edda' : (caseData?.oral_request_director ? '#fff3cd' : '#fff'), border: `2px solid ${caseData?.approve_manager ? '#28a745' : (caseData?.oral_request_director ? '#ffc107' : '#ddd')}`, borderRadius: 8, minWidth: 160 }}>
-                    <div style={{ fontSize: 12, color: '#666' }}>所長</div>
-                    <div style={{ fontWeight: 'bold', fontSize: 16 }}>{approvers.sectionHead.name}</div>
-                    <div style={{ fontSize: 11, color: '#555' }}>{approvers.sectionHead.email ?? '-'}</div>
-                    {caseData?.approve_manager && <div style={{ fontSize: 11, color: '#28a745' }}>✓ 承認済</div>}
+                  <div style={getApproverCardStyle(!!caseData?.approve_manager, !!caseData?.oral_request_director)}>
+                    <div style={getApproverTextColors(!!caseData?.approve_manager).label}>所長</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_manager).name}>{approvers.sectionHead.name}</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_manager).email}>{approvers.sectionHead.email ?? '-'}</div>
+                    {caseData?.approve_manager && <div style={getApproverTextColors(!!caseData?.approve_manager).approved}>✓ 承認済</div>}
                     {caseData?.oral_request_director && !caseData?.approve_manager && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
                   </div>
                 </>
@@ -1051,11 +1090,11 @@ export default function CaseApprovalPage() {
               {approvers.senmu && (
                 <>
                   <span style={{ fontSize: 24, color: '#999' }}>→</span>
-                  <div style={{ padding: '12px 20px', backgroundColor: caseData?.approve_director ? '#d4edda' : (caseData?.oral_request_president ? '#fff3cd' : '#fff'), border: `2px solid ${caseData?.approve_director ? '#28a745' : (caseData?.oral_request_president ? '#ffc107' : '#ddd')}`, borderRadius: 8, minWidth: 160 }}>
-                    <div style={{ fontSize: 12, color: '#666' }}>専務</div>
-                    <div style={{ fontWeight: 'bold', fontSize: 16 }}>{approvers.senmu.name}</div>
-                    <div style={{ fontSize: 11, color: '#555' }}>{approvers.senmu.email ?? '-'}</div>
-                    {caseData?.approve_director && <div style={{ fontSize: 11, color: '#28a745' }}>✓ 承認済</div>}
+                  <div style={getApproverCardStyle(!!caseData?.approve_director, !!caseData?.oral_request_president)}>
+                    <div style={getApproverTextColors(!!caseData?.approve_director).label}>専務</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_director).name}>{approvers.senmu.name}</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_director).email}>{approvers.senmu.email ?? '-'}</div>
+                    {caseData?.approve_director && <div style={getApproverTextColors(!!caseData?.approve_director).approved}>✓ 承認済</div>}
                     {caseData?.oral_request_president && !caseData?.approve_director && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
                   </div>
                 </>
@@ -1064,11 +1103,11 @@ export default function CaseApprovalPage() {
               {approvers.shacho && (
                 <>
                   <span style={{ fontSize: 24, color: '#999' }}>→</span>
-                  <div style={{ padding: '12px 20px', backgroundColor: caseData?.approve_president ? '#d4edda' : '#fff', border: `2px solid ${caseData?.approve_president ? '#28a745' : '#ddd'}`, borderRadius: 8, minWidth: 160 }}>
-                    <div style={{ fontSize: 12, color: '#666' }}>社長</div>
-                    <div style={{ fontWeight: 'bold', fontSize: 16 }}>{approvers.shacho.name}</div>
-                    <div style={{ fontSize: 11, color: '#555' }}>{approvers.shacho.email ?? '-'}</div>
-                    {caseData?.approve_president && <div style={{ fontSize: 11, color: '#28a745' }}>✓ 承認済</div>}
+                  <div style={getApproverCardStyle(!!caseData?.approve_president, false)}>
+                    <div style={getApproverTextColors(!!caseData?.approve_president).label}>社長</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_president).name}>{approvers.shacho.name}</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_president).email}>{approvers.shacho.email ?? '-'}</div>
+                    {caseData?.approve_president && <div style={getApproverTextColors(!!caseData?.approve_president).approved}>✓ 承認済</div>}
                   </div>
                 </>
               )}
