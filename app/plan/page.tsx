@@ -6,15 +6,28 @@ import { supabase } from '@/lib/supabaseClient'; // ← パスは環境に合わ
 import Link from 'next/link'
 
 type PlanRow = {
-  product_id: string;
-  product_name: string | null;
+  case_id?: string | null;
+  case_no?: string | null;
+  subject?: string | null;
+  customer_name?: string | null;
+  staff_name?: string | null;
+  created_date?: string | null;
+  id: string;
+  name: string | null;
   status: string | null;
   total_quantity: number;
+  unit_price?: number | null;
+  amount?: number | null;
+  cost_amount?: number | null;
   source_warehouse_name?: string | null;
   destination_warehouse_name?: string | null;
 };
 
 export default function PlanPage() {
+  const formatNumber = (value?: number | null) => {
+    if (value == null || Number.isNaN(value)) return '-'
+    return Number(value).toLocaleString('ja-JP')
+  }
   const [fromDate, setFromDate] = useState<string>(''); // YYYY-MM-DD
   const [toDate, setToDate] = useState<string>('');     // YYYY-MM-DD
   const [plan, setPlan] = useState<PlanRow[]>([]);
@@ -22,6 +35,7 @@ export default function PlanPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('') // ★ 変更: ステータス選択
+  const [contractedOnly, setContractedOnly] = useState(false)
 
   const tableRef = useRef<HTMLDivElement | null>(null);
   const handlePrint = useReactToPrint({
@@ -46,7 +60,8 @@ export default function PlanPage() {
       setErrorMessage('データ取得中にエラーが発生しました');
       setPlan([]);
     } else {
-      setPlan(data || []);
+      console.log('plan sample:', data?.[0])
+      setPlan((data || []) as PlanRow[]);
     }
 
     setLoading(false);
@@ -68,14 +83,40 @@ export default function PlanPage() {
   const filteredPlans = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
     return plan.filter(p => {
+      const isExcludedStatus =
+        p.status === '商談中' ||
+        p.status === '失注' ||
+        p.status === '倉庫移動'
       const hitKeyword =
         !kw ||
-        p.product_name?.toLowerCase().includes(kw) ||
+        p.name?.toLowerCase().includes(kw) ||
         p.status?.toLowerCase().includes(kw)
       const hitStatus = !statusFilter || p.status === statusFilter
-      return hitKeyword && hitStatus
+      const hitContracted = !contractedOnly || (!isExcludedStatus && !!p.status)
+      return hitKeyword && hitStatus && hitContracted
     })
-  }, [plan, keyword, statusFilter])
+  }, [plan, keyword, statusFilter, contractedOnly])
+
+  const displayPlans = useMemo(() => {
+    const rows = [...filteredPlans]
+    rows.sort((a, b) => {
+      const aProduct = a.id || ''
+      const bProduct = b.id || ''
+      const productCompare = aProduct.localeCompare(bProduct, 'ja')
+      if (productCompare !== 0) return productCompare
+
+      const aCase = a.case_id || ''
+      const bCase = b.case_id || ''
+      const caseCompare = aCase.localeCompare(bCase, 'ja')
+      if (caseCompare !== 0) return caseCompare
+
+      const aDate = a.created_date || ''
+      const bDate = b.created_date || ''
+      if (aDate === bDate) return 0
+      return aDate < bDate ? 1 : -1
+    })
+    return rows
+  }, [filteredPlans])
 
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
@@ -185,9 +226,17 @@ export default function PlanPage() {
           {statusList
             .filter(st => st !== null)  // ★ null を除外
             .map(st => (
-            <option key={st} value={st}>{st}</option>
-          ))}
+              <option key={st} value={st}>{st}</option>
+            ))}
         </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={contractedOnly}
+            onChange={(e) => setContractedOnly(e.target.checked)}
+          />
+          成約のみ
+        </label>
       </div>
 
       {/* 製造計画テーブル（印刷対象をラップ） */}
@@ -201,7 +250,8 @@ export default function PlanPage() {
           検索日：
           {fromDate ? fromDate : '指定なし'} ～
           {toDate ? toDate : '指定なし'}　｜　検索ステータス：
-          {statusFilter || 'すべて'}
+          {statusFilter || 'すべて'}　｜　成約のみ：
+          {contractedOnly ? 'はい' : 'いいえ'}
         </div>
 
         <table
@@ -215,20 +265,27 @@ export default function PlanPage() {
           <thead>
             <tr style={{ backgroundColor: '#f5f5f5' }}>
               <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>商品コード</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>商品名</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000', width: 240 }}>商品名</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>事業名</th>
               <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>ステータス</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>数量合計</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>単価</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>金額</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>原価</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>粗利額</th>
             </tr>
           </thead>
 
           <tbody>
-            {filteredPlans.map((row, idx) => (
-              <tr key={idx}>
+            {displayPlans.map((row, idx) => (
+              <tr key={`${row.case_id ?? 'case'}-${row.id ?? 'item'}-${idx}`}>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>
-                  {row.product_id}
+                  {row.id}
+                </td>
+                <td style={{ border: '1px solid #ccc', padding: 4, width: 240, maxWidth: 240 }}>
+                  {row.name}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>
-                  {row.product_name}
+                  {row.case_no && row.subject ? `${row.case_no} ${row.subject}` : row.subject || '-'}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>
                   {row.status === '倉庫移動' ? (
@@ -246,15 +303,42 @@ export default function PlanPage() {
                     textAlign: 'right',
                   }}
                 >
-                  {row.total_quantity}
+                  {formatNumber(row.unit_price)}
+                </td>
+                <td
+                  style={{
+                    border: '1px solid #ccc',
+                    padding: 4,
+                    textAlign: 'right',
+                  }}
+                >
+                  {formatNumber(row.amount)}
+                </td>
+                <td
+                  style={{
+                    border: '1px solid #ccc',
+                    padding: 4,
+                    textAlign: 'right',
+                  }}
+                >
+                  {formatNumber(row.cost_amount)}
+                </td>
+                <td
+                  style={{
+                    border: '1px solid #ccc',
+                    padding: 4,
+                    textAlign: 'right',
+                  }}
+                >
+                  {formatNumber((row.amount ?? 0) - (row.cost_amount ?? 0))}
                 </td>
               </tr>
             ))}
 
-            {filteredPlans.length === 0 && !loading && (
+            {displayPlans.length === 0 && !loading && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={8}
                   style={{ textAlign: 'center', padding: 8, color: '#666' }}
                 >
                   該当データがありません
