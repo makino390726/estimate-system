@@ -1558,8 +1558,8 @@ export default function CaseNewPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
               <thead>
                 <tr>
-                  <th style={{ ...thStyle, width: '60px' }}>順番</th>
-                  <th style={{ ...thStyle, width: '60px' }}>除外</th>
+                  <th style={{ ...thStyle, width: '44px' }}>順番</th>
+                  <th style={{ ...thStyle, width: '52px' }}>除外</th>
                   {layoutType === 'horizontal' && (
                     <th style={{ ...thStyle, minWidth: '180px' }}>セクション</th>
                   )}
@@ -1585,9 +1585,9 @@ export default function CaseNewPage() {
                     <tr key={index}>
                       <td style={tdStyle}>
                         <input
-                          type="number"
-                          min={1}
-                          max={rows.length}
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={row.display_order ?? index + 1}
                           onChange={(e) => {
                             const value = e.target.value
@@ -1605,7 +1605,7 @@ export default function CaseNewPage() {
                               handleChangeRowOrder(index, targetOrder)
                             }
                           }}
-                          style={{ ...inputStyle, width: '80px', textAlign: 'right' }}
+                          style={{ ...inputStyle, width: '48px', textAlign: 'right' }}
                         />
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'center' }}>
@@ -1646,7 +1646,9 @@ export default function CaseNewPage() {
                       <td style={{ ...tdStyle, textAlign: 'center' }}>{row.unit}</td>
                       <td style={tdStyle}>
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={row.quantity}
                           onChange={(e) =>
                             handleQuantityChange(index, Number(e.target.value))
