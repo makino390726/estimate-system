@@ -568,6 +568,7 @@ export default function CaseNewPage() {
         section_id: detail.section_id || null,
         remarks: detail.remarks || undefined,
         unregistered_product: detail.unregistered_product || undefined,
+        comment: detail.comment || undefined,
         display_order: detail.display_order ?? index + 1,
       }
     })

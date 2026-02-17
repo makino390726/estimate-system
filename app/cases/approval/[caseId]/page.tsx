@@ -28,6 +28,7 @@ type CaseDetail = {
   section_id: number
   remarks?: string  // ★ 備考欄（定価情報など）
   unregistered_product?: string  // ★ マスタ未登録商品名
+  comment?: string
   // ★ 動的に追加されるプロパティ
   product_name?: string
 }
@@ -749,6 +750,7 @@ export default function CaseApprovalPage() {
     remarks: d.remarks || undefined,
     exclude_from_total: d.exclude_from_total ?? false,
     unregistered_product: d.unregistered_product || undefined,
+    comment: d.comment || undefined,
   }))
 
   // セクションをPrintEstimate用に整形
@@ -901,6 +903,7 @@ export default function CaseApprovalPage() {
                     remarks: d.remarks || undefined,
                     exclude_from_total: d.exclude_from_total ?? false,
                     unregistered_product: d.unregistered_product || undefined,
+                    comment: d.comment || undefined,
                   }))}
                   sections={sectionsData.map(s => ({
                     id: s.id || 0,

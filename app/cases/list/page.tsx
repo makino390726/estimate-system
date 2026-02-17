@@ -13,6 +13,7 @@ type CaseWithDetails = {
   status: string
   customer_name: string
   staff_name: string
+  staff_id: string | null
   approve_staff: string | null
   approve_manager: string | null
   approve_director: string | null
@@ -44,7 +45,10 @@ export default function CaseListPage() {
       return
     }
 
-    setStaffOptions(data || [])
+    setStaffOptions((data || []).map((staff) => ({
+      id: String(staff.id),
+      name: staff.name,
+    })))
   }
 
   const fetchCases = async () => {
@@ -54,7 +58,7 @@ export default function CaseListPage() {
     try {
       const { data: casesData, error: casesError } = await supabase
         .from('cases_with_names')
-        .select('case_id, case_no, subject, created_date, status, customer_name, staff_name, approve_staff, approve_manager, approve_director, approve_president')
+        .select('case_id, case_no, subject, created_date, status, customer_name, staff_name, staff_id, approve_staff, approve_manager, approve_director, approve_president')
         .order('created_date', { ascending: false })
 
       if (casesError) {
@@ -84,6 +88,7 @@ export default function CaseListPage() {
           status: c.status,
           customer_name: c.customer_name || '不明',
           staff_name: c.staff_name || '不明',
+          staff_id: c.staff_id != null ? String(c.staff_id) : null,
           approve_staff: c.approve_staff,
           approve_manager: c.approve_manager,
           approve_director: c.approve_director,
@@ -232,7 +237,14 @@ export default function CaseListPage() {
       return
     }
 
-    setCases(originalCases.filter((c) => c.staff_name === staffFilter))
+    const selectedStaff = staffOptions.find((staff) => staff.id === staffFilter)
+    const selectedName = selectedStaff?.name
+
+    setCases(originalCases.filter((c) => {
+      if (c.staff_id && c.staff_id === staffFilter) return true
+      if (!selectedName) return false
+      return c.staff_name === selectedName
+    }))
   }
 
   const handleShowAll = () => {
@@ -293,7 +305,7 @@ export default function CaseListPage() {
           >
             <option value="">担当者を選択</option>
             {staffOptions.map((staff) => (
-              <option key={staff.id} value={staff.name}>
+              <option key={staff.id} value={String(staff.id)}>
                 {staff.name}
               </option>
             ))}

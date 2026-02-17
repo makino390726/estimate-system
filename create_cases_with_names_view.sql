@@ -15,5 +15,10 @@ SELECT
   COALESCE(cu.name, c.customer_id::text, '') AS customer_name,
   COALESCE(s.name, '') AS staff_name
 FROM cases AS c
-LEFT JOIN customers AS cu ON cu.id::text = c.customer_id::text
+-- customer_id stores the customer name, so join on a deduped name set
+LEFT JOIN (
+  SELECT name
+  FROM customers
+  GROUP BY name
+) AS cu ON cu.name = c.customer_id
 LEFT JOIN staffs AS s ON s.id::text = c.staff_id::text;
