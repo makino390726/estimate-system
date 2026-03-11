@@ -12,6 +12,7 @@ import {
   FiShoppingCart,
   FiHome,
   FiLink,
+  FiActivity,
 } from 'react-icons/fi'
 
 export default function MasterSelectorPage() {
@@ -75,6 +76,20 @@ export default function MasterSelectorPage() {
             <div className="selector-card-buttons">
               <Link href="/cases/list" className="selector-button primary">
                 案件一覧
+              </Link>
+            </div>
+          </div>
+
+          {/* 営業活動 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiActivity className="icon" />
+              <h2>営業活動</h2>
+            </div>
+            <p>担当者ごとに案件見込み（○/△/□/×）を管理し、△/□案件の営業活動コメントを記録します。</p>
+            <div className="selector-card-buttons">
+              <Link href="/cases/deal-rank" className="selector-button primary">
+                見込み区分・活動コメント
               </Link>
             </div>
           </div>

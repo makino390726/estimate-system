@@ -46,6 +46,20 @@ body {
   color: #e2e8f0;
 }
 
+/* ドラッグ選択時のハイライトを見やすく固定 */
+::selection {
+  background: #38bdf8;
+  color: #0b1120;
+}
+
+input::selection,
+textarea::selection,
+select::selection,
+option::selection {
+  background: #0ea5e9;
+  color: #ffffff;
+}
+
 /* 印刷時のスタイル：すべてのテキストを黒に設定 */
 @media print {
   * {
@@ -53,7 +67,7 @@ body {
     background-color: white !important;
     background-image: none !important;
   }
-  
+
   body {
     color: #000 !important;
     background: white !important;
@@ -65,7 +79,9 @@ button {
   color: #fff !important;
 }
 
-input, select, textarea {
+input,
+select,
+textarea {
   color: #e2e8f0;
   background-color: #1e293b;
   border: 1px solid #334155;
@@ -73,18 +89,24 @@ input, select, textarea {
 
 /* 印刷時のボタンは黒文字 */
 @media print {
-  button, button * {
+
+  button,
+  button * {
     color: #000 !important;
   }
-  
-  input, select, textarea {
+
+  input,
+  select,
+  textarea {
     color: #000 !important;
   }
 }
 
 body {
-  background: #0f172a; /* ダークブルーの背景 */
-  color: #e2e8f0; /* 明るいグレーのテキスト */
+  background: #0f172a;
+  /* ダークブルーの背景 */
+  color: #e2e8f0;
+  /* 明るいグレーのテキスト */
   font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
 }
 
@@ -177,6 +199,7 @@ body {
   background-color: #1d4ed8;
   border-color: #1e40af;
 }
+
 /* ========== モバイル対応 ========== */
 @media (max-width: 768px) {
   .selector-grid {
@@ -216,7 +239,8 @@ body {
     font-size: 12px;
   }
 
-  th, td {
+  th,
+  td {
     padding: 4px 6px !important;
   }
 
@@ -225,7 +249,7 @@ body {
     padding: 8px;
   }
 
-  .fixed > div {
+  .fixed>div {
     max-width: 95vw;
     max-height: 90vh;
     margin: auto;
@@ -237,7 +261,9 @@ body {
   }
 
   /* 入力フィールドの最適化 */
-  input, select, textarea {
+  input,
+  select,
+  textarea {
     font-size: 16px;
     padding: 10px 8px;
     min-height: 44px;
@@ -275,7 +301,8 @@ body {
     font-size: 11px;
   }
 
-  th, td {
+  th,
+  td {
     padding: 3px 4px !important;
   }
 
@@ -284,7 +311,9 @@ body {
     font-size: 12px;
   }
 
-  input, select, textarea {
+  input,
+  select,
+  textarea {
     font-size: 16px;
     padding: 8px 6px;
   }
@@ -310,6 +339,7 @@ body {
 
 /* タッチデバイス用の最適化 */
 @media (hover: none) and (pointer: coarse) {
+
   button:hover,
   .selector-button:hover {
     background-color: inherit;
