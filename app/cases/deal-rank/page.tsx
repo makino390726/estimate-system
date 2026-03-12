@@ -72,6 +72,7 @@ export default function DealRankPage() {
     const [endDate, setEndDate] = useState('')
     const printRef = useRef<HTMLDivElement | null>(null)
     const customerNameCacheRef = useRef<Map<string, string>>(new Map())
+    const activeFetchKeyRef = useRef(0)
 
     useEffect(() => {
         void fetchStaffs()
@@ -115,6 +116,8 @@ export default function DealRankPage() {
     }
 
     const fetchData = async () => {
+        const fetchKey = Date.now()
+        activeFetchKeyRef.current = fetchKey
         setLoading(true)
 
         try {
@@ -199,41 +202,13 @@ export default function DealRankPage() {
             setFeatureColumnsReady(featureReady)
             setTotalAmountColumnReady(amountReady)
 
-            const customerIds = Array.from(
-                new Set((caseData || []).map((c: any) => c.customer_id).filter((value: string | null) => Boolean(value))),
-            )
-
-            const customerMap = new Map<string, string>()
-            const unknownCustomerIds = customerIds.filter((id) => !customerNameCacheRef.current.has(String(id)))
-
-            if (unknownCustomerIds.length > 0) {
-                const { data: customerData, error: customerErr } = await supabase
-                    .from('customers')
-                    .select('id, name')
-                    .in('id', unknownCustomerIds)
-
-                if (customerErr) {
-                    console.error('顧客取得エラー:', customerErr)
-                } else {
-                    for (const customer of customerData || []) {
-                        customerNameCacheRef.current.set(String(customer.id), customer.name || '顧客名未設定')
-                    }
-                }
-            }
-
-            for (const id of customerIds) {
-                const normalizedId = String(id)
-                const cachedName = customerNameCacheRef.current.get(normalizedId)
-                if (cachedName) {
-                    customerMap.set(normalizedId, cachedName)
-                }
-            }
-
             const staffMap = new Map(staffs.map((s) => [s.id, s.name]))
 
             const mapped: CaseView[] = (caseData || []).map((c: any) => {
                 const normalizedStaffId = c.staff_id != null ? String(c.staff_id) : null
                 const rank = (c.deal_rank || null) as DealRank
+                const normalizedCustomerId = c.customer_id ? String(c.customer_id) : null
+                const cachedCustomerName = normalizedCustomerId ? customerNameCacheRef.current.get(normalizedCustomerId) : null
 
                 return {
                     case_id: c.case_id,
@@ -247,14 +222,61 @@ export default function DealRankPage() {
                     deal_rank: rank,
                     sales_activity_comment: c.sales_activity_comment || '',
                     staff_name: normalizedStaffId ? staffMap.get(normalizedStaffId) || '担当者不明' : '担当者未設定',
-                    customer_name: c.customer_id ? customerMap.get(String(c.customer_id)) || String(c.customer_id) : '顧客未設定',
+                    customer_name: normalizedCustomerId ? cachedCustomerName || normalizedCustomerId : '顧客未設定',
                 }
             })
 
             setCases(mapped)
+
+            // 初期表示を待たせないように、顧客名の未解決分は後続で補完する
+            void hydrateCustomerNames(caseData || [], fetchKey)
         } finally {
-            setLoading(false)
+            if (activeFetchKeyRef.current === fetchKey) {
+                setLoading(false)
+            }
         }
+    }
+
+    const hydrateCustomerNames = async (rows: any[], fetchKey: number) => {
+        const customerIds = Array.from(
+            new Set(rows.map((c: any) => c.customer_id).filter((value: string | null) => Boolean(value)).map((value: string) => String(value))),
+        )
+
+        const unknownCustomerIds = customerIds.filter((id) => !customerNameCacheRef.current.has(id))
+        if (unknownCustomerIds.length === 0) return
+
+        const batchSize = 200
+        for (let i = 0; i < unknownCustomerIds.length; i += batchSize) {
+            if (activeFetchKeyRef.current !== fetchKey) return
+
+            const batch = unknownCustomerIds.slice(i, i + batchSize)
+            const { data: customerData, error: customerErr } = await supabase
+                .from('customers')
+                .select('id, name')
+                .in('id', batch)
+
+            if (customerErr) {
+                console.error('顧客取得エラー:', customerErr)
+                continue
+            }
+
+            for (const customer of customerData || []) {
+                customerNameCacheRef.current.set(String(customer.id), customer.name || '顧客名未設定')
+            }
+        }
+
+        if (activeFetchKeyRef.current !== fetchKey) return
+
+        setCases((prev) => prev.map((c) => {
+            if (!c.customer_id) return c
+            const normalizedCustomerId = String(c.customer_id)
+            const resolvedName = customerNameCacheRef.current.get(normalizedCustomerId)
+            if (!resolvedName || resolvedName === c.customer_name) return c
+            return {
+                ...c,
+                customer_name: resolvedName,
+            }
+        }))
     }
 
     const filteredCases = useMemo(() => {
