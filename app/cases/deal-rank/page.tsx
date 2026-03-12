@@ -71,34 +71,82 @@ export default function DealRankPage() {
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
     const printRef = useRef<HTMLDivElement | null>(null)
+    const customerNameCacheRef = useRef<Map<string, string>>(new Map())
+
+    useEffect(() => {
+        void fetchStaffs()
+    }, [])
 
     useEffect(() => {
         void fetchData()
-    }, [])
+    }, [selectedStaffId, startDate, endDate])
+
+    useEffect(() => {
+        if (staffs.length === 0) return
+
+        const staffMap = new Map(staffs.map((staff) => [staff.id, staff.name]))
+        setCases((prev) => prev.map((c) => {
+            const normalizedStaffId = c.staff_id != null ? String(c.staff_id) : null
+            return {
+                ...c,
+                staff_name: normalizedStaffId ? staffMap.get(normalizedStaffId) || '担当者不明' : '担当者未設定',
+            }
+        }))
+    }, [staffs])
+
+    const fetchStaffs = async () => {
+        const { data: staffData, error: staffErr } = await supabase
+            .from('staffs')
+            .select('id, name')
+            .order('name', { ascending: true })
+
+        if (staffErr) {
+            console.error('担当者取得エラー:', staffErr)
+            alert('担当者データの取得に失敗しました')
+            return
+        }
+
+        const staffList: Staff[] = (staffData || []).map((s: any) => ({
+            id: String(s.id),
+            name: s.name || '担当者不明',
+        }))
+
+        setStaffs(staffList)
+    }
 
     const fetchData = async () => {
         setLoading(true)
 
         try {
-            const { data: staffData, error: staffErr } = await supabase
-                .from('staffs')
-                .select('id, name')
-                .order('name', { ascending: true })
-
-            if (staffErr) {
-                console.error('担当者取得エラー:', staffErr)
-                alert('担当者データの取得に失敗しました')
-                return
-            }
-
             let caseData: any[] | null = null
             let featureReady = true
             let amountReady = true
 
-            const { data: caseWithFeatureCols, error: caseErr } = await supabase
+            const applyCaseFilters = (query: any) => {
+                let nextQuery = query
+
+                if (selectedStaffId) {
+                    nextQuery = nextQuery.eq('staff_id', selectedStaffId)
+                }
+
+                if (startDate) {
+                    nextQuery = nextQuery.gte('created_date', `${startDate}T00:00:00`)
+                }
+
+                if (endDate) {
+                    const end = new Date(`${endDate}T00:00:00`)
+                    end.setDate(end.getDate() + 1)
+                    const endExclusive = end.toISOString().split('T')[0]
+                    nextQuery = nextQuery.lt('created_date', `${endExclusive}T00:00:00`)
+                }
+
+                return nextQuery
+            }
+
+            const { data: caseWithFeatureCols, error: caseErr } = await applyCaseFilters(supabase
                 .from('cases')
                 .select('case_id, case_no, subject, created_date, status, customer_id, staff_id, total_amount, deal_rank, sales_activity_comment')
-                .order('created_date', { ascending: false })
+                .order('created_date', { ascending: false }))
 
             if (caseErr) {
                 const errText = `${caseErr.message || ''} ${caseErr.details || ''}`.toLowerCase()
@@ -108,10 +156,10 @@ export default function DealRankPage() {
                 const missingTotalAmountColumn = errText.includes('column') && errText.includes('total_amount')
 
                 if (missingTotalAmountColumn && !missingDealColumns) {
-                    const { data: fallbackWithDeal, error: fallbackWithDealErr } = await supabase
+                    const { data: fallbackWithDeal, error: fallbackWithDealErr } = await applyCaseFilters(supabase
                         .from('cases')
                         .select('case_id, case_no, subject, created_date, status, customer_id, staff_id, deal_rank, sales_activity_comment')
-                        .order('created_date', { ascending: false })
+                        .order('created_date', { ascending: false }))
 
                     if (fallbackWithDealErr) {
                         console.error('案件取得フォールバックエラー:', fallbackWithDealErr)
@@ -129,10 +177,10 @@ export default function DealRankPage() {
                     }
 
                     // Fallback: show case list even if feature columns are not yet created.
-                    const { data: fallbackData, error: fallbackErr } = await supabase
+                    const { data: fallbackData, error: fallbackErr } = await applyCaseFilters(supabase
                         .from('cases')
                         .select('case_id, case_no, subject, created_date, status, customer_id, staff_id')
-                        .order('created_date', { ascending: false })
+                        .order('created_date', { ascending: false }))
 
                     if (fallbackErr) {
                         console.error('案件取得フォールバックエラー:', fallbackErr)
@@ -155,27 +203,33 @@ export default function DealRankPage() {
                 new Set((caseData || []).map((c: any) => c.customer_id).filter((value: string | null) => Boolean(value))),
             )
 
-            let customerMap = new Map<string, string>()
-            if (customerIds.length > 0) {
+            const customerMap = new Map<string, string>()
+            const unknownCustomerIds = customerIds.filter((id) => !customerNameCacheRef.current.has(String(id)))
+
+            if (unknownCustomerIds.length > 0) {
                 const { data: customerData, error: customerErr } = await supabase
                     .from('customers')
                     .select('id, name')
-                    .in('id', customerIds)
+                    .in('id', unknownCustomerIds)
 
                 if (customerErr) {
                     console.error('顧客取得エラー:', customerErr)
                 } else {
-                    customerMap = new Map(
-                        (customerData || []).map((customer: any) => [String(customer.id), customer.name || '顧客名未設定']),
-                    )
+                    for (const customer of customerData || []) {
+                        customerNameCacheRef.current.set(String(customer.id), customer.name || '顧客名未設定')
+                    }
                 }
             }
 
-            const staffList: Staff[] = (staffData || []).map((s: any) => ({
-                id: String(s.id),
-                name: s.name || '担当者不明',
-            }))
-            const staffMap = new Map(staffList.map((s) => [s.id, s.name]))
+            for (const id of customerIds) {
+                const normalizedId = String(id)
+                const cachedName = customerNameCacheRef.current.get(normalizedId)
+                if (cachedName) {
+                    customerMap.set(normalizedId, cachedName)
+                }
+            }
+
+            const staffMap = new Map(staffs.map((s) => [s.id, s.name]))
 
             const mapped: CaseView[] = (caseData || []).map((c: any) => {
                 const normalizedStaffId = c.staff_id != null ? String(c.staff_id) : null
@@ -197,7 +251,6 @@ export default function DealRankPage() {
                 }
             })
 
-            setStaffs(staffList)
             setCases(mapped)
         } finally {
             setLoading(false)
@@ -205,26 +258,8 @@ export default function DealRankPage() {
     }
 
     const filteredCases = useMemo(() => {
-        let filtered = cases
-
-        // 担当者フィルタ
-        if (selectedStaffId) {
-            filtered = filtered.filter((c) => c.staff_id != null && String(c.staff_id) === selectedStaffId)
-        }
-
-        // 期間フィルタ
-        if (startDate || endDate) {
-            filtered = filtered.filter((c) => {
-                if (!c.created_date) return false
-                const caseDate = c.created_date.split('T')[0] // ISO形式から日付部分のみ抽出
-                if (startDate && caseDate < startDate) return false
-                if (endDate && caseDate > endDate) return false
-                return true
-            })
-        }
-
-        return filtered
-    }, [cases, selectedStaffId, startDate, endDate])
+        return cases
+    }, [cases])
 
     const summary = useMemo(() => {
         const result = {
