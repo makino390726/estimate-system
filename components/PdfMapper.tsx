@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import * as pdfjsLib from 'pdfjs-dist'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js'
 
 // PDF.jsのworkerを設定
 if (typeof window !== 'undefined') {
@@ -10,7 +10,7 @@ if (typeof window !== 'undefined') {
 
 type PinMapping = {
   type: 'customerName' | 'subject' | 'estimateDate' | 'estimateNo' |
-        'productNameCol' | 'specCol' | 'qtyCol' | 'unitPriceCol' | 'amountCol' | 'wholesalePriceCol'
+  'productNameCol' | 'specCol' | 'qtyCol' | 'unitPriceCol' | 'amountCol' | 'wholesalePriceCol'
   label: string
   area: { x1: number; y1: number; x2: number; y2: number } | null
   number: number
@@ -64,19 +64,19 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
         const pdf = await loadingTask.promise
         const page = await pdf.getPage(1)
-        
+
         const viewport = page.getViewport({ scale: 2.0 }) // 高解像度
         const canvas = canvasRef.current
         if (!canvas) return
-        
+
         const context = canvas.getContext('2d')
         if (!context) return
-        
+
         canvas.width = viewport.width
         canvas.height = viewport.height
-        
+
         await page.render({ canvasContext: context, viewport }).promise
-        
+
         console.log('[PdfMapper] PDF rendered:', viewport.width, 'x', viewport.height)
       } catch (e: any) {
         console.error('[PdfMapper] PDF render error:', e)
@@ -110,19 +110,19 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
 
   const handleMouseUp = () => {
     if (selectedIndex === null || !dragStart || !currentDrag) return
-    
+
     const x1 = Math.min(dragStart.x, currentDrag.x)
     const y1 = Math.min(dragStart.y, currentDrag.y)
     const x2 = Math.max(dragStart.x, currentDrag.x)
     const y2 = Math.max(dragStart.y, currentDrag.y)
-    
-    setMappings(prev => prev.map((m, i) => 
+
+    setMappings(prev => prev.map((m, i) =>
       i === selectedIndex ? { ...m, area: { x1, y1, x2, y2 } } : m
     ))
-    
+
     setDragStart(null)
     setCurrentDrag(null)
-    
+
     if (selectedIndex < mappings.length - 1) {
       setSelectedIndex(selectedIndex + 1)
     } else {
@@ -154,7 +154,7 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
               <button key={z}
                 onClick={() => setZoom(z)}
                 style={{ padding: 6, background: zoom === z ? '#00bfa5' : '#f0f0f0', color: zoom === z ? '#fff' : '#666', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}>
-                {Math.round(z*100)}%
+                {Math.round(z * 100)}%
               </button>
             ))}
           </div>
@@ -165,11 +165,11 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
           {mappings.map((item, i) => (
             <div key={item.type}
               onClick={() => setSelectedIndex(i)}
-              style={{ padding: 12, marginBottom: 8, border: `2px solid ${selectedIndex===i ? '#00bfa5' : item.area ? '#4caf50' : '#ddd'}`, background: selectedIndex===i ? '#e0f7f4' : item.area ? '#f1f8f4' : '#fff', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: item.area ? '#4caf50' : selectedIndex===i ? '#00bfa5' : '#ddd', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 'bold' }}>{item.number}</div>
+              style={{ padding: 12, marginBottom: 8, border: `2px solid ${selectedIndex === i ? '#00bfa5' : item.area ? '#4caf50' : '#ddd'}`, background: selectedIndex === i ? '#e0f7f4' : item.area ? '#f1f8f4' : '#fff', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: item.area ? '#4caf50' : selectedIndex === i ? '#00bfa5' : '#ddd', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 'bold' }}>{item.number}</div>
               <div style={{ fontSize: 14, color: '#000' }}>{item.label}</div>
               {item.area && (
-                <button onClick={(e) => { e.stopPropagation(); setMappings(prev => prev.map((m, idx) => idx===i ? { ...m, area: null } : m)) }}
+                <button onClick={(e) => { e.stopPropagation(); setMappings(prev => prev.map((m, idx) => idx === i ? { ...m, area: null } : m)) }}
                   style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: 11, background: '#fee', color: '#c00', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
               )}
             </div>
@@ -178,7 +178,7 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
 
         {/* ボタン */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button onClick={handleComplete} disabled={completedCount===0} style={{ padding: 10, background: completedCount>0 ? '#00bfa5' : '#ccc', color: '#fff', border: 'none', borderRadius: 6, cursor: completedCount>0 ? 'pointer' : 'not-allowed', fontWeight: 'bold' }}>セット ({completedCount})</button>
+          <button onClick={handleComplete} disabled={completedCount === 0} style={{ padding: 10, background: completedCount > 0 ? '#00bfa5' : '#ccc', color: '#fff', border: 'none', borderRadius: 6, cursor: completedCount > 0 ? 'pointer' : 'not-allowed', fontWeight: 'bold' }}>セット ({completedCount})</button>
           <button onClick={handleReset} style={{ padding: 10, background: '#fff', color: '#666', border: '1px solid #ddd', borderRadius: 6 }}>リセット</button>
           <button onClick={onCancel} style={{ padding: 10, background: '#fff', color: '#666', border: '1px solid #ddd', borderRadius: 6 }}>キャンセル</button>
         </div>
@@ -205,7 +205,7 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
                 {mappings[selectedIndex].number}. {mappings[selectedIndex].label}
               </div>
             )}
-            
+
             <div style={{ position: 'relative', transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
               <canvas
                 ref={canvasRef}
@@ -214,7 +214,7 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
               />
-              
+
               {/* ドラッグ中の範囲 */}
               {dragStart && currentDrag && (
                 <div style={{
@@ -228,7 +228,7 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
                   pointerEvents: 'none'
                 }} />
               )}
-              
+
               {/* 確定した範囲 */}
               {mappings.map((m, i) => m.area ? (
                 <div key={i} style={{
@@ -244,13 +244,13 @@ export default function PdfMapper({ file, onMappingComplete, onCancel }: PdfMapp
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
-                  <div style={{ 
-                    background: '#4caf50', 
-                    color: '#fff', 
-                    padding: '4px 8px', 
-                    borderRadius: 4, 
-                    fontSize: 12, 
-                    fontWeight: 'bold' 
+                  <div style={{
+                    background: '#4caf50',
+                    color: '#fff',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontWeight: 'bold'
                   }}>{m.number}</div>
                 </div>
               ) : null)}

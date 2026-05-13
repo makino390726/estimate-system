@@ -193,8 +193,6 @@ export default function ProductsPage() {
 
       setShowForm(false)
       setEditingId(null)
-      setKeyword('')
-      setCurrentPage(1)
       fetchProducts()
     } catch (error: any) {
       console.error('保存エラー:', error)
@@ -217,7 +215,6 @@ export default function ProductsPage() {
         throw error
       }
       alert('商品を削除しました')
-      setCurrentPage(1)
       fetchProducts()
     } catch (error: any) {
       console.error('削除エラー:', error)

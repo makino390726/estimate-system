@@ -94,6 +94,52 @@ export default function MasterSelectorPage() {
             </div>
           </div>
 
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiActivity className="icon" />
+              <h2>出張修理管理表</h2>
+            </div>
+            <p>営業所ごとの出張修理履歴を入力し、日付・顧客・担当者単位で一覧管理します。</p>
+            <div className="selector-card-buttons">
+              <Link href="/service-repair-reports" className="selector-button primary">
+                出張修理管理表
+              </Link>
+            </div>
+          </div>
+
+          {/* 修理案件管理 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiActivity className="icon" />
+              <h2>修理案件管理</h2>
+            </div>
+            <p>修理受付からステータス管理、修理完了・請求まで案件のライフサイクルを一元管理します。</p>
+            <div className="selector-card-buttons">
+              <Link href="/repair-requests" className="selector-button primary">
+                修理案件管理
+              </Link>
+              <Link href="/machine-cards" className="selector-button primary">
+                機械カルテ
+              </Link>
+              <Link href="/repair-dashboard" className="selector-button primary">
+                故障分析
+              </Link>
+            </div>
+          </div>
+
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiUsers className="icon" />
+              <h2>顧客登録情報</h2>
+            </div>
+            <p>機種ごとに異なる列を吸収しながら、顧客リストを入力・検索・Excel取込できます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/customer-register" className="selector-button primary">
+                顧客登録情報
+              </Link>
+            </div>
+          </div>
+
           {/* 承認・ルール */}
           <div className="selector-card">
             <div className="selector-card-header">

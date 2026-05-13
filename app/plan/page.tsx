@@ -6,12 +6,6 @@ import { supabase } from '@/lib/supabaseClient'; // ← パスは環境に合わ
 import Link from 'next/link'
 
 type PlanRow = {
-  case_id?: string | null;
-  case_no?: string | null;
-  subject?: string | null;
-  customer_name?: string | null;
-  staff_name?: string | null;
-  created_date?: string | null;
   id: string;
   name: string | null;
   status: string | null;
@@ -22,6 +16,15 @@ type PlanRow = {
   source_warehouse_name?: string | null;
   destination_warehouse_name?: string | null;
 };
+
+type AggregatedProductRow = {
+  id: string
+  name: string | null
+  total_quantity: number
+  amount: number
+  cost_amount: number
+  avg_unit_price: number | null
+}
 
 export default function PlanPage() {
   const formatNumber = (value?: number | null) => {
@@ -34,8 +37,6 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [keyword, setKeyword] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('') // ★ 変更: ステータス選択
-  const [contractedOnly, setContractedOnly] = useState(false)
 
   const tableRef = useRef<HTMLDivElement | null>(null);
   const handlePrint = useReactToPrint({
@@ -73,55 +74,67 @@ export default function PlanPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ★ ユニークなステータス一覧を抽出
-  const statusList = useMemo(
-    () => Array.from(new Set(plan.map(p => p.status).filter(Boolean))),
-    [plan]
-  )
-
-  // ★ 検索＋ステータスでフィルタ
-  const filteredPlans = useMemo(() => {
+  const aggregatedProducts = useMemo((): AggregatedProductRow[] => {
     const kw = keyword.trim().toLowerCase()
-    return plan.filter(p => {
-      const isExcludedStatus =
-        p.status === '商談中' ||
-        p.status === '失注' ||
-        p.status === '倉庫移動'
-      const hitKeyword =
-        !kw ||
-        p.name?.toLowerCase().includes(kw) ||
-        p.status?.toLowerCase().includes(kw)
-      const hitStatus = !statusFilter || p.status === statusFilter
-      const hitContracted = !contractedOnly || (!isExcludedStatus && !!p.status)
-      return hitKeyword && hitStatus && hitContracted
+
+    const isExcludedStatus = (status: string | null) =>
+      status === '商談中' || status === '失注' || status === '倉庫移動'
+
+    const targetRows = plan.filter(r => !isExcludedStatus(r.status))
+
+    const map = new Map<string, AggregatedProductRow>()
+    for (const r of targetRows) {
+      const code = r.id
+      if (!code) continue
+
+      const prev = map.get(code)
+      const qty = Number(r.total_quantity ?? 0) || 0
+      const amount = Number(r.amount ?? 0) || 0
+      const cost = Number(r.cost_amount ?? 0) || 0
+      const name = r.name ?? null
+
+      if (!prev) {
+        map.set(code, {
+          id: code,
+          name,
+          total_quantity: qty,
+          amount,
+          cost_amount: cost,
+          avg_unit_price: null,
+        })
+      } else {
+        prev.total_quantity += qty
+        prev.amount += amount
+        prev.cost_amount += cost
+        if (!prev.name && name) prev.name = name
+      }
+    }
+
+    const rows = Array.from(map.values()).map(row => {
+      const avg =
+        row.total_quantity > 0 ? row.amount / row.total_quantity : null
+      return { ...row, avg_unit_price: avg }
     })
-  }, [plan, keyword, statusFilter, contractedOnly])
 
-  const displayPlans = useMemo(() => {
-    const rows = [...filteredPlans]
-    rows.sort((a, b) => {
-      const aProduct = a.id || ''
-      const bProduct = b.id || ''
-      const productCompare = aProduct.localeCompare(bProduct, 'ja')
-      if (productCompare !== 0) return productCompare
+    const filtered = !kw
+      ? rows
+      : rows.filter(r => {
+          const idHit = r.id.toLowerCase().includes(kw)
+          const nameHit = (r.name ?? '').toLowerCase().includes(kw)
+          return idHit || nameHit
+        })
 
-      const aCase = a.case_id || ''
-      const bCase = b.case_id || ''
-      const caseCompare = aCase.localeCompare(bCase, 'ja')
-      if (caseCompare !== 0) return caseCompare
-
-      const aDate = a.created_date || ''
-      const bDate = b.created_date || ''
-      if (aDate === bDate) return 0
-      return aDate < bDate ? 1 : -1
+    filtered.sort((a, b) => {
+      if (a.amount !== b.amount) return b.amount - a.amount
+      return a.id.localeCompare(b.id, 'ja')
     })
-    return rows
-  }, [filteredPlans])
+    return filtered
+  }, [plan, keyword])
 
   return (
     <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h1 style={{ marginTop: 0, marginBottom: 0 }}>製造計画一覧（案件作成日で絞り込み）</h1>
+        <h1 style={{ marginTop: 0, marginBottom: 0 }}>製造計画一覧（売れている商品を商品コードで集計）</h1>
         {/* ★ メニューへ戻るボタン */}
         <Link href="/selectors">
           <button
@@ -212,31 +225,10 @@ export default function PlanPage() {
         <input
           value={keyword}
           onChange={e => setKeyword(e.target.value)}
-          placeholder="キーワード検索"
+          placeholder="商品コード or 商品名で検索"
           className="input-inset"
           style={{ flex: 1, maxWidth: 280 }}
         />
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          className="input-inset"
-          style={{ width: 200 }}
-        >
-          <option value="">すべてのステータス</option>
-          {statusList
-            .filter(st => st !== null)  // ★ null を除外
-            .map(st => (
-              <option key={st} value={st}>{st}</option>
-            ))}
-        </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-          <input
-            type="checkbox"
-            checked={contractedOnly}
-            onChange={(e) => setContractedOnly(e.target.checked)}
-          />
-          成約のみ
-        </label>
       </div>
 
       {/* 製造計画テーブル（印刷対象をラップ） */}
@@ -249,9 +241,7 @@ export default function PlanPage() {
         <div style={{ textAlign: 'center', marginBottom: 12, fontSize: 13, color: '#333' }}>
           検索日：
           {fromDate ? fromDate : '指定なし'} ～
-          {toDate ? toDate : '指定なし'}　｜　検索ステータス：
-          {statusFilter || 'すべて'}　｜　成約のみ：
-          {contractedOnly ? 'はい' : 'いいえ'}
+          {toDate ? toDate : '指定なし'}　｜　対象：成約（商談中/失注/倉庫移動は除外）
         </div>
 
         <table
@@ -266,35 +256,22 @@ export default function PlanPage() {
             <tr style={{ backgroundColor: '#f5f5f5' }}>
               <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>商品コード</th>
               <th style={{ border: '1px solid #ccc', padding: 4, color: '#000', width: 240 }}>商品名</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>事業名</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>ステータス</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>単価</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>金額</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>原価</th>
-              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>粗利額</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>数量</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>平均単価</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>売上合計</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>原価合計</th>
+              <th style={{ border: '1px solid #ccc', padding: 4, color: '#000' }}>粗利合計</th>
             </tr>
           </thead>
 
           <tbody>
-            {displayPlans.map((row, idx) => (
-              <tr key={`${row.case_id ?? 'case'}-${row.id ?? 'item'}-${idx}`}>
+            {aggregatedProducts.map((row) => (
+              <tr key={row.id}>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>
                   {row.id}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, width: 240, maxWidth: 240 }}>
                   {row.name}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4 }}>
-                  {row.case_no && row.subject ? `${row.case_no} ${row.subject}` : row.subject || '-'}
-                </td>
-                <td style={{ border: '1px solid #ccc', padding: 4 }}>
-                  {row.status === '倉庫移動' ? (
-                    <span>
-                      {row.source_warehouse_name || '-'} ➡ {row.destination_warehouse_name || '-'}
-                    </span>
-                  ) : (
-                    row.status
-                  )}
                 </td>
                 <td
                   style={{
@@ -303,7 +280,16 @@ export default function PlanPage() {
                     textAlign: 'right',
                   }}
                 >
-                  {formatNumber(row.unit_price)}
+                  {formatNumber(row.total_quantity)}
+                </td>
+                <td
+                  style={{
+                    border: '1px solid #ccc',
+                    padding: 4,
+                    textAlign: 'right',
+                  }}
+                >
+                  {formatNumber(row.avg_unit_price)}
                 </td>
                 <td
                   style={{
@@ -330,15 +316,15 @@ export default function PlanPage() {
                     textAlign: 'right',
                   }}
                 >
-                  {formatNumber((row.amount ?? 0) - (row.cost_amount ?? 0))}
+                  {formatNumber(row.amount - row.cost_amount)}
                 </td>
               </tr>
             ))}
 
-            {displayPlans.length === 0 && !loading && (
+            {aggregatedProducts.length === 0 && !loading && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={7}
                   style={{ textAlign: 'center', padding: 8, color: '#666' }}
                 >
                   該当データがありません
