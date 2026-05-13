@@ -450,8 +450,13 @@ export default function RepairRequestsPage() {
             if (error) throw error
             setMessage('修理内容を保存しました')
             await fetchRequests()
-            const updated = { ...detailRequest, ...completionData } as RepairRequest
-            setDetailRequest(updated)
+            setDetailRequest(prev => prev ? {
+                ...prev,
+                treatment_details: completionData.treatment_details || null,
+                root_cause: completionData.root_cause || null,
+                repair_duration_minutes: completionData.repair_duration_minutes ? Number(completionData.repair_duration_minutes) : null,
+                repair_cost: completionData.repair_cost ? Number(completionData.repair_cost) : null,
+            } : null)
         } catch (e: any) {
             setMessage(`保存に失敗しました: ${e.message}`)
         }
