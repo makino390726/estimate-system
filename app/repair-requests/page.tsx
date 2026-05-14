@@ -207,6 +207,10 @@ export default function RepairRequestsPage() {
     // Parts form
     const [newPart, setNewPart] = useState({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
 
+    // AI search (Dify)
+    const [aiSearching, setAiSearching] = useState(false)
+    const [aiAnswer, setAiAnswer] = useState<string | null>(null)
+
     // Customer sync dialog
     const [customerSyncDialog, setCustomerSyncDialog] = useState<{
         mode: 'new' | 'exists'
@@ -488,6 +492,7 @@ export default function RepairRequestsPage() {
 
     const openDetail = async (row: RepairRequest) => {
         setDetailRequest(row)
+        setAiAnswer(null)
         setCompletionData({
             treatment_details: row.treatment_details || '',
             root_cause: row.root_cause || '',
@@ -513,6 +518,30 @@ export default function RepairRequestsPage() {
             setPastRepairs((past || []) as RepairRequest[])
         } else {
             setPastRepairs([])
+        }
+    }
+
+    const handleAiSearch = async () => {
+        if (!detailRequest) return
+        setAiSearching(true)
+        setAiAnswer(null)
+        try {
+            const res = await fetch('/api/dify/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category: detailRequest.category || '',
+                    symptom: detailRequest.symptom,
+                    user_id: `staff-${Date.now()}`,
+                }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'AI検索に失敗しました')
+            setAiAnswer(data.answer)
+        } catch (e: any) {
+            setAiAnswer(`エラー: ${e.message}`)
+        } finally {
+            setAiSearching(false)
         }
     }
 
@@ -1003,6 +1032,38 @@ export default function RepairRequestsPage() {
                             <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{detailRequest.symptom}</div>
                             {detailRequest.symptom_category && <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8' }}>分類: {detailRequest.symptom_category}</div>}
                             {detailRequest.error_code && <div style={{ fontSize: 12, color: '#94a3b8' }}>エラーコード: {detailRequest.error_code}</div>}
+                        </div>
+
+                        {/* AI Search (Dify) */}
+                        <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #10b98150', marginTop: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                <h3 style={{ margin: 0, fontSize: 14, color: '#10b981' }}>AI検索（修理ナレッジ）</h3>
+                                <button
+                                    onClick={handleAiSearch}
+                                    disabled={aiSearching}
+                                    className="btn-3d"
+                                    style={{
+                                        padding: '6px 16px', fontSize: 12,
+                                        background: aiSearching ? '#374151' : '#059669',
+                                        border: `1px solid ${aiSearching ? '#4b5563' : '#047857'}`,
+                                        opacity: aiSearching ? 0.7 : 1,
+                                    }}
+                                >
+                                    {aiSearching ? '検索中...' : '症状をAIで検索'}
+                                </button>
+                            </div>
+                            <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 8px 0' }}>
+                                カテゴリと症状をもとに、過去の修理事例やマニュアルからAIが原因・対処方法を検索します。
+                            </p>
+                            {aiAnswer && (
+                                <div style={{
+                                    background: '#0f172a', borderRadius: 8, padding: 14,
+                                    border: '1px solid #334155', fontSize: 13, color: '#e2e8f0',
+                                    whiteSpace: 'pre-wrap', lineHeight: 1.7, maxHeight: 400, overflowY: 'auto',
+                                }}>
+                                    {aiAnswer}
+                                </div>
+                            )}
                         </div>
 
                         {/* Repair completion form */}

@@ -3,12 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import {
     verifySignature,
     replyMessage,
+    pushMessage,
     replyWithQuickReply,
     getProfile,
     getContentUrl,
     sendRepairConfirmation,
     sendRepairMethodChoice,
-    sendNotebookLMSearch,
 } from '@/lib/lineClient'
 
 export const runtime = 'nodejs'
@@ -58,7 +58,7 @@ type LineEvent = {
 }
 
 type ConversationState = {
-    step: 'idle' | 'waiting_category' | 'waiting_symptom_prelim' | 'waiting_notebook' | 'waiting_name' | 'waiting_model' | 'waiting_symptom' | 'waiting_more'
+    step: 'idle' | 'waiting_category' | 'waiting_symptom_prelim' | 'waiting_name' | 'waiting_model' | 'waiting_symptom' | 'waiting_more'
     category?: string
     customer_name?: string
     model?: string
@@ -68,7 +68,8 @@ type ConversationState = {
     repair_request_id?: string
 }
 
-const NOTEBOOKLM_URL = process.env.NOTEBOOKLM_URL || 'https://notebooklm.google.com/notebook/e28af525-fa83-4777-bf9b-fa44eb67714a'
+const DIFY_API_BASE = process.env.DIFY_API_BASE || 'https://api.dify.ai/v1'
+const DIFY_API_KEY = process.env.DIFY_API_KEY || ''
 
 const MACHINE_CATEGORIES = [
     'たばこ乾燥機',
@@ -195,31 +196,30 @@ async function handleMessage(event: LineEvent) {
                 `種別「${state.category}」で承りました。\n\n次に、症状を簡単にお送りください。\n例: 「火がつかない」「温度が上がらない」「異音がする」`)
             break
 
-        case 'waiting_symptom_prelim':
+        case 'waiting_symptom_prelim': {
             state.symptom = text
-            state.step = 'waiting_notebook'
-            conversations.set(userId, state)
-            try {
-                await sendNotebookLMSearch(
-                    event.replyToken,
-                    state.category || '',
-                    state.symptom,
-                    NOTEBOOKLM_URL,
-                )
-            } catch (e) {
-                console.error('sendNotebookLMSearch error:', e)
-                // NotebookLM送信失敗時はスキップしてメソッド選択へ
-                state.step = 'idle'
-                conversations.set(userId, state)
-                await showMethodChoice(event.replyToken, state)
-            }
-            break
-
-        case 'waiting_notebook': {
-            // NotebookLM検索後またはスキップ → チャット/フォーム選択を表示
             state.step = 'idle'
             conversations.set(userId, state)
-            await showMethodChoice(event.replyToken, state)
+
+            // Dify AI検索を実行し、結果をメッセージで返す
+            if (DIFY_API_KEY) {
+                await replyMessage(event.replyToken, 'AIで類似事例を検索しています...')
+                try {
+                    const aiResult = await searchDify(state.category || '', text, userId)
+                    if (aiResult) {
+                        const truncated = aiResult.length > 800
+                            ? aiResult.substring(0, 800) + '\n\n…（続きは管理画面で確認できます）'
+                            : aiResult
+                        await pushMessage(userId,
+                            `【AI検索結果】\n${state.category || ''} / ${text}\n\n${truncated}`)
+                    }
+                } catch (e) {
+                    console.error('Dify search error in LINE:', e)
+                }
+                await showMethodChoicePush(userId, state)
+            } else {
+                await showMethodChoice(event.replyToken, state)
+            }
             break
         }
 
@@ -280,6 +280,57 @@ async function handleMessage(event: LineEvent) {
             }
             break
     }
+}
+
+async function searchDify(category: string, symptom: string, userId: string): Promise<string | null> {
+    const query = [
+        category ? `機械の種別: ${category}` : '',
+        `症状: ${symptom}`,
+        '',
+        '考えられる原因と対処方法を教えてください。',
+    ].filter(Boolean).join('\n')
+
+    const res = await fetch(`${DIFY_API_BASE}/chat-messages`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${DIFY_API_KEY}`,
+        },
+        body: JSON.stringify({
+            inputs: {},
+            query,
+            response_mode: 'blocking',
+            conversation_id: '',
+            user: `line-${userId}`,
+        }),
+    })
+
+    if (!res.ok) {
+        const errBody = await res.text()
+        console.error('Dify API error:', res.status, errBody)
+        return null
+    }
+
+    const data = await res.json()
+    return data.answer || null
+}
+
+async function showMethodChoicePush(userId: string, state: ConversationState) {
+    const liffId = process.env.NEXT_PUBLIC_LIFF_ID || ''
+    let liffUrl = process.env.NEXT_PUBLIC_LIFF_URL || (liffId ? `https://liff.line.me/${liffId}` : '')
+
+    if (liffUrl && (state.category || state.symptom)) {
+        const params = new URLSearchParams()
+        if (state.category) params.set('category', state.category)
+        if (state.symptom) params.set('symptom', state.symptom)
+        liffUrl = `${liffUrl}?${params.toString()}`
+    }
+
+    const text = liffUrl
+        ? `受付方法を選択してください。\n\nフォーム入力: ${liffUrl}\n\nまたは「チャットで修理依頼」と送信してください。`
+        : '「チャットで修理依頼」と送信するとチャットで受付できます。'
+
+    await pushMessage(userId, text)
 }
 
 async function showMethodChoice(replyToken: string, state: ConversationState) {
