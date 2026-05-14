@@ -18,6 +18,7 @@ export default function RepairFormPage() {
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
     const [submitted, setSubmitted] = useState(false)
+    const [requestNo, setRequestNo] = useState<number | null>(null)
     const [error, setError] = useState('')
     const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -103,6 +104,8 @@ export default function RepairFormPage() {
                 const errData = await res.json()
                 throw new Error(errData.error || '送信に失敗しました')
             }
+            const result = await res.json()
+            setRequestNo(result.request_no || null)
             setSubmitted(true)
         } catch (err: any) {
             setError(err.message || '送信に失敗しました')
@@ -136,9 +139,13 @@ export default function RepairFormPage() {
                 <div style={styles.card}>
                     <div style={styles.successIcon}>&#10004;</div>
                     <h2 style={styles.successTitle}>送信完了</h2>
+                    {requestNo && (
+                        <p style={styles.requestNo}>受付番号: #{requestNo}</p>
+                    )}
                     <p style={styles.successText}>
                         修理依頼を受け付けました。<br />
-                        担当者より折り返しご連絡いたします。
+                        担当者より折り返しご連絡いたします。<br />
+                        LINEにも確認メッセージをお送りしました。
                     </p>
                     <button onClick={handleClose} style={styles.closeButton}>
                         閉じる
@@ -470,6 +477,13 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 700,
         color: '#111',
         margin: 0,
+    },
+    requestNo: {
+        textAlign: 'center' as const,
+        fontSize: '18px',
+        fontWeight: 700,
+        color: '#1e40af',
+        margin: '8px 0 0',
     },
     successText: {
         textAlign: 'center' as const,

@@ -82,7 +82,17 @@ export async function POST(request: Request) {
             try {
                 await sendRepairConfirmation(line_user_id, data.request_no, symptom, model)
             } catch (e) {
-                console.error('LIFF受付確認送信エラー:', e)
+                console.error('LIFF受付確認Flex送信エラー:', e)
+                try {
+                    await pushMessage(line_user_id,
+                        `修理依頼を受け付けました（受付番号: #${data.request_no}）\n\n` +
+                        `お名前: ${customer_name}\n` +
+                        (model ? `型式: ${model}\n` : '') +
+                        `症状: ${symptom}\n\n` +
+                        '担当者より折り返しご連絡いたします。')
+                } catch (e2) {
+                    console.error('LIFFフォールバックpush送信エラー:', e2)
+                }
             }
         }
 
