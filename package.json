@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@line/liff": "^2.29.0",
     "@supabase/supabase-js": "^2.83.0",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",

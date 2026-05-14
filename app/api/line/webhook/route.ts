@@ -6,6 +6,7 @@ import {
     getProfile,
     getContentUrl,
     sendRepairConfirmation,
+    sendRepairMethodChoice,
 } from '@/lib/lineClient'
 
 export const runtime = 'nodejs'
@@ -17,6 +18,7 @@ function getSupabase() {
     if (supabaseServiceKey) {
         return createClient(supabaseUrl, supabaseServiceKey)
     }
+    console.warn('SUPABASE_SERVICE_ROLE_KEY is not set – falling back to anon key. INSERT may be blocked by RLS.')
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhkaXF5c2xub2tzY2djdW9ha2xlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTQyMDMsImV4cCI6MjA3Nzk3MDIwM30.aGgaWQvsNhlnh6GO7wAgbTcL9JFpvT2xKnUQMZcnZuk'
     return createClient(supabaseUrl, anonKey)
@@ -74,19 +76,27 @@ function isRepairTrigger(text: string): boolean {
 export async function POST(request: Request) {
     try {
         const bodyText = await request.text()
+        console.log('LINE Webhook received:', bodyText.substring(0, 500))
 
         const signature = request.headers.get('x-line-signature') || ''
+        console.log('LINE_CHANNEL_SECRET set:', !!process.env.LINE_CHANNEL_SECRET)
+        console.log('LINE_CHANNEL_ACCESS_TOKEN set:', !!process.env.LINE_CHANNEL_ACCESS_TOKEN)
+
         if (process.env.LINE_CHANNEL_SECRET) {
             const valid = await verifySignature(bodyText, signature)
             if (!valid) {
+                console.error('LINE Webhook: signature verification failed')
                 return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
             }
+            console.log('LINE Webhook: signature verified OK')
         }
 
         const body = JSON.parse(bodyText)
         const events: LineEvent[] = body.events || []
+        console.log('LINE Webhook events count:', events.length)
 
         for (const event of events) {
+            console.log('LINE event type:', event.type, 'message type:', event.message?.type, 'text:', event.message?.text)
             if (event.type !== 'message' || !event.source.userId) continue
             await handleMessage(event)
         }
@@ -121,10 +131,13 @@ async function handleMessage(event: LineEvent) {
 
     switch (state.step) {
         case 'idle':
-            if (isRepairTrigger(text)) {
+            if (text === 'チャットで修理依頼') {
                 conversations.set(userId, { step: 'waiting_name' })
                 await replyMessage(event.replyToken,
                     '修理受付を開始します。\n\nまず、お名前（会社名）をお送りください。')
+            } else if (isRepairTrigger(text)) {
+                const liffUrl = process.env.NEXT_PUBLIC_LIFF_URL || `https://liff.line.me/${process.env.NEXT_PUBLIC_LIFF_ID || ''}`
+                await sendRepairMethodChoice(event.replyToken, liffUrl)
             } else {
                 await replyMessage(event.replyToken,
                     'お問い合わせありがとうございます。\n\n修理のご依頼は「修理依頼」とお送りください。\n\n機械の故障・異常・エラー等のキーワードでも受付を開始できます。')
@@ -149,11 +162,15 @@ async function handleMessage(event: LineEvent) {
 
         case 'waiting_symptom':
             state.symptom = text
-            state.step = 'waiting_more'
-            conversations.set(userId, state)
             state.photo_urls = []
             state.video_urls = []
-            await registerRepairRequest(event, state, userId)
+            const success = await registerRepairRequest(event, state, userId)
+            if (success) {
+                state.step = 'waiting_more'
+            } else {
+                state.step = 'waiting_symptom'
+            }
+            conversations.set(userId, state)
             break
 
         case 'waiting_more':
@@ -203,11 +220,15 @@ async function handleMedia(event: LineEvent, state: ConversationState, userId: s
     }
 }
 
-async function registerRepairRequest(event: LineEvent, state: ConversationState, userId: string) {
+async function registerRepairRequest(event: LineEvent, state: ConversationState, userId: string): Promise<boolean> {
     const sb = getSupabase()
 
-    // LINEプロフィール取得
-    const profile = await getProfile(userId)
+    let profile: Awaited<ReturnType<typeof getProfile>> = null
+    try {
+        profile = await getProfile(userId)
+    } catch (e) {
+        console.error('LINEプロフィール取得エラー:', e)
+    }
 
     const payload = {
         received_via: 'line',
@@ -223,23 +244,32 @@ async function registerRepairRequest(event: LineEvent, state: ConversationState,
         notes: `LINE受付 (表示名: ${profile?.displayName || '不明'})`,
     }
 
+    console.log('repair_requests INSERT payload:', JSON.stringify(payload))
+
     const { data, error } = await sb.from('repair_requests').insert(payload).select('id, request_no').single()
 
-    if (error) {
-        console.error('修理案件登録エラー:', error)
+    if (error || !data) {
+        console.error('修理案件登録エラー:', JSON.stringify({
+            code: error?.code,
+            message: error?.message,
+            details: error?.details,
+            hint: error?.hint,
+            data,
+        }))
         await replyMessage(event.replyToken,
-            '申し訳ございません、受付処理中にエラーが発生しました。お手数ですがお電話にてご連絡ください。')
-        conversations.delete(userId)
-        return
+            '申し訳ございません、受付処理中にエラーが発生しました。お手数ですがお電話にてご連絡ください。\n\nもう一度症状をお送りいただくとリトライできます。')
+        return false
     }
 
     state.repair_request_id = data.id
-    conversations.set(userId, state)
 
-    // 顧客に受付完了を通知
-    await sendRepairConfirmation(userId, data.request_no, state.symptom || '', state.model)
+    try {
+        await sendRepairConfirmation(userId, data.request_no, state.symptom || '', state.model)
+    } catch (e) {
+        console.error('受付確認Flex送信エラー:', e)
+    }
 
-    // 追加があれば促す（replyTokenは1回しか使えないので、sendRepairConfirmationはpushで送信済）
     await replyMessage(event.replyToken,
         `修理受付が完了しました（受付番号: #${data.request_no}）\n\n写真や動画があればお送りください。\n完了の場合は「完了」とお送りください。`)
+    return true
 }

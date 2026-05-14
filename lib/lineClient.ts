@@ -46,7 +46,7 @@ export async function verifySignature(body: string, signature: string): Promise<
 
 /** テキストメッセージを返信 */
 export async function replyMessage(replyToken: string, text: string) {
-    await fetch(`${LINE_API_BASE}/message/reply`, {
+    const res = await fetch(`${LINE_API_BASE}/message/reply`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
@@ -54,11 +54,15 @@ export async function replyMessage(replyToken: string, text: string) {
             messages: [{ type: 'text', text }],
         }),
     })
+    if (!res.ok) {
+        const errBody = await res.text()
+        console.error('LINE replyMessage failed:', res.status, errBody)
+    }
 }
 
 /** テキストメッセージをプッシュ送信 */
 export async function pushMessage(userId: string, text: string) {
-    await fetch(`${LINE_API_BASE}/message/push`, {
+    const res = await fetch(`${LINE_API_BASE}/message/push`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
@@ -66,15 +70,23 @@ export async function pushMessage(userId: string, text: string) {
             messages: [{ type: 'text', text }],
         }),
     })
+    if (!res.ok) {
+        const errBody = await res.text()
+        console.error('LINE pushMessage failed:', res.status, errBody)
+    }
 }
 
 /** 複数メッセージをプッシュ送信（Flex Message等対応） */
 export async function pushMessages(userId: string, messages: Record<string, unknown>[]) {
-    await fetch(`${LINE_API_BASE}/message/push`, {
+    const res = await fetch(`${LINE_API_BASE}/message/push`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ to: userId, messages }),
     })
+    if (!res.ok) {
+        const errBody = await res.text()
+        console.error('LINE pushMessages failed:', res.status, errBody)
+    }
 }
 
 /** ユーザープロフィール取得 */
@@ -181,6 +193,126 @@ export async function sendRepairConfirmation(
     }
 
     await pushMessages(userId, [flexMessage])
+}
+
+/** 修理受付方法の選択ボタンを送信（チャット or フォーム） */
+export async function sendRepairMethodChoice(replyToken: string, liffUrl: string) {
+    const flexMessage = {
+        type: 'flex',
+        altText: '修理依頼の受付方法を選択してください',
+        contents: {
+            type: 'bubble',
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                backgroundColor: '#1e40af',
+                paddingAll: '16px',
+                contents: [
+                    {
+                        type: 'text',
+                        text: '修理依頼受付',
+                        color: '#ffffff',
+                        weight: 'bold',
+                        size: 'lg',
+                    },
+                    {
+                        type: 'text',
+                        text: '受付方法をお選びください',
+                        color: 'rgba(255,255,255,0.8)',
+                        size: 'sm',
+                        margin: 'sm',
+                    },
+                ],
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                paddingAll: '20px',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'text',
+                                text: '📋 フォームで入力',
+                                weight: 'bold',
+                                size: 'md',
+                            },
+                            {
+                                type: 'text',
+                                text: '入力フォームに必要事項を記入して送信します。写真添付も可能です。',
+                                size: 'xs',
+                                color: '#8c8c8c',
+                                wrap: true,
+                            },
+                        ],
+                    },
+                    {
+                        type: 'button',
+                        action: {
+                            type: 'uri',
+                            label: 'フォームで入力する',
+                            uri: liffUrl,
+                        },
+                        style: 'primary',
+                        color: '#1e40af',
+                        height: 'sm',
+                    },
+                    {
+                        type: 'separator',
+                        margin: 'lg',
+                    },
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        margin: 'lg',
+                        contents: [
+                            {
+                                type: 'text',
+                                text: '💬 チャットで回答',
+                                weight: 'bold',
+                                size: 'md',
+                            },
+                            {
+                                type: 'text',
+                                text: '質問に順番にお答えいただく形式です。',
+                                size: 'xs',
+                                color: '#8c8c8c',
+                                wrap: true,
+                            },
+                        ],
+                    },
+                    {
+                        type: 'button',
+                        action: {
+                            type: 'message',
+                            label: 'チャットで回答する',
+                            text: 'チャットで修理依頼',
+                        },
+                        style: 'secondary',
+                        height: 'sm',
+                    },
+                ],
+            },
+        },
+    }
+
+    const res = await fetch(`${LINE_API_BASE}/message/reply`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+            replyToken,
+            messages: [flexMessage],
+        }),
+    })
+    if (!res.ok) {
+        const errBody = await res.text()
+        console.error('LINE sendRepairMethodChoice failed:', res.status, errBody)
+    }
 }
 
 /** 担当者へ新規修理受付を通知（Flex Message） */
