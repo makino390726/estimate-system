@@ -312,6 +312,7 @@ export async function sendRepairMethodChoice(replyToken: string, liffUrl: string
     if (!res.ok) {
         const errBody = await res.text()
         console.error('LINE sendRepairMethodChoice failed:', res.status, errBody)
+        throw new Error(`sendRepairMethodChoice failed: ${res.status} ${errBody}`)
     }
 }
 

@@ -136,8 +136,24 @@ async function handleMessage(event: LineEvent) {
                 await replyMessage(event.replyToken,
                     '修理受付を開始します。\n\nまず、お名前（会社名）をお送りください。')
             } else if (isRepairTrigger(text)) {
-                const liffUrl = process.env.NEXT_PUBLIC_LIFF_URL || `https://liff.line.me/${process.env.NEXT_PUBLIC_LIFF_ID || ''}`
-                await sendRepairMethodChoice(event.replyToken, liffUrl)
+                const liffId = process.env.NEXT_PUBLIC_LIFF_ID || ''
+                const liffUrl = process.env.NEXT_PUBLIC_LIFF_URL || (liffId ? `https://liff.line.me/${liffId}` : '')
+                console.log('LIFF config:', { liffId, liffUrl })
+                if (liffUrl) {
+                    try {
+                        await sendRepairMethodChoice(event.replyToken, liffUrl)
+                    } catch (e) {
+                        console.error('sendRepairMethodChoice error:', e)
+                        conversations.set(userId, { step: 'waiting_name' })
+                        await replyMessage(event.replyToken,
+                            '修理受付を開始します。\n\nまず、お名前（会社名）をお送りください。')
+                    }
+                } else {
+                    console.warn('LIFF URL not configured, falling back to chat mode')
+                    conversations.set(userId, { step: 'waiting_name' })
+                    await replyMessage(event.replyToken,
+                        '修理受付を開始します。\n\nまず、お名前（会社名）をお送りください。')
+                }
             } else {
                 await replyMessage(event.replyToken,
                     'お問い合わせありがとうございます。\n\n修理のご依頼は「修理依頼」とお送りください。\n\n機械の故障・異常・エラー等のキーワードでも受付を開始できます。')
