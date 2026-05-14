@@ -113,8 +113,29 @@ body {
 /* マスタ選択メニューのカードレイアウト */
 .selector-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 24px;
+}
+
+.badge-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 11px;
+  line-height: 1;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
 }
 
 .selector-card {
@@ -209,6 +230,7 @@ body {
 
   .selector-card {
     padding: 16px;
+    grid-column: span 1 !important;
   }
 
   .selector-card h2 {

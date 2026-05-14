@@ -24,6 +24,8 @@ export default function RepairFormPage() {
 
     const [form, setForm] = useState({
         customer_name: '',
+        category: '',
+        custom_category: '',
         model: '',
         symptom: '',
         symptom_category: '',
@@ -49,7 +51,15 @@ export default function RepairFormPage() {
                 }
                 liffMod.getProfile().then(p => {
                     setProfile(p)
-                    setForm(prev => ({ ...prev, customer_name: p.displayName }))
+                    const urlParams = new URLSearchParams(window.location.search)
+                    const preCategory = urlParams.get('category') || ''
+                    const preSymptom = urlParams.get('symptom') || ''
+                    setForm(prev => ({
+                        ...prev,
+                        customer_name: p.displayName,
+                        ...(preCategory ? { category: preCategory } : {}),
+                        ...(preSymptom ? { symptom: preSymptom } : {}),
+                    }))
                     setLoading(false)
                 })
             }).catch((e: Error) => {
@@ -86,12 +96,21 @@ export default function RepairFormPage() {
             setError('お名前と症状は必須です')
             return
         }
+        if (!form.category) {
+            setError('機械の種別を選択してください')
+            return
+        }
         setSubmitting(true)
         setError('')
 
         try {
+            const resolvedCategory = form.category === 'その他' && form.custom_category
+                ? form.custom_category
+                : form.category
+            const { custom_category, ...formData } = form
             const body = {
-                ...form,
+                ...formData,
+                category: resolvedCategory,
                 line_user_id: profile?.userId || '',
                 line_display_name: profile?.displayName || '',
             }
@@ -155,6 +174,10 @@ export default function RepairFormPage() {
         )
     }
 
+    const MACHINE_CATEGORIES = [
+        'たばこ乾燥機', 'ハウス暖房機', '光合成促進装置', '冷蔵庫', '食品乾燥機', 'その他',
+    ]
+
     const SYMPTOM_CATEGORIES = [
         '', '火がつかない', '温度が上がらない', '異音がする',
         '水漏れ', '煙が出る', 'エラー表示', '動作しない', 'その他',
@@ -183,6 +206,33 @@ export default function RepairFormPage() {
                             style={styles.input}
                             required
                         />
+                    </div>
+
+                    <div style={styles.field}>
+                        <label style={styles.label}>
+                            機械の種別<span style={styles.required}>*</span>
+                        </label>
+                        <select
+                            value={form.category}
+                            onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
+                            style={styles.select}
+                            required
+                        >
+                            <option value="">選択してください</option>
+                            {MACHINE_CATEGORIES.map(c => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+                        {form.category === 'その他' && (
+                            <input
+                                type="text"
+                                value={form.custom_category}
+                                onChange={e => setForm(prev => ({ ...prev, custom_category: e.target.value }))}
+                                placeholder="種別を入力してください"
+                                style={{ ...styles.input, marginTop: '8px' }}
+                                required
+                            />
+                        )}
                     </div>
 
                     <div style={styles.field}>

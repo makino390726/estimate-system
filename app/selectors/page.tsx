@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 import {
   FiFileText,
   FiArchive,
@@ -15,7 +17,28 @@ import {
   FiActivity,
 } from 'react-icons/fi'
 
+function useNewRepairCount() {
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    const fetch = async () => {
+      const { count: c } = await supabase
+        .from('repair_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'received')
+      setCount(c ?? 0)
+    }
+    fetch()
+    const interval = setInterval(fetch, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  return count
+}
+
 export default function MasterSelectorPage() {
+  const newRepairCount = useNewRepairCount()
+
   return (
     <div className="min-h-screen p-6 sm:p-10">
       <div className="max-w-7xl mx-auto">
@@ -108,12 +131,17 @@ export default function MasterSelectorPage() {
           </div>
 
           {/* 修理案件管理 */}
-          <div className="selector-card">
+          <div className="selector-card" style={{ gridColumn: 'span 2' }}>
             <div className="selector-card-header">
               <FiActivity className="icon" />
-              <h2>修理案件管理</h2>
+              <h2 style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                修理案件管理
+                {newRepairCount > 0 && (
+                  <span className="badge-new">{newRepairCount}</span>
+                )}
+              </h2>
             </div>
-            <p>修理受付からステータス管理、修理完了・請求まで案件のライフサイクルを一元管理します。</p>
+            <p>修理受付からステータス管理、修理完了・請求まで案件のライフサイクルを一元管理します。LINE連携による修理依頼の自動受付にも対応しています。</p>
             <div className="selector-card-buttons">
               <Link href="/repair-requests" className="selector-button primary">
                 修理案件管理
@@ -123,19 +151,6 @@ export default function MasterSelectorPage() {
               </Link>
               <Link href="/repair-dashboard" className="selector-button primary">
                 故障分析
-              </Link>
-            </div>
-          </div>
-
-          <div className="selector-card">
-            <div className="selector-card-header">
-              <FiUsers className="icon" />
-              <h2>顧客登録情報</h2>
-            </div>
-            <p>機種ごとに異なる列を吸収しながら、顧客リストを入力・検索・Excel取込できます。</p>
-            <div className="selector-card-buttons">
-              <Link href="/customer-register" className="selector-button primary">
-                顧客登録情報
               </Link>
             </div>
           </div>
@@ -187,6 +202,20 @@ export default function MasterSelectorPage() {
               </Link>
               <Link href="/products/price_import" className="selector-button primary">
                 マスタ取込
+              </Link>
+            </div>
+          </div>
+
+          {/* 顧客登録情報 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiUsers className="icon" />
+              <h2>顧客登録情報</h2>
+            </div>
+            <p>機種ごとに異なる列を吸収しながら、顧客リストを入力・検索・Excel取込できます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/customer-register" className="selector-button primary">
+                顧客登録情報
               </Link>
             </div>
           </div>

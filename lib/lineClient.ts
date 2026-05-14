@@ -60,6 +60,41 @@ export async function replyMessage(replyToken: string, text: string) {
     }
 }
 
+/** Quick Reply 付きテキストメッセージを返信 */
+export async function replyWithQuickReply(
+    replyToken: string,
+    text: string,
+    items: { label: string; text: string }[],
+) {
+    const res = await fetch(`${LINE_API_BASE}/message/reply`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+            replyToken,
+            messages: [
+                {
+                    type: 'text',
+                    text,
+                    quickReply: {
+                        items: items.map(item => ({
+                            type: 'action',
+                            action: {
+                                type: 'message',
+                                label: item.label,
+                                text: item.text,
+                            },
+                        })),
+                    },
+                },
+            ],
+        }),
+    })
+    if (!res.ok) {
+        const errBody = await res.text()
+        console.error('LINE replyWithQuickReply failed:', res.status, errBody)
+    }
+}
+
 /** テキストメッセージをプッシュ送信 */
 export async function pushMessage(userId: string, text: string) {
     const res = await fetch(`${LINE_API_BASE}/message/push`, {
@@ -313,6 +348,124 @@ export async function sendRepairMethodChoice(replyToken: string, liffUrl: string
         const errBody = await res.text()
         console.error('LINE sendRepairMethodChoice failed:', res.status, errBody)
         throw new Error(`sendRepairMethodChoice failed: ${res.status} ${errBody}`)
+    }
+}
+
+/** NotebookLM 検索リンク＋スキップボタンを送信 */
+export async function sendNotebookLMSearch(
+    replyToken: string,
+    category: string,
+    symptom: string,
+    notebookUrl: string,
+) {
+    const flexMessage = {
+        type: 'flex',
+        altText: '状況検索 - NotebookLMで類似事例を確認できます',
+        contents: {
+            type: 'bubble',
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                backgroundColor: '#1a472a',
+                paddingAll: '16px',
+                contents: [
+                    {
+                        type: 'text',
+                        text: '状況検索',
+                        color: '#ffffff',
+                        weight: 'bold',
+                        size: 'lg',
+                    },
+                    {
+                        type: 'text',
+                        text: '類似事例をNotebookLMで検索できます',
+                        color: '#ffffffCC',
+                        size: 'xs',
+                        margin: 'sm',
+                    },
+                ],
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                paddingAll: '20px',
+                contents: [
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        backgroundColor: '#f0f4f0',
+                        cornerRadius: '8px',
+                        paddingAll: '12px',
+                        contents: [
+                            {
+                                type: 'text',
+                                text: `種別: ${category}`,
+                                size: 'sm',
+                                color: '#333333',
+                                weight: 'bold',
+                            },
+                            {
+                                type: 'text',
+                                text: `症状: ${symptom}`,
+                                size: 'sm',
+                                color: '#333333',
+                                wrap: true,
+                            },
+                        ],
+                    },
+                    {
+                        type: 'text',
+                        text: '下のボタンでNotebookLMを開き、上記の情報をチャット欄にペーストして検索できます。',
+                        size: 'xs',
+                        color: '#8c8c8c',
+                        wrap: true,
+                        margin: 'md',
+                    },
+                    {
+                        type: 'button',
+                        action: {
+                            type: 'uri',
+                            label: 'NotebookLMで検索する',
+                            uri: notebookUrl,
+                        },
+                        style: 'primary',
+                        color: '#1a472a',
+                        height: 'sm',
+                    },
+                    {
+                        type: 'separator',
+                        margin: 'lg',
+                    },
+                    {
+                        type: 'button',
+                        action: {
+                            type: 'message',
+                            label: 'スキップして次へ',
+                            text: 'スキップ',
+                        },
+                        style: 'secondary',
+                        height: 'sm',
+                        margin: 'md',
+                    },
+                ],
+            },
+        },
+    }
+
+    const res = await fetch(`${LINE_API_BASE}/message/reply`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+            replyToken,
+            messages: [flexMessage],
+        }),
+    })
+    if (!res.ok) {
+        const errBody = await res.text()
+        console.error('LINE sendNotebookLMSearch failed:', res.status, errBody)
+        throw new Error(`sendNotebookLMSearch failed: ${res.status} ${errBody}`)
     }
 }
 

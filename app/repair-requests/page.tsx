@@ -90,7 +90,7 @@ const SYMPTOM_CATEGORIES = [
     '部品破損', '点検依頼', 'その他',
 ]
 
-const CATEGORY_OPTIONS = ['食品乾燥機', '暖房機', 'その他']
+const CATEGORY_OPTIONS = ['たばこ乾燥機', 'ハウス暖房機', '光合成促進装置', '冷蔵庫', '食品乾燥機', 'その他']
 
 const BRANCHES = [
     { id: 'branch_1', name: '南九州営業所' },
@@ -207,6 +207,13 @@ export default function RepairRequestsPage() {
     // Parts form
     const [newPart, setNewPart] = useState({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
 
+    // Customer sync dialog
+    const [customerSyncDialog, setCustomerSyncDialog] = useState<{
+        mode: 'new' | 'exists'
+        customerData: Record<string, unknown>
+        existingCustomers: { id: string; customer_name: string; address: string | null; phone: string | null; mobile: string | null; model: string | null; serial_no: string | null }[]
+    } | null>(null)
+
     const fetchStaffs = useCallback(async () => {
         const { data } = await supabase.from('staffs').select('id, name').order('name')
         setStaffs((data || []).map(s => ({ id: String(s.id), name: s.name || '' })))
@@ -244,7 +251,7 @@ export default function RepairRequestsPage() {
         if (!kw) return rows
         return rows.filter(r => {
             const vals = [
-                r.customer_name, r.customer_address || '', r.model || '',
+                r.customer_name, r.customer_address || '', r.category || '', r.model || '',
                 r.serial_no || '', r.symptom, r.assigned_staff || '',
                 r.treatment_details || '', String(r.request_no),
             ]
@@ -308,6 +315,9 @@ export default function RepairRequestsPage() {
                 if (error) throw error
                 setMessage('修理案件を登録しました')
             }
+
+            await syncCustomerRegister(formData)
+
             resetForm()
             await fetchRequests()
         } catch (e: any) {
@@ -315,6 +325,75 @@ export default function RepairRequestsPage() {
         } finally {
             setSaving(false)
         }
+    }
+
+    const syncCustomerRegister = async (fd: FormState) => {
+        const name = fd.customer_name.trim()
+        if (!name) return
+
+        const hasInfo = fd.customer_address.trim() || fd.customer_phone.trim() || fd.customer_mobile.trim()
+            || fd.model.trim() || fd.serial_no.trim()
+        if (!hasInfo) return
+
+        try {
+            const { data: existing } = await supabase
+                .from('customer_register_rows')
+                .select('id, customer_name, address, phone, mobile, model, serial_no')
+                .eq('customer_name', name)
+
+            const customerPayload: Record<string, unknown> = {
+                customer_name: name,
+                address: toNullable(fd.customer_address),
+                phone: toNullable(fd.customer_phone),
+                mobile: toNullable(fd.customer_mobile),
+                model: toNullable(fd.model),
+                serial_no: toNullable(fd.serial_no),
+                sheet_name: '修理受付登録',
+                sheet_type: fd.category || 'unknown',
+                staff_name: toNullable(fd.assigned_staff),
+            }
+
+            if (existing && existing.length > 0) {
+                setCustomerSyncDialog({
+                    mode: 'exists',
+                    customerData: customerPayload,
+                    existingCustomers: existing as any,
+                })
+            } else {
+                setCustomerSyncDialog({
+                    mode: 'new',
+                    customerData: customerPayload,
+                    existingCustomers: [],
+                })
+            }
+        } catch (e) {
+            console.error('顧客情報同期チェックエラー:', e)
+        }
+    }
+
+    const handleCustomerSyncConfirm = async (action: 'insert' | 'update', targetId?: string) => {
+        if (!customerSyncDialog) return
+        try {
+            if (action === 'insert') {
+                const { error } = await supabase.from('customer_register_rows').insert(customerSyncDialog.customerData)
+                if (error) throw error
+                setMessage(prev => (prev ? prev + ' / ' : '') + '顧客情報を新規登録しました')
+            } else if (action === 'update' && targetId) {
+                const updateData = { ...customerSyncDialog.customerData }
+                delete updateData.sheet_name
+                delete updateData.sheet_type
+                const { error } = await supabase.from('customer_register_rows').update(updateData).eq('id', targetId)
+                if (error) throw error
+                setMessage(prev => (prev ? prev + ' / ' : '') + '顧客登録情報を更新しました')
+            }
+        } catch (e: any) {
+            setMessage(prev => (prev ? prev + ' / ' : '') + `顧客情報の同期に失敗: ${e.message}`)
+        }
+        setCustomerSyncDialog(null)
+    }
+
+    const handleCustomerSyncCancel = () => {
+        setCustomerSyncDialog(null)
     }
 
     const handleStatusChange = async (id: string, newStatus: string) => {
@@ -775,7 +854,7 @@ export default function RepairRequestsPage() {
                     </div>
 
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
                             <thead>
                                 <tr>
                                     <th style={thStyle}>No.</th>
@@ -784,6 +863,7 @@ export default function RepairRequestsPage() {
                                     <th style={thStyle}>受付日時</th>
                                     <th style={thStyle}>経路</th>
                                     <th style={thStyle}>顧客名</th>
+                                    <th style={thStyle}>カテゴリ</th>
                                     <th style={thStyle}>型式</th>
                                     <th style={thStyle}>症状</th>
                                     <th style={thStyle}>担当者</th>
@@ -793,9 +873,9 @@ export default function RepairRequestsPage() {
                             </thead>
                             <tbody>
                                 {loading ? (
-                                    <tr><td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>読み込み中...</td></tr>
+                                    <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>読み込み中...</td></tr>
                                 ) : filteredRows.length === 0 ? (
-                                    <tr><td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>該当データがありません</td></tr>
+                                    <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>該当データがありません</td></tr>
                                 ) : filteredRows.map(row => {
                                     const sc = STATUS_CONFIG[row.status] || STATUS_CONFIG.received
                                     const pc = PRIORITY_CONFIG[row.priority] || PRIORITY_CONFIG.normal
@@ -810,6 +890,7 @@ export default function RepairRequestsPage() {
                                             </td>
                                             <td style={tdStyle}>{via}</td>
                                             <td style={tdStyle}>{row.customer_name}</td>
+                                            <td style={tdStyle}>{row.category || '-'}</td>
                                             <td style={tdStyle}>{row.model || '-'}</td>
                                             <td style={{ ...tdStyle, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {row.symptom}
@@ -1043,6 +1124,84 @@ export default function RepairRequestsPage() {
                                 <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#94a3b8' }}>備考</h3>
                                 <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{detailRequest.notes}</div>
                             </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Customer Sync Dialog */}
+            {customerSyncDialog && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                    <div style={{ ...panelStyle, maxWidth: 560, width: '100%', padding: 28 }}>
+                        <h2 style={{ margin: '0 0 16px 0', fontSize: 20, color: '#f8fafc' }}>
+                            {customerSyncDialog.mode === 'new' ? '顧客情報の新規登録' : '同名の顧客が見つかりました'}
+                        </h2>
+
+                        {customerSyncDialog.mode === 'new' ? (
+                            <>
+                                <p style={{ fontSize: 14, color: '#cbd5e1', lineHeight: 1.6, margin: '0 0 12px 0' }}>
+                                    以下の顧客情報を顧客登録情報に追加しますか？
+                                </p>
+                                <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155', marginBottom: 16, fontSize: 13, lineHeight: 1.8, color: '#e2e8f0' }}>
+                                    <div><strong>顧客名:</strong> {String(customerSyncDialog.customerData.customer_name || '')}</div>
+                                    {customerSyncDialog.customerData.address ? <div><strong>住所:</strong> {String(customerSyncDialog.customerData.address)}</div> : null}
+                                    {customerSyncDialog.customerData.phone ? <div><strong>電話:</strong> {String(customerSyncDialog.customerData.phone)}</div> : null}
+                                    {customerSyncDialog.customerData.mobile ? <div><strong>携帯:</strong> {String(customerSyncDialog.customerData.mobile)}</div> : null}
+                                    {customerSyncDialog.customerData.model ? <div><strong>型式:</strong> {String(customerSyncDialog.customerData.model)}</div> : null}
+                                    {customerSyncDialog.customerData.serial_no ? <div><strong>製造番号:</strong> {String(customerSyncDialog.customerData.serial_no)}</div> : null}
+                                </div>
+                                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                                    <button onClick={handleCustomerSyncCancel} className="btn-3d" style={{ padding: '10px 20px', background: '#475569', border: '1px solid #64748b' }}>
+                                        登録しない
+                                    </button>
+                                    <button onClick={() => handleCustomerSyncConfirm('insert')} className="btn-3d btn-primary" style={{ padding: '10px 20px' }}>
+                                        新規登録する
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <p style={{ fontSize: 14, color: '#cbd5e1', lineHeight: 1.6, margin: '0 0 12px 0' }}>
+                                    「{String(customerSyncDialog.customerData.customer_name)}」と同名の顧客が{customerSyncDialog.existingCustomers.length}件あります。<br />
+                                    既存の情報を更新するか、新規に登録するか選択してください。
+                                </p>
+
+                                <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
+                                    {customerSyncDialog.existingCustomers.map(c => (
+                                        <div key={c.id} style={{
+                                            background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155',
+                                            marginBottom: 8, fontSize: 13, color: '#e2e8f0', lineHeight: 1.6,
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 8 }}>
+                                                <div>
+                                                    <div><strong>{c.customer_name}</strong></div>
+                                                    {c.address && <div style={{ color: '#94a3b8', fontSize: 12 }}>住所: {c.address}</div>}
+                                                    {c.phone && <div style={{ color: '#94a3b8', fontSize: 12 }}>TEL: {c.phone}</div>}
+                                                    {c.mobile && <div style={{ color: '#94a3b8', fontSize: 12 }}>携帯: {c.mobile}</div>}
+                                                    {c.model && <div style={{ color: '#94a3b8', fontSize: 12 }}>型式: {c.model}</div>}
+                                                    {c.serial_no && <div style={{ color: '#94a3b8', fontSize: 12 }}>製造番号: {c.serial_no}</div>}
+                                                </div>
+                                                <button
+                                                    onClick={() => handleCustomerSyncConfirm('update', c.id)}
+                                                    className="btn-3d"
+                                                    style={{ padding: '6px 14px', fontSize: 12, background: '#0891b2', border: '1px solid #0e7490', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                                >
+                                                    この顧客を更新
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                    <button onClick={handleCustomerSyncCancel} className="btn-3d" style={{ padding: '10px 20px', background: '#475569', border: '1px solid #64748b' }}>
+                                        登録しない
+                                    </button>
+                                    <button onClick={() => handleCustomerSyncConfirm('insert')} className="btn-3d" style={{ padding: '10px 20px', background: '#16a34a', border: '1px solid #15803d' }}>
+                                        別の顧客として新規登録
+                                    </button>
+                                </div>
+                            </>
                         )}
                     </div>
                 </div>

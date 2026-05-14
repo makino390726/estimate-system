@@ -20,6 +20,7 @@ export async function POST(request: Request) {
         const body = await request.json()
         const {
             customer_name,
+            category,
             model,
             symptom,
             symptom_category,
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
             priority: 'normal',
             status: 'received',
             customer_name,
+            category: category || null,
             symptom,
             symptom_category: symptom_category || null,
             model: model || null,
