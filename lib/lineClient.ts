@@ -218,7 +218,7 @@ export async function sendRepairMethodChoice(replyToken: string, liffUrl: string
                     {
                         type: 'text',
                         text: '受付方法をお選びください',
-                        color: 'rgba(255,255,255,0.8)',
+                        color: '#ffffffCC',
                         size: 'sm',
                         margin: 'sm',
                     },
