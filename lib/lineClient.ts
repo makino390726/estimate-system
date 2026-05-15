@@ -230,111 +230,119 @@ export async function sendRepairConfirmation(
     await pushMessages(userId, [flexMessage])
 }
 
-/** 修理受付方法の選択ボタンを送信（チャット or フォーム） */
-export async function sendRepairMethodChoice(replyToken: string, liffUrl: string) {
-    const flexMessage = {
-        type: 'flex',
+/** 修理依頼「フォーム／チャット」選択用 Flex（reply / push 共通） */
+function buildRepairMethodChoiceFlex(liffUrl: string) {
+    return {
+        type: 'flex' as const,
         altText: '修理依頼の受付方法を選択してください',
         contents: {
-            type: 'bubble',
+            type: 'bubble' as const,
             header: {
-                type: 'box',
-                layout: 'vertical',
+                type: 'box' as const,
+                layout: 'vertical' as const,
                 backgroundColor: '#1e40af',
                 paddingAll: '16px',
                 contents: [
                     {
-                        type: 'text',
+                        type: 'text' as const,
                         text: '修理依頼受付',
                         color: '#ffffff',
-                        weight: 'bold',
-                        size: 'lg',
+                        weight: 'bold' as const,
+                        size: 'lg' as const,
                     },
                     {
-                        type: 'text',
+                        type: 'text' as const,
                         text: '受付方法をお選びください',
                         color: '#ffffffCC',
-                        size: 'sm',
-                        margin: 'sm',
+                        size: 'sm' as const,
+                        margin: 'sm' as const,
                     },
                 ],
             },
             body: {
-                type: 'box',
-                layout: 'vertical',
-                spacing: 'md',
+                type: 'box' as const,
+                layout: 'vertical' as const,
+                spacing: 'md' as const,
                 paddingAll: '20px',
+                backgroundColor: '#ffffff',
                 contents: [
                     {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'sm',
+                        type: 'box' as const,
+                        layout: 'vertical' as const,
+                        spacing: 'sm' as const,
                         contents: [
                             {
-                                type: 'text',
-                                text: '📋 フォームで入力',
-                                weight: 'bold',
-                                size: 'md',
+                                type: 'text' as const,
+                                text: 'フォームで入力',
+                                weight: 'bold' as const,
+                                size: 'md' as const,
+                                color: '#111111',
                             },
                             {
-                                type: 'text',
+                                type: 'text' as const,
                                 text: '入力フォームに必要事項を記入して送信します。写真添付も可能です。',
-                                size: 'xs',
+                                size: 'xs' as const,
                                 color: '#8c8c8c',
                                 wrap: true,
                             },
                         ],
                     },
                     {
-                        type: 'button',
+                        type: 'button' as const,
                         action: {
-                            type: 'uri',
+                            type: 'uri' as const,
                             label: 'フォームで入力する',
                             uri: liffUrl,
                         },
-                        style: 'primary',
+                        style: 'primary' as const,
                         color: '#1e40af',
-                        height: 'sm',
+                        height: 'sm' as const,
                     },
                     {
-                        type: 'separator',
-                        margin: 'lg',
+                        type: 'separator' as const,
+                        margin: 'lg' as const,
                     },
                     {
-                        type: 'box',
-                        layout: 'vertical',
-                        spacing: 'sm',
-                        margin: 'lg',
+                        type: 'box' as const,
+                        layout: 'vertical' as const,
+                        spacing: 'sm' as const,
+                        margin: 'md' as const,
                         contents: [
                             {
-                                type: 'text',
-                                text: '💬 チャットで回答',
-                                weight: 'bold',
-                                size: 'md',
+                                type: 'text' as const,
+                                text: 'チャットで回答',
+                                weight: 'bold' as const,
+                                size: 'md' as const,
+                                color: '#111111',
                             },
                             {
-                                type: 'text',
+                                type: 'text' as const,
                                 text: '質問に順番にお答えいただく形式です。',
-                                size: 'xs',
+                                size: 'xs' as const,
                                 color: '#8c8c8c',
                                 wrap: true,
                             },
                         ],
                     },
                     {
-                        type: 'button',
+                        type: 'button' as const,
                         action: {
-                            type: 'message',
+                            type: 'message' as const,
                             label: 'チャットで回答する',
                             text: 'チャットで修理依頼',
                         },
-                        style: 'secondary',
-                        height: 'sm',
+                        style: 'secondary' as const,
+                        height: 'sm' as const,
                     },
                 ],
             },
         },
     }
+}
+
+/** 修理受付方法の選択（replyToken 使用・修理フロー前半で呼ぶ） */
+export async function sendRepairMethodChoice(replyToken: string, liffUrl: string) {
+    const flexMessage = buildRepairMethodChoiceFlex(liffUrl)
 
     const res = await fetch(`${LINE_API_BASE}/message/reply`, {
         method: 'POST',
@@ -349,6 +357,11 @@ export async function sendRepairMethodChoice(replyToken: string, liffUrl: string
         console.error('LINE sendRepairMethodChoice failed:', res.status, errBody)
         throw new Error(`sendRepairMethodChoice failed: ${res.status} ${errBody}`)
     }
+}
+
+/** 同上 Flex をプッシュ送信（replyToken 消費後の修理フロー用） */
+export async function pushRepairMethodChoice(userId: string, liffUrl: string) {
+    await pushMessages(userId, [buildRepairMethodChoiceFlex(liffUrl)])
 }
 
 /** NotebookLM 検索リンク＋スキップボタンを送信 */

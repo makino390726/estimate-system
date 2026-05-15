@@ -9,6 +9,7 @@ import {
     getContentUrl,
     sendRepairConfirmation,
     sendRepairMethodChoice,
+    pushRepairMethodChoice,
 } from '@/lib/lineClient'
 
 export const runtime = 'nodejs'
@@ -32,16 +33,13 @@ function getSupabase() {
  * LINE Developers > Messaging API > Webhook URL に以下を設定:
  *   https://your-domain.vercel.app/api/line/webhook
  *
- * 処理フロー:
- *   1. 顧客がLINEでメッセージ送信（テキスト/画像/動画）
- *   2. このWebhookが受信し、repair_requests テーブルに自動登録
- *   3. 顧客にFlex Messageで受付確認を返信
- *   4. 担当者に通知（line_staff_mappings テーブルで紐付け）
+ * 処理フロー（概要）:
+ *   - 修理: repair_requests 登録・LINE確認など
+ *   - AI検索のみ: Dify 参照のみ、案件は作らない
  *
- * 対話フロー（ステート管理）:
- *   - 「修理」「故障」「壊れた」等のキーワード → 修理受付モード開始
- *   - 型式・症状を順に聞く → repair_requests に登録
- *   - 画像・動画 → 受付中の案件に添付
+ * 対話フロー:
+ *   - 修理: キーワード → 機種 → 症状 → AI参考 → チャット/フォーム選択 → 受付
+ *   - AI検索のみ: 「検索」→ 機種 → 症状 → AI結果のみ（修理依頼へは進まない）
  */
 
 type LineEvent = {
@@ -58,7 +56,17 @@ type LineEvent = {
 }
 
 type ConversationState = {
-    step: 'idle' | 'waiting_category' | 'waiting_symptom_prelim' | 'waiting_name' | 'waiting_model' | 'waiting_symptom' | 'waiting_more'
+    step:
+        | 'idle'
+        | 'ai_search_waiting_category'
+        | 'ai_search_waiting_symptom'
+        | 'waiting_category'
+        | 'waiting_symptom_prelim'
+        | 'waiting_repair_ai_confirm'
+        | 'waiting_name'
+        | 'waiting_model'
+        | 'waiting_symptom'
+        | 'waiting_more'
     category?: string
     customer_name?: string
     model?: string
@@ -66,6 +74,12 @@ type ConversationState = {
     photo_urls?: string[]
     video_urls?: string[]
     repair_request_id?: string
+}
+
+/** AI検索モード開始: 先頭が「検索」のみ（修理依頼フローと分離） */
+function isAiSearchStart(text: string): boolean {
+    const t = text.trim()
+    return t === '検索' || t === '検索開始'
 }
 
 const DIFY_API_BASE = process.env.DIFY_API_BASE || 'https://api.dify.ai/v1'
@@ -163,36 +177,16 @@ async function handleMessage(event: LineEvent) {
                         ],
                     )
                 }
-            } else if (text.endsWith('を検索') || text.endsWith('を調べて') || text.startsWith('検索 ')) {
-                // 「○○を検索」→ Dify AI検索
-                const searchQuery = text
-                    .replace(/を検索$/, '')
-                    .replace(/を調べて$/, '')
-                    .replace(/^検索\s*/, '')
-                    .trim()
-                if (!searchQuery) {
-                    await replyMessage(event.replyToken, '検索キーワードを入力してください。\n例: 「バーナ不着火を検索」')
-                    break
-                }
-                if (DIFY_API_KEY) {
-                    await replyMessage(event.replyToken, `「${searchQuery}」をAIで検索中です...`)
-                    try {
-                        const answer = await searchDify('', searchQuery, userId)
-                        if (answer) {
-                            const truncated = answer.length > 1500
-                                ? answer.substring(0, 1500) + '\n\n…（続きは管理画面で確認できます）'
-                                : answer
-                            await pushMessage(userId, `【AI検索結果】\n${searchQuery}\n\n${truncated}`)
-                        } else {
-                            await pushMessage(userId, '該当する情報が見つかりませんでした。')
-                        }
-                    } catch (e) {
-                        console.error('Dify LINE search error:', e)
-                        await pushMessage(userId, 'AI検索中にエラーが発生しました。しばらくしてからお試しください。')
-                    }
-                } else {
-                    await replyMessage(event.replyToken, 'AI検索機能は現在準備中です。')
-                }
+            } else if (isAiSearchStart(text)) {
+                conversations.set(userId, { step: 'ai_search_waiting_category' })
+                await replyWithQuickReply(
+                    event.replyToken,
+                    'AI検索を開始します（修理依頼は行いません）。\n\nまず、機械の種別をお選びください。',
+                    [
+                        ...MACHINE_CATEGORIES.map(c => ({ label: c, text: c })),
+                        { label: 'その他', text: 'その他' },
+                    ],
+                )
             } else if (isRepairTrigger(text)) {
                 // 修理トリガー → まずカテゴリ選択から開始
                 conversations.set(userId, { step: 'waiting_category' })
@@ -206,9 +200,59 @@ async function handleMessage(event: LineEvent) {
                 )
             } else {
                 await replyMessage(event.replyToken,
-                    'お問い合わせありがとうございます。\n\n修理のご依頼は「修理依頼」とお送りください。\n\n機械の故障・異常・エラー等のキーワードでも受付を開始できます。\n\n「○○を検索」と送信するとAIで修理情報を検索できます。')
+                    'お問い合わせありがとうございます。\n\n' +
+                    '【修理のご依頼】「修理依頼」とお送りいただくか、機械の故障・異常・エラー等のキーワードでも受付を開始できます。\n\n' +
+                    '【AI検索のみ】まず「検索」とだけお送りください。次に機種を選び、症状を入力するとナレッジを検索します（修理受付には進みません）。')
             }
             break
+
+        case 'ai_search_waiting_category':
+            if (text === 'その他') {
+                state.step = 'ai_search_waiting_category'
+                state.category = undefined
+                conversations.set(userId, state)
+                await replyMessage(event.replyToken,
+                    '機械の種別を入力してください。\n例: 「穀物乾燥機」「ボイラー」など')
+                return
+            }
+            state.category = text
+            state.step = 'ai_search_waiting_symptom'
+            conversations.set(userId, state)
+            await replyMessage(event.replyToken,
+                `種別「${state.category}」です。\n\n続けて、症状や知りたい内容を文章でお送りください。\n例: 「火がつかない」「エラーコードが出る」`)
+            break
+
+        case 'ai_search_waiting_symptom': {
+            const category = state.category || ''
+            const symptom = text.trim()
+            conversations.set(userId, { step: 'idle' })
+
+            if (!DIFY_API_KEY) {
+                await replyMessage(event.replyToken,
+                    'AI検索機能は現在準備中です（DIFY_API_KEY 未設定）。\n\n再度お試しの場合は「検索」からお送りください。')
+                break
+            }
+            await replyMessage(event.replyToken, 'AIでナレッジを検索しています…')
+            try {
+                const aiResult = await searchDify(category, symptom, userId)
+                if (aiResult) {
+                    const truncated = aiResult.length > 1500
+                        ? aiResult.substring(0, 1500) + '\n\n…（文字数の都合で省略しています）'
+                        : aiResult
+                    await pushMessage(userId,
+                        `【AI検索結果】\n種別: ${category || '（未指定）'}\n内容: ${symptom}\n\n${truncated}`)
+                } else {
+                    await pushMessage(userId, '該当する情報が見つかりませんでした。表現を変えて「検索」から再度お試しください。')
+                }
+            } catch (e) {
+                console.error('Dify AI search-only error:', e)
+                await pushMessage(userId, 'AI検索中にエラーが発生しました。しばらくしてから「検索」で再度お試しください。')
+            }
+            await pushMessage(userId,
+                '検索を終了しました。\n\nほかに調べたいことがあれば、改めて「検索」とお送りください。\n修理のご依頼は「修理依頼」や故障に関するキーワードで受付を開始できます。')
+            conversations.delete(userId)
+            break
+        }
 
         case 'waiting_category':
             if (text === 'その他') {
@@ -228,28 +272,56 @@ async function handleMessage(event: LineEvent) {
 
         case 'waiting_symptom_prelim': {
             state.symptom = text
-            state.step = 'idle'
-            conversations.set(userId, state)
-
-            // Dify AI検索を実行し、結果をメッセージで返す
             if (DIFY_API_KEY) {
+                state.step = 'waiting_repair_ai_confirm'
+                conversations.set(userId, state)
+                await replyWithQuickReply(
+                    event.replyToken,
+                    `症状「${text}」を承りました。\n\n類似事例をAIで検索しますか？\n緊急の場合は「スキップ」で、すぐにフォーム／チャットの選択へ進めます。`,
+                    [
+                        { label: 'AIで検索', text: '__REPAIR_AI_RUN__' },
+                        { label: 'スキップ', text: '__REPAIR_AI_SKIP__' },
+                    ],
+                )
+            } else {
+                state.step = 'idle'
+                conversations.set(userId, state)
+                await showMethodChoice(event.replyToken, state)
+            }
+            break
+        }
+
+        case 'waiting_repair_ai_confirm': {
+            const symptomText = state.symptom || ''
+            if (text === '__REPAIR_AI_SKIP__' || text === 'スキップ') {
+                state.step = 'idle'
+                conversations.set(userId, state)
+                await replyMessage(event.replyToken,
+                    'AI検索をスキップしました。次のカードで受付方法をお選びください。')
+                await showMethodChoiceAfterAi(userId, state)
+                break
+            }
+            if (text === '__REPAIR_AI_RUN__' || text === 'AIで検索') {
+                state.step = 'idle'
+                conversations.set(userId, state)
                 await replyMessage(event.replyToken, 'AIで類似事例を検索しています...')
                 try {
-                    const aiResult = await searchDify(state.category || '', text, userId)
+                    const aiResult = await searchDify(state.category || '', symptomText, userId)
                     if (aiResult) {
                         const truncated = aiResult.length > 800
                             ? aiResult.substring(0, 800) + '\n\n…（続きは管理画面で確認できます）'
                             : aiResult
                         await pushMessage(userId,
-                            `【AI検索結果】\n${state.category || ''} / ${text}\n\n${truncated}`)
+                            `【AI検索結果】\n${state.category || ''} / ${symptomText}\n\n${truncated}`)
                     }
                 } catch (e) {
                     console.error('Dify search error in LINE:', e)
                 }
-                await showMethodChoicePush(userId, state)
-            } else {
-                await showMethodChoice(event.replyToken, state)
+                await showMethodChoiceAfterAi(userId, state)
+                break
             }
+            await replyMessage(event.replyToken,
+                '「AIで検索」または「スキップ」をタップしてください。')
             break
         }
 
@@ -345,7 +417,7 @@ async function searchDify(category: string, symptom: string, userId: string): Pr
     return data.answer || null
 }
 
-async function showMethodChoicePush(userId: string, state: ConversationState) {
+async function showMethodChoiceAfterAi(userId: string, state: ConversationState) {
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID || ''
     let liffUrl = process.env.NEXT_PUBLIC_LIFF_URL || (liffId ? `https://liff.line.me/${liffId}` : '')
 
@@ -356,12 +428,20 @@ async function showMethodChoicePush(userId: string, state: ConversationState) {
         liffUrl = `${liffUrl}?${params.toString()}`
     }
 
-    const text = liffUrl
-        ? `受付方法を選択してください。\n\nフォーム入力: ${liffUrl}\n\nまたは「チャットで修理依頼」と送信してください。`
-        : '「チャットで修理依頼」と送信するとチャットで受付できます。'
-
-    await pushMessage(userId, text)
+    if (liffUrl) {
+        try {
+            await pushRepairMethodChoice(userId, liffUrl)
+        } catch (e) {
+            console.error('pushRepairMethodChoice error:', e)
+            await pushMessage(userId,
+                '受付方法を選択してください。\n\n「チャットで修理依頼」と送信するとチャットで受付できます。')
+        }
+    } else {
+        await pushMessage(userId,
+            '「チャットで修理依頼」と送信するとチャットで受付できます。')
+    }
 }
+
 
 async function showMethodChoice(replyToken: string, state: ConversationState) {
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID || ''
