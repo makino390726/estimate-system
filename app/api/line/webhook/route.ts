@@ -163,6 +163,36 @@ async function handleMessage(event: LineEvent) {
                         ],
                     )
                 }
+            } else if (text.endsWith('を検索') || text.endsWith('を調べて') || text.startsWith('検索 ')) {
+                // 「○○を検索」→ Dify AI検索
+                const searchQuery = text
+                    .replace(/を検索$/, '')
+                    .replace(/を調べて$/, '')
+                    .replace(/^検索\s*/, '')
+                    .trim()
+                if (!searchQuery) {
+                    await replyMessage(event.replyToken, '検索キーワードを入力してください。\n例: 「バーナ不着火を検索」')
+                    break
+                }
+                if (DIFY_API_KEY) {
+                    await replyMessage(event.replyToken, `「${searchQuery}」をAIで検索中です...`)
+                    try {
+                        const answer = await searchDify('', searchQuery, userId)
+                        if (answer) {
+                            const truncated = answer.length > 1500
+                                ? answer.substring(0, 1500) + '\n\n…（続きは管理画面で確認できます）'
+                                : answer
+                            await pushMessage(userId, `【AI検索結果】\n${searchQuery}\n\n${truncated}`)
+                        } else {
+                            await pushMessage(userId, '該当する情報が見つかりませんでした。')
+                        }
+                    } catch (e) {
+                        console.error('Dify LINE search error:', e)
+                        await pushMessage(userId, 'AI検索中にエラーが発生しました。しばらくしてからお試しください。')
+                    }
+                } else {
+                    await replyMessage(event.replyToken, 'AI検索機能は現在準備中です。')
+                }
             } else if (isRepairTrigger(text)) {
                 // 修理トリガー → まずカテゴリ選択から開始
                 conversations.set(userId, { step: 'waiting_category' })
@@ -176,7 +206,7 @@ async function handleMessage(event: LineEvent) {
                 )
             } else {
                 await replyMessage(event.replyToken,
-                    'お問い合わせありがとうございます。\n\n修理のご依頼は「修理依頼」とお送りください。\n\n機械の故障・異常・エラー等のキーワードでも受付を開始できます。')
+                    'お問い合わせありがとうございます。\n\n修理のご依頼は「修理依頼」とお送りください。\n\n機械の故障・異常・エラー等のキーワードでも受付を開始できます。\n\n「○○を検索」と送信するとAIで修理情報を検索できます。')
             }
             break
 

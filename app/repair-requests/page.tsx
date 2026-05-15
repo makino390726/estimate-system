@@ -206,6 +206,8 @@ export default function RepairRequestsPage() {
 
     // Parts form
     const [newPart, setNewPart] = useState({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
+    const [partSuggestions, setPartSuggestions] = useState<{ id: string; name: string; cost_price: number | null; retail_price: number | null }[]>([])
+    const [showPartSuggestions, setShowPartSuggestions] = useState(false)
 
     // AI search (Dify)
     const [aiSearching, setAiSearching] = useState(false)
@@ -570,21 +572,66 @@ export default function RepairRequestsPage() {
         }
     }
 
-    const handleAddPart = async () => {
-        if (!detailRequest || !newPart.part_name.trim()) return
+    const handlePartNameChange = async (value: string) => {
+        setNewPart(p => ({ ...p, part_name: value }))
+        if (value.trim().length < 1) {
+            setPartSuggestions([])
+            setShowPartSuggestions(false)
+            return
+        }
         try {
-            const { error } = await supabase.from('repair_parts').insert({
+            const { data } = await supabase
+                .from('products')
+                .select('id, name, cost_price, retail_price')
+                .ilike('name', `%${value.trim()}%`)
+                .order('name')
+                .limit(10)
+            setPartSuggestions((data || []) as any)
+            setShowPartSuggestions((data || []).length > 0)
+        } catch {
+            setPartSuggestions([])
+        }
+    }
+
+    const handleSelectProduct = (product: { id: string; name: string; cost_price: number | null; retail_price: number | null }) => {
+        setNewPart(p => ({
+            ...p,
+            part_name: product.name,
+            part_code: product.id,
+            unit_price: product.retail_price != null ? String(product.retail_price) : (product.cost_price != null ? String(product.cost_price) : ''),
+        }))
+        setShowPartSuggestions(false)
+    }
+
+    const handleAddPart = async () => {
+        if (!detailRequest) {
+            setMessage('案件が選択されていません')
+            return
+        }
+        if (!newPart.part_name.trim()) {
+            setMessage('部品名を入力してください')
+            return
+        }
+        try {
+            const payload = {
                 repair_request_id: detailRequest.id,
                 part_name: newPart.part_name.trim(),
                 part_code: toNullable(newPart.part_code),
                 quantity: Number(newPart.quantity) || 1,
                 unit_price: newPart.unit_price ? Number(newPart.unit_price) : null,
                 notes: toNullable(newPart.notes),
-            })
-            if (error) throw error
+            }
+            console.log('repair_parts INSERT:', payload)
+            const { error } = await supabase.from('repair_parts').insert(payload)
+            if (error) {
+                console.error('repair_parts INSERT error:', error)
+                throw error
+            }
             setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
+            setPartSuggestions([])
             const { data: parts } = await supabase.from('repair_parts').select('*').eq('repair_request_id', detailRequest.id).order('created_at')
             setDetailParts((parts || []) as RepairPart[])
+            setMessage('部品を追加しました')
         } catch (e: any) {
             setMessage(`部品登録に失敗しました: ${e.message}`)
         }
@@ -1124,13 +1171,47 @@ export default function RepairRequestsPage() {
                                 </table>
                             )}
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 60px 1fr auto', gap: 8, alignItems: 'end' }}>
-                                <div>
-                                    <label style={{ ...labelStyle, fontSize: 11 }}>部品名</label>
-                                    <input type="text" value={newPart.part_name} onChange={e => setNewPart(p => ({ ...p, part_name: e.target.value }))} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12 }} />
+                                <div style={{ position: 'relative' }}>
+                                    <label style={{ ...labelStyle, fontSize: 11 }}>部品名（商品マスタ検索）</label>
+                                    <input
+                                        type="text"
+                                        value={newPart.part_name}
+                                        onChange={e => handlePartNameChange(e.target.value)}
+                                        onFocus={() => { if (partSuggestions.length > 0) setShowPartSuggestions(true) }}
+                                        onBlur={() => setTimeout(() => setShowPartSuggestions(false), 200)}
+                                        placeholder="部品名を入力で検索"
+                                        style={{ ...inputStyle, padding: '6px 10px', fontSize: 12 }}
+                                    />
+                                    {showPartSuggestions && partSuggestions.length > 0 && (
+                                        <div style={{
+                                            position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+                                            background: '#1e293b', border: '1px solid #475569', borderRadius: 8,
+                                            maxHeight: 200, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                                        }}>
+                                            {partSuggestions.map(p => (
+                                                <div
+                                                    key={p.id}
+                                                    onMouseDown={() => handleSelectProduct(p)}
+                                                    style={{
+                                                        padding: '8px 12px', cursor: 'pointer', fontSize: 12,
+                                                        borderBottom: '1px solid #334155', color: '#e2e8f0',
+                                                    }}
+                                                    onMouseEnter={e => (e.currentTarget.style.background = '#334155')}
+                                                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                                >
+                                                    <div style={{ fontWeight: 600 }}>{p.name}</div>
+                                                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                                                        コード: {p.id}
+                                                        {p.retail_price != null ? ` / ¥${p.retail_price.toLocaleString()}` : p.cost_price != null ? ` / 原価¥${p.cost_price.toLocaleString()}` : ''}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <label style={{ ...labelStyle, fontSize: 11 }}>コード</label>
-                                    <input type="text" value={newPart.part_code} onChange={e => setNewPart(p => ({ ...p, part_code: e.target.value }))} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12 }} />
+                                    <input type="text" value={newPart.part_code} onChange={e => setNewPart(p => ({ ...p, part_code: e.target.value }))} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12 }} readOnly />
                                 </div>
                                 <div>
                                     <label style={{ ...labelStyle, fontSize: 11 }}>数量</label>
@@ -1140,7 +1221,14 @@ export default function RepairRequestsPage() {
                                     <label style={{ ...labelStyle, fontSize: 11 }}>単価</label>
                                     <input type="number" value={newPart.unit_price} onChange={e => setNewPart(p => ({ ...p, unit_price: e.target.value }))} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12 }} />
                                 </div>
-                                <button onClick={handleAddPart} className="btn-3d btn-primary" style={{ padding: '6px 12px', fontSize: 12, marginBottom: 1 }}>追加</button>
+                                <button
+                                    type="button"
+                                    onClick={e => { e.preventDefault(); e.stopPropagation(); handleAddPart() }}
+                                    className="btn-3d btn-primary"
+                                    style={{ padding: '6px 12px', fontSize: 12, marginBottom: 1 }}
+                                >
+                                    追加
+                                </button>
                             </div>
                         </div>
 
