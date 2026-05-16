@@ -1,6 +1,21 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+/**
+ * LINE リッチメニュー設定例（公式アカウントマネージャー → リッチメニュー → 各エリアのアクション）:
+ * - 修理受付: リンク URI → https://liff.line.me/<NEXT_PUBLIC_LIFF_ID と同じ LIFF ID>
+ *   （エンドポイント URL が https://<本番ドメイン>/liff/repair-form の場合、その LIFF を開く）
+ * - AI診断: 別 LIFF 推奨（リッチメニューが ?mode=ai 付き URL を拒否するため）
+ *   - Endpoint: https://<本番ドメイン>/liff/ai
+ *   - リンク: https://liff.line.me/<AI用LIFF_ID>
+ *   （同一 LIFF のまま使う場合のみ: https://liff.line.me/<ID>?mode=ai ※マネージャーで弾かれることが多い）
+ * - 公式HP 等: 従来どおり外部 URL で可
+ */
+
+import { Suspense, useEffect, useState, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { SHEET_TYPE_OPTIONS, repairCategoryToSheetType, getSheetTypeLabel } from '@/lib/customerRegisterSheetTypes'
+
+const LIFF_PREFILL_KEY = 'liff_repair_prefill_v1'
 
 type LiffModule = {
     init: (config: { liffId: string }) => Promise<void>
@@ -11,8 +26,17 @@ type LiffModule = {
 }
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID || ''
+const LIFF_ID_AI = process.env.NEXT_PUBLIC_LIFF_ID_AI || ''
 
-export default function RepairFormPage() {
+function isAiEntryPath(): boolean {
+    if (typeof window === 'undefined') return false
+    return window.location.pathname.replace(/\/$/, '').endsWith('/liff/ai')
+}
+
+function RepairFormInner() {
+    const searchParams = useSearchParams()
+    const mode = searchParams.get('mode') === 'ai' || isAiEntryPath() ? 'ai' : 'repair'
+
     const [liff, setLiff] = useState<LiffModule | null>(null)
     const [profile, setProfile] = useState<{ userId: string; displayName: string } | null>(null)
     const [loading, setLoading] = useState(true)
@@ -35,15 +59,22 @@ export default function RepairFormPage() {
     const [photos, setPhotos] = useState<File[]>([])
     const [photoPreviewUrls, setPhotoPreviewUrls] = useState<string[]>([])
 
+    const [aiSheetCategory, setAiSheetCategory] = useState('')
+    const [aiSymptom, setAiSymptom] = useState('')
+    const [aiAnswer, setAiAnswer] = useState<string | null>(null)
+    const [aiSearching, setAiSearching] = useState(false)
+
     useEffect(() => {
-        if (!LIFF_ID) {
-            setError('LIFF IDが設定されていません')
+        // AI用 LIFF ID が未設定でも修理用 ID で init（同一チャネルで LIFF を1つだけ作っている場合）
+        const liffId = isAiEntryPath() ? (LIFF_ID_AI || LIFF_ID) : LIFF_ID
+        if (!liffId) {
+            setError('LIFF IDが設定されていません（NEXT_PUBLIC_LIFF_ID）')
             setLoading(false)
             return
         }
         import('@line/liff').then(mod => {
             const liffMod = mod.default as unknown as LiffModule
-            liffMod.init({ liffId: LIFF_ID }).then(() => {
+            liffMod.init({ liffId }).then(() => {
                 setLiff(liffMod)
                 if (!liffMod.isLoggedIn()) {
                     liffMod.login()
@@ -54,12 +85,30 @@ export default function RepairFormPage() {
                     const urlParams = new URLSearchParams(window.location.search)
                     const preCategory = urlParams.get('category') || ''
                     const preSymptom = urlParams.get('symptom') || ''
-                    setForm(prev => ({
-                        ...prev,
-                        customer_name: p.displayName,
-                        ...(preCategory ? { category: preCategory } : {}),
-                        ...(preSymptom ? { symptom: preSymptom } : {}),
-                    }))
+                    const isAi = urlParams.get('mode') === 'ai' || isAiEntryPath()
+
+                    let stored: { category?: string; symptom?: string } | null = null
+                    try {
+                        const raw = sessionStorage.getItem(LIFF_PREFILL_KEY)
+                        if (raw) stored = JSON.parse(raw) as { category?: string; symptom?: string }
+                    } catch { /* ignore */ }
+                    sessionStorage.removeItem(LIFF_PREFILL_KEY)
+
+                    if (isAi) {
+                        const cat = preCategory ? repairCategoryToSheetType(preCategory) : (stored?.category || '')
+                        const sym = preSymptom || stored?.symptom || ''
+                        setAiSheetCategory(cat)
+                        setAiSymptom(sym)
+                    } else {
+                        const catFromStore = stored?.category ? repairCategoryToSheetType(stored.category) : ''
+                        const symFromStore = stored?.symptom || ''
+                        setForm(prev => ({
+                            ...prev,
+                            customer_name: p.displayName,
+                            ...(preCategory ? { category: repairCategoryToSheetType(preCategory) } : catFromStore ? { category: catFromStore } : {}),
+                            ...(preSymptom ? { symptom: preSymptom } : symFromStore ? { symptom: symFromStore } : {}),
+                        }))
+                    }
                     setLoading(false)
                 })
             }).catch((e: Error) => {
@@ -90,6 +139,45 @@ export default function RepairFormPage() {
         setPhotoPreviewUrls(prev => prev.filter((_, i) => i !== idx))
     }
 
+    const handleAiSearch = async () => {
+        if (!aiSymptom.trim()) {
+            setError('症状を入力してください')
+            return
+        }
+        setError('')
+        setAiSearching(true)
+        setAiAnswer(null)
+        try {
+            const categoryLabel = aiSheetCategory ? getSheetTypeLabel(aiSheetCategory) : ''
+            const res = await fetch('/api/dify/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category: categoryLabel,
+                    symptom: aiSymptom.trim(),
+                    user_id: profile?.userId ? `line-${profile.userId}` : `line-anon-${Date.now()}`,
+                }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'AI検索に失敗しました')
+            setAiAnswer(data.answer || '')
+        } catch (e: any) {
+            setAiAnswer(`エラー: ${e.message}`)
+        } finally {
+            setAiSearching(false)
+        }
+    }
+
+    const goToRepairFromAi = () => {
+        try {
+            sessionStorage.setItem(LIFF_PREFILL_KEY, JSON.stringify({
+                category: aiSheetCategory || '',
+                symptom: aiSymptom.trim(),
+            }))
+        } catch { /* ignore */ }
+        window.location.assign(new URL('/liff/repair-form', window.location.origin).toString())
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!form.customer_name || !form.symptom) {
@@ -104,8 +192,8 @@ export default function RepairFormPage() {
         setError('')
 
         try {
-            const resolvedCategory = form.category === 'その他' && form.custom_category
-                ? form.custom_category
+            const resolvedCategory = form.category === 'unknown' && form.custom_category.trim()
+                ? form.custom_category.trim()
                 : form.category
             const { custom_category, ...formData } = form
             const body = {
@@ -152,6 +240,74 @@ export default function RepairFormPage() {
         )
     }
 
+    if (mode === 'ai') {
+        return (
+            <div style={styles.container}>
+                <div style={styles.card}>
+                    <div style={styles.headerAi}>
+                        <h1 style={styles.headerTitle}>AI診断（修理ナレッジ）</h1>
+                        <p style={styles.headerSub}>機種と症状から参考情報を表示します（確定診断ではありません）</p>
+                    </div>
+                    <div style={styles.form}>
+                        {error && <div style={{ ...styles.errorBox, margin: '0 0 16px' }}>{error}</div>}
+                        <div style={styles.field}>
+                            <label style={styles.label}>機械の種別（任意）</label>
+                            <select
+                                value={aiSheetCategory}
+                                onChange={e => setAiSheetCategory(e.target.value)}
+                                style={styles.select}
+                            >
+                                <option value="">選択してください</option>
+                                {SHEET_TYPE_OPTIONS.map(c => (
+                                    <option key={c.value} value={c.value}>{c.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div style={styles.field}>
+                            <label style={styles.label}>
+                                症状・状況<span style={styles.required}>*</span>
+                            </label>
+                            <textarea
+                                value={aiSymptom}
+                                onChange={e => setAiSymptom(e.target.value)}
+                                placeholder="例: 着火しない、エラー表示 など"
+                                style={styles.textarea}
+                                rows={4}
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => void handleAiSearch()}
+                            disabled={aiSearching}
+                            style={{
+                                ...styles.submitButtonAi,
+                                opacity: aiSearching ? 0.6 : 1,
+                            }}
+                        >
+                            {aiSearching ? '検索中...' : '症状をAIで検索'}
+                        </button>
+                        {aiAnswer && (
+                            <div style={styles.aiAnswerBox}>
+                                <div style={styles.aiAnswerLabel}>検索結果</div>
+                                <div style={styles.aiAnswerBody}>{aiAnswer}</div>
+                            </div>
+                        )}
+                        <button
+                            type="button"
+                            onClick={goToRepairFromAi}
+                            style={styles.secondaryButton}
+                        >
+                            この内容で修理を依頼する
+                        </button>
+                        <button type="button" onClick={handleClose} style={styles.ghostButton}>
+                            閉じる
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     if (submitted) {
         return (
             <div style={styles.container}>
@@ -173,10 +329,6 @@ export default function RepairFormPage() {
             </div>
         )
     }
-
-    const MACHINE_CATEGORIES = [
-        'たばこ乾燥機', 'ハウス暖房機', '光合成促進装置', '冷蔵庫', '食品乾燥機', 'その他',
-    ]
 
     const SYMPTOM_CATEGORIES = [
         '', '火がつかない', '温度が上がらない', '異音がする',
@@ -219,11 +371,11 @@ export default function RepairFormPage() {
                             required
                         >
                             <option value="">選択してください</option>
-                            {MACHINE_CATEGORIES.map(c => (
-                                <option key={c} value={c}>{c}</option>
+                            {SHEET_TYPE_OPTIONS.map(c => (
+                                <option key={c.value} value={c.value}>{c.label}</option>
                             ))}
                         </select>
-                        {form.category === 'その他' && (
+                        {form.category === 'unknown' && (
                             <input
                                 type="text"
                                 value={form.custom_category}
@@ -553,4 +705,77 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '15px',
         cursor: 'pointer',
     },
+    headerAi: {
+        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+        padding: '20px 24px',
+    },
+    submitButtonAi: {
+        width: '100%',
+        padding: '14px',
+        background: '#ea580c',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '10px',
+        fontSize: '16px',
+        fontWeight: 700,
+        cursor: 'pointer',
+        marginTop: '8px',
+    },
+    aiAnswerBox: {
+        marginTop: '16px',
+        padding: '14px',
+        background: '#f8fafc',
+        border: '1px solid #e2e8f0',
+        borderRadius: '10px',
+    },
+    aiAnswerLabel: {
+        fontSize: '12px',
+        fontWeight: 700,
+        color: '#64748b',
+        marginBottom: '8px',
+    },
+    aiAnswerBody: {
+        fontSize: '14px',
+        color: '#1e293b',
+        lineHeight: 1.65,
+        whiteSpace: 'pre-wrap' as const,
+    },
+    secondaryButton: {
+        width: '100%',
+        padding: '12px',
+        marginTop: '14px',
+        background: '#1e40af',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '10px',
+        fontSize: '15px',
+        fontWeight: 600,
+        cursor: 'pointer',
+    },
+    ghostButton: {
+        width: '100%',
+        padding: '10px',
+        marginTop: '10px',
+        background: 'transparent',
+        color: '#64748b',
+        border: 'none',
+        fontSize: '14px',
+        cursor: 'pointer',
+    },
+}
+
+export default function RepairFormPage() {
+    return (
+        <Suspense fallback={(
+            <div style={styles.container}>
+                <div style={styles.loadingWrapper}>
+                    <div style={styles.spinner} />
+                    <p style={styles.loadingText}>読み込み中...</p>
+                </div>
+            </div>
+        )}
+        >
+            <RepairFormInner />
+        </Suspense>
+    )
 }
