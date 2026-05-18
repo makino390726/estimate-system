@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
 
 // ── Types ──
 
@@ -22,6 +23,7 @@ type MachineCard = {
     shipment_date: string | null
     purchase_ymd: string | null
     dealer_name: string | null
+    registration_at: string | null
     repair_count: number
     last_repair_date: string | null
     total_repair_cost: number | null
@@ -101,7 +103,8 @@ export default function MachineCardsPage() {
             let query = supabase
                 .from('machine_cards')
                 .select('*')
-                .order('customer_name')
+                .order('registration_at', { ascending: false, nullsFirst: false })
+                .order('shipment_date', { ascending: false, nullsFirst: false })
 
             if (filterCategory) {
                 query = query.eq('category', filterCategory)
@@ -127,7 +130,7 @@ export default function MachineCardsPage() {
         if (!kw) return cards
         return cards.filter(c => {
             const vals = [
-                c.customer_name || '', c.model || '', c.model_full || '',
+                c.customer_name || '', c.dealer_name || '', c.model || '', c.model_full || '',
                 c.serial_no || '', c.address || '', c.sales_staff || '',
             ]
             return vals.some(v => v.toLowerCase().includes(kw))
@@ -218,13 +221,15 @@ export default function MachineCardsPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, alignItems: 'end' }}>
                     <div>
                         <label style={labelStyle}>キーワード検索</label>
-                        <input type="text" value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} placeholder="顧客名・型式・製造番号" style={inputStyle} />
+                        <input type="text" value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} placeholder="顧客名・代理店名・型式・製造番号" style={inputStyle} />
                     </div>
                     <div>
                         <label style={labelStyle}>分野</label>
                         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={inputStyle}>
                             <option value="">すべて</option>
-                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            {categories.map(c => (
+                                <option key={c} value={c}>{formatRepairCategoryDisplay(c)}</option>
+                            ))}
                         </select>
                     </div>
                     <div>
@@ -246,6 +251,7 @@ export default function MachineCardsPage() {
                         <thead>
                             <tr>
                                 <th style={thStyle}>顧客名</th>
+                                <th style={thStyle}>代理店名</th>
                                 <th style={thStyle}>分野</th>
                                 <th style={thStyle}>型式</th>
                                 <th style={thStyle}>製造番号</th>
@@ -261,16 +267,17 @@ export default function MachineCardsPage() {
                         </thead>
                         <tbody>
                             {loading ? (
-                                <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>読み込み中...</td></tr>
+                                <tr><td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>読み込み中...</td></tr>
                             ) : filteredCards.length === 0 ? (
-                                <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>該当データがありません</td></tr>
+                                <tr><td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>該当データがありません</td></tr>
                             ) : filteredCards.map(card => (
                                 <tr key={card.customer_register_id}
                                     onClick={() => openMachineDetail(card)}
                                     style={{ cursor: 'pointer', background: card.update_recommended ? '#4a151510' : undefined }}
                                 >
-                                    <td style={tdStyle}>{card.customer_name || '-'}</td>
-                                    <td style={tdStyle}>{card.category || '-'}</td>
+                                    <td style={tdStyle}>{card.customer_name?.trim() || '-'}</td>
+                                    <td style={tdStyle}>{card.dealer_name?.trim() || '-'}</td>
+                                    <td style={tdStyle}>{formatRepairCategoryDisplay(card.category)}</td>
                                     <td style={tdStyle}>{card.model_full || card.model || '-'}</td>
                                     <td style={tdStyle}>{card.serial_no || '-'}</td>
                                     <td style={tdStyle}>{card.shipment_date || '-'}</td>
@@ -331,7 +338,11 @@ export default function MachineCardsPage() {
                                     機械カルテ: {selectedCard.model_full || selectedCard.model || '型式不明'}
                                 </h2>
                                 <p style={{ margin: '6px 0 0 0', fontSize: 14, color: '#94a3b8' }}>
-                                    {selectedCard.customer_name} / {selectedCard.serial_no || '製造番号なし'}
+                                    顧客名: {selectedCard.customer_name?.trim() || '—'}
+                                    {' · '}
+                                    代理店名: {selectedCard.dealer_name?.trim() || '—'}
+                                    {' · '}
+                                    製造番号: {selectedCard.serial_no || '—'}
                                 </p>
                                 {selectedCard.update_recommended && (
                                     <div style={{ marginTop: 8, padding: '6px 14px', background: '#4a1515', borderRadius: 8, border: '1px solid #ef444440', color: '#fca5a5', fontSize: 13, display: 'inline-block' }}>
@@ -350,19 +361,19 @@ export default function MachineCardsPage() {
                             <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
                                 <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#60a5fa' }}>機械基本情報</h3>
                                 <div style={{ fontSize: 13, lineHeight: 2 }}>
-                                    <div>分野: <strong>{selectedCard.category || '-'}</strong></div>
+                                    <div>分野: <strong>{formatRepairCategoryDisplay(selectedCard.category)}</strong></div>
                                     <div>型式: <strong>{selectedCard.model_full || selectedCard.model || '-'}</strong></div>
                                     <div>製造番号: <strong>{selectedCard.serial_no || '-'}</strong></div>
                                     <div>出荷日: <strong>{selectedCard.shipment_date || '-'}</strong></div>
                                     <div>購入日: <strong>{selectedCard.purchase_ymd || '-'}</strong></div>
                                     <div>使用年数: <strong>{selectedCard.calculated_usage_years != null ? `${selectedCard.calculated_usage_years}年` : '-'}</strong></div>
-                                    <div>販売店: <strong>{selectedCard.dealer_name || '-'}</strong></div>
                                 </div>
                             </div>
                             <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
                                 <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#4ade80' }}>顧客・営業情報</h3>
                                 <div style={{ fontSize: 13, lineHeight: 2 }}>
-                                    <div>顧客名: <strong>{selectedCard.customer_name || '-'}</strong></div>
+                                    <div>顧客名: <strong>{selectedCard.customer_name?.trim() || '-'}</strong></div>
+                                    <div>代理店名: <strong>{selectedCard.dealer_name?.trim() || '-'}</strong></div>
                                     <div>住所: <strong>{selectedCard.address || '-'}</strong></div>
                                     <div>TEL: <strong>{selectedCard.phone || '-'}</strong></div>
                                     <div>携帯: <strong>{selectedCard.mobile || '-'}</strong></div>

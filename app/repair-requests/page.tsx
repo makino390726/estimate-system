@@ -1,8 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { BRANCHES, getBranchName, getStaffDepartmentsForBranch } from '@/lib/branches'
+import {
+    SHEET_TYPE_OPTIONS,
+    repairCategoryToSheetType,
+    formatRepairCategoryDisplay,
+    buildRepairDealerNameForCustomerRegister,
+    getSheetTypeLabel,
+} from '@/lib/customerRegisterSheetTypes'
+import { normalizeRepairMediaUrls } from '@/lib/repairPhotoStorage'
 
 // ── Types ──
 
@@ -22,6 +31,7 @@ type RepairRequest = {
     machine_type: string | null
     model: string | null
     serial_no: string | null
+    manufacturing_no: string | null
     manufacturing_year: string | null
     usage_years: number | null
     symptom: string
@@ -39,8 +49,20 @@ type RepairRequest = {
     repair_duration_minutes: number | null
     repair_cost: number | null
     notes: string | null
+    customer_register_id: string | null
     created_at: string
     updated_at: string
+}
+
+/** 商品マスタ検索の最大件数（以前は10件のみで全マスタを参照できなかった） */
+const PART_SUGGESTION_LIMIT = 500
+
+function escapeForIlikeFragment(raw: string): string {
+    return raw
+        .replace(/\\/g, '\\\\')
+        .replace(/%/g, '\\%')
+        .replace(/_/g, '\\_')
+        .replace(/,/g, ' ')
 }
 
 type RepairPart = {
@@ -53,7 +75,7 @@ type RepairPart = {
     notes: string | null
 }
 
-type StaffOption = { id: string; name: string }
+type StaffOption = { id: string; name: string; department: string | null; email: string | null }
 
 // ── Constants ──
 
@@ -90,17 +112,6 @@ const SYMPTOM_CATEGORIES = [
     '部品破損', '点検依頼', 'その他',
 ]
 
-const CATEGORY_OPTIONS = ['たばこ乾燥機', 'ハウス暖房機', '光合成促進装置', '冷蔵庫', '食品乾燥機', 'その他']
-
-const BRANCHES = [
-    { id: 'branch_1', name: '南九州営業所' },
-    { id: 'branch_2', name: '中九州営業所' },
-    { id: 'branch_3', name: '西九州営業所' },
-    { id: 'branch_4', name: '東日本営業所' },
-    { id: 'branch_5', name: '沖縄出張所' },
-    { id: 'branch_6', name: '東北出張所' },
-]
-
 type FormState = {
     received_via: string
     priority: string
@@ -113,6 +124,7 @@ type FormState = {
     machine_type: string
     model: string
     serial_no: string
+    manufacturing_no: string
     manufacturing_year: string
     usage_years: string
     symptom: string
@@ -123,6 +135,7 @@ type FormState = {
     assigned_staff: string
     visit_scheduled_date: string
     notes: string
+    customer_register_id: string
 }
 
 const createInitialForm = (): FormState => ({
@@ -137,6 +150,7 @@ const createInitialForm = (): FormState => ({
     machine_type: '',
     model: '',
     serial_no: '',
+    manufacturing_no: '',
     manufacturing_year: '',
     usage_years: '',
     symptom: '',
@@ -147,6 +161,7 @@ const createInitialForm = (): FormState => ({
     assigned_staff: '',
     visit_scheduled_date: '',
     notes: '',
+    customer_register_id: '',
 })
 
 // ── Styles ──
@@ -202,6 +217,10 @@ export default function RepairRequestsPage() {
         root_cause: '',
         repair_duration_minutes: '',
         repair_cost: '',
+        /** 現地で判明した本体番号（受付時は空のことあり） */
+        body_serial_no: '',
+        /** 銘板の製造番号（受付時は空のことあり） */
+        manufacturing_no: '',
     })
 
     // Parts form
@@ -213,6 +232,17 @@ export default function RepairRequestsPage() {
     const [aiSearching, setAiSearching] = useState(false)
     const [aiAnswer, setAiAnswer] = useState<string | null>(null)
 
+    type LwAckRow = {
+        staff_name: string
+        status: string
+        sent_at: string | null
+        acknowledged_at: string | null
+    }
+    const [lineWorksAcks, setLineWorksAcks] = useState<LwAckRow[]>([])
+
+    const handleCloseDetailModalRef = useRef<() => void>(() => {})
+    const deepLinkHandled = useRef(false)
+
     // Customer sync dialog
     const [customerSyncDialog, setCustomerSyncDialog] = useState<{
         mode: 'new' | 'exists'
@@ -220,13 +250,26 @@ export default function RepairRequestsPage() {
         existingCustomers: { id: string; customer_name: string; address: string | null; phone: string | null; mobile: string | null; model: string | null; serial_no: string | null }[]
     } | null>(null)
 
+    const [chartLinkCandidates, setChartLinkCandidates] = useState<Array<{
+        id: string
+        customer_name: string | null
+        serial_no: string | null
+        phone: string | null
+    }> | null>(null)
+
     const fetchStaffs = useCallback(async () => {
-        const { data } = await supabase.from('staffs').select('id, name').order('name')
-        setStaffs((data || []).map(s => ({ id: String(s.id), name: s.name || '' })))
+        const { data } = await supabase.from('staffs').select('id, name, department, email').order('name')
+        setStaffs((data || []).map(s => ({
+            id: String(s.id),
+            name: s.name || '',
+            department: s.department || null,
+            email: s.email || null,
+        })))
     }, [])
 
-    const fetchRequests = useCallback(async () => {
-        setLoading(true)
+    const fetchRequests = useCallback(async (options?: { silent?: boolean }) => {
+        const silent = options?.silent === true
+        if (!silent) setLoading(true)
         try {
             let query = supabase.from('repair_requests').select('*').order('received_at', { ascending: false })
 
@@ -240,12 +283,16 @@ export default function RepairRequestsPage() {
 
             const { data, error } = await query
             if (error) throw error
-            setRows((data || []) as RepairRequest[])
+            setRows((data || []).map((r) => ({
+                ...r,
+                photo_urls: normalizeRepairMediaUrls(r.photo_urls),
+                video_urls: normalizeRepairMediaUrls(r.video_urls),
+            })) as RepairRequest[])
         } catch (e: any) {
             console.error(e)
             setMessage(`一覧取得に失敗しました: ${e.message}`)
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
     }, [filterStatus, filterPriority, filterBranch])
 
@@ -257,8 +304,8 @@ export default function RepairRequestsPage() {
         if (!kw) return rows
         return rows.filter(r => {
             const vals = [
-                r.customer_name, r.customer_address || '', r.category || '', r.model || '',
-                r.serial_no || '', r.symptom, r.assigned_staff || '',
+                r.customer_name, r.customer_address || '', formatRepairCategoryDisplay(r.category), r.model || '',
+                r.serial_no || '', r.manufacturing_no || '', r.symptom, r.assigned_staff || '',
                 r.treatment_details || '', String(r.request_no),
             ]
             return vals.some(v => v.toLowerCase().includes(kw))
@@ -276,9 +323,79 @@ export default function RepairRequestsPage() {
         setFormData(prev => ({ ...prev, [field]: value }))
     }
 
+    const handleLookupChartBySerial = async () => {
+        const sn = formData.serial_no.trim()
+        if (!sn) {
+            setMessage('「本体番号（カルテ照合用）」に顧客カルテと同じ番号を入れてから実行してください')
+            return
+        }
+        setMessage(null)
+        try {
+            const { data, error } = await supabase
+                .from('customer_register_rows')
+                .select('id, customer_name, serial_no, phone')
+                .eq('serial_no', sn)
+                .limit(15)
+            if (error) throw error
+            const list = (data || []) as Array<{ id: string; customer_name: string | null; serial_no: string | null; phone: string | null }>
+            if (list.length === 0) {
+                setMessage('本体番号が一致する顧客カルテがありません。カルテ側の本体番号を確認してください。')
+                return
+            }
+            if (list.length === 1) {
+                handleChange('customer_register_id', list[0].id)
+                setMessage('顧客カルテに紐づけました')
+                return
+            }
+            setChartLinkCandidates(list)
+        } catch (e: any) {
+            setMessage(`カルテ検索に失敗しました: ${e.message}`)
+        }
+    }
+
     const resetForm = () => {
         setEditingId(null)
         setFormData(createInitialForm())
+    }
+
+    const staffOptionsForBranch = useMemo(() => {
+        const branch = formData.assigned_branch
+        if (!branch) return staffs
+        const deptNames = new Set(getStaffDepartmentsForBranch(branch))
+        return staffs.filter(s => !s.department || deptNames.has(s.department))
+    }, [staffs, formData.assigned_branch])
+
+    const triggerRepairStaffNotify = async (repairRequestId: string, branchId: string | null) => {
+        try {
+            const res = await fetch('/api/repair-notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repair_request_id: repairRequestId }),
+            })
+            const data = await res.json()
+            if (!data.ok) return
+
+            const targetLabel = branchId
+                ? `${getBranchName(branchId)}の担当者`
+                : '管理部・技術部'
+            const emailSent = data.email?.sent ?? 0
+            const lwSent = data.lineworks?.sent ?? 0
+            const lineSent = data.line?.sent ?? 0
+            const parts: string[] = []
+            if (emailSent > 0) parts.push(`メール ${emailSent}名`)
+            if (lwSent > 0) parts.push(`LINE WORKS ${lwSent}名`)
+            if (lineSent > 0) parts.push(`LINE ${lineSent}名`)
+            if (parts.length > 0) {
+                setMessage(prev => {
+                    const base = prev || '保存しました'
+                    return `${base}（${targetLabel}へ${parts.join('・')}に通知）`
+                })
+            } else if (data.email?.skipped || data.lineworks?.skipped || data.line?.skipped) {
+                console.log('repair notify skipped:', data.email?.reason, data.line?.reason)
+            }
+        } catch (e) {
+            console.error('repair staff notify failed:', e)
+        }
     }
 
     const handleSave = async () => {
@@ -294,10 +411,11 @@ export default function RepairRequestsPage() {
             customer_phone: toNullable(formData.customer_phone),
             customer_mobile: toNullable(formData.customer_mobile),
             customer_region: toNullable(formData.customer_region),
-            category: toNullable(formData.category),
+            category: toNullable(repairCategoryToSheetType(formData.category)),
             machine_type: toNullable(formData.machine_type),
             model: toNullable(formData.model),
             serial_no: toNullable(formData.serial_no),
+            manufacturing_no: toNullable(formData.manufacturing_no),
             manufacturing_year: toNullable(formData.manufacturing_year),
             usage_years: formData.usage_years ? Number(formData.usage_years) : null,
             symptom: formData.symptom.trim(),
@@ -308,18 +426,27 @@ export default function RepairRequestsPage() {
             assigned_staff: toNullable(formData.assigned_staff),
             visit_scheduled_date: toNullable(formData.visit_scheduled_date) || null,
             notes: toNullable(formData.notes),
+            customer_register_id: toNullable(formData.customer_register_id),
         }
 
         try {
+            const branchId = toNullable(formData.assigned_branch)
             if (editingId) {
                 const { error } = await supabase.from('repair_requests').update(payload).eq('id', editingId)
                 if (error) throw error
                 setMessage('修理案件を更新しました')
             } else {
                 payload.status = 'received'
-                const { error } = await supabase.from('repair_requests').insert(payload)
+                const { data: inserted, error } = await supabase
+                    .from('repair_requests')
+                    .insert(payload)
+                    .select('id')
+                    .single()
                 if (error) throw error
                 setMessage('修理案件を登録しました')
+                if (inserted?.id) {
+                    await triggerRepairStaffNotify(inserted.id, branchId)
+                }
             }
 
             await syncCustomerRegister(formData)
@@ -347,6 +474,7 @@ export default function RepairRequestsPage() {
                 .select('id, customer_name, address, phone, mobile, model, serial_no')
                 .eq('customer_name', name)
 
+            const sheetType = repairCategoryToSheetType(fd.category)
             const customerPayload: Record<string, unknown> = {
                 customer_name: name,
                 address: toNullable(fd.customer_address),
@@ -354,9 +482,10 @@ export default function RepairRequestsPage() {
                 mobile: toNullable(fd.customer_mobile),
                 model: toNullable(fd.model),
                 serial_no: toNullable(fd.serial_no),
-                sheet_name: '修理受付登録',
-                sheet_type: fd.category || 'unknown',
+                sheet_name: getSheetTypeLabel(sheetType),
+                sheet_type: sheetType,
                 staff_name: toNullable(fd.assigned_staff),
+                dealer_name: buildRepairDealerNameForCustomerRegister(fd),
             }
 
             if (existing && existing.length > 0) {
@@ -386,8 +515,6 @@ export default function RepairRequestsPage() {
                 setMessage(prev => (prev ? prev + ' / ' : '') + '顧客情報を新規登録しました')
             } else if (action === 'update' && targetId) {
                 const updateData = { ...customerSyncDialog.customerData }
-                delete updateData.sheet_name
-                delete updateData.sheet_type
                 const { error } = await supabase.from('customer_register_rows').update(updateData).eq('id', targetId)
                 if (error) throw error
                 setMessage(prev => (prev ? prev + ' / ' : '') + '顧客登録情報を更新しました')
@@ -432,6 +559,36 @@ export default function RepairRequestsPage() {
         }
     }
 
+    const handleBulkStaffNotify = async (repairId: string) => {
+        try {
+            const res = await fetch('/api/repair-notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repair_request_id: repairId }),
+            })
+            const data = await res.json()
+            if (!res.ok || !data.ok) {
+                setMessage(`担当者通知失敗: ${data.error || data.email?.error || data.line?.error || '不明'}`)
+                return
+            }
+            const emailSent = data.email?.sent ?? 0
+            const lwSent = data.lineworks?.sent ?? 0
+            const lineSent = data.line?.sent ?? 0
+            if (emailSent === 0 && lwSent === 0 && lineSent === 0) {
+                const reason = data.lineworks?.reason || data.line?.reason || data.email?.reason || '宛先なし'
+                setMessage(`担当者通知: ${reason}`)
+                return
+            }
+            const parts: string[] = []
+            if (emailSent > 0) parts.push(`メール ${emailSent}名`)
+            if (lwSent > 0) parts.push(`LINE WORKS ${lwSent}名`)
+            if (lineSent > 0) parts.push(`LINE ${lineSent}名`)
+            setMessage(`管轄担当者へ通知しました（${parts.join('・')}）`)
+        } catch (e: any) {
+            setMessage(`担当者通知に失敗: ${e.message}`)
+        }
+    }
+
     const handleLineNotifyStaff = async (repairId: string, staffName: string) => {
         try {
             const res = await fetch('/api/line/notify', {
@@ -460,10 +617,11 @@ export default function RepairRequestsPage() {
             customer_phone: row.customer_phone || '',
             customer_mobile: row.customer_mobile || '',
             customer_region: row.customer_region || '',
-            category: row.category || '',
+            category: repairCategoryToSheetType(row.category || ''),
             machine_type: row.machine_type || '',
             model: row.model || '',
             serial_no: row.serial_no || '',
+            manufacturing_no: row.manufacturing_no || '',
             manufacturing_year: row.manufacturing_year || '',
             usage_years: row.usage_years != null ? String(row.usage_years) : '',
             symptom: row.symptom,
@@ -474,6 +632,7 @@ export default function RepairRequestsPage() {
             assigned_staff: row.assigned_staff || '',
             visit_scheduled_date: row.visit_scheduled_date || '',
             notes: row.notes || '',
+            customer_register_id: row.customer_register_id || '',
         })
         window.scrollTo({ top: 0, behavior: 'smooth' })
     }
@@ -493,13 +652,19 @@ export default function RepairRequestsPage() {
     }
 
     const openDetail = async (row: RepairRequest) => {
-        setDetailRequest(row)
+        setDetailRequest({
+            ...row,
+            photo_urls: normalizeRepairMediaUrls(row.photo_urls),
+            video_urls: normalizeRepairMediaUrls(row.video_urls),
+        })
         setAiAnswer(null)
         setCompletionData({
             treatment_details: row.treatment_details || '',
             root_cause: row.root_cause || '',
             repair_duration_minutes: row.repair_duration_minutes ? String(row.repair_duration_minutes) : '',
             repair_cost: row.repair_cost ? String(row.repair_cost) : '',
+            body_serial_no: row.serial_no || '',
+            manufacturing_no: row.manufacturing_no || '',
         })
 
         const { data: parts } = await supabase
@@ -508,6 +673,13 @@ export default function RepairRequestsPage() {
             .eq('repair_request_id', row.id)
             .order('created_at')
         setDetailParts((parts || []) as RepairPart[])
+
+        const { data: lwAck } = await supabase
+            .from('repair_lineworks_notifications')
+            .select('staff_name, status, sent_at, acknowledged_at')
+            .eq('repair_request_id', row.id)
+            .order('staff_name')
+        setLineWorksAcks((lwAck || []) as LwAckRow[])
 
         if (row.model || row.serial_no) {
             let query = supabase.from('repair_requests').select('*').neq('id', row.id).order('received_at', { ascending: false }).limit(20)
@@ -523,6 +695,23 @@ export default function RepairRequestsPage() {
         }
     }
 
+    useEffect(() => {
+        if (loading || rows.length === 0 || deepLinkHandled.current) return
+        const params = new URLSearchParams(window.location.search)
+        const id = params.get('id')
+        const no = params.get('no')
+        const target =
+            (id ? rows.find((r) => r.id === id) : undefined) ||
+            (no ? rows.find((r) => String(r.request_no) === no) : undefined)
+        if (!target) return
+        deepLinkHandled.current = true
+        void openDetail(target)
+        const url = new URL(window.location.href)
+        url.searchParams.delete('id')
+        url.searchParams.delete('no')
+        window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+    }, [loading, rows])
+
     const handleAiSearch = async () => {
         if (!detailRequest) return
         setAiSearching(true)
@@ -532,7 +721,7 @@ export default function RepairRequestsPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    category: detailRequest.category || '',
+                    category: getSheetTypeLabel(repairCategoryToSheetType(detailRequest.category || '')),
                     symptom: detailRequest.symptom,
                     user_id: `staff-${Date.now()}`,
                 }),
@@ -549,47 +738,196 @@ export default function RepairRequestsPage() {
 
     const handleSaveCompletion = async () => {
         if (!detailRequest) return
+        const rid = detailRequest.id
         try {
+            if (newPart.part_name.trim()) {
+                const payload = {
+                    repair_request_id: rid,
+                    part_name: newPart.part_name.trim(),
+                    part_code: toNullable(newPart.part_code),
+                    quantity: Number(newPart.quantity) || 1,
+                    unit_price: newPart.unit_price ? Number(newPart.unit_price) : null,
+                    notes: toNullable(newPart.notes),
+                }
+                const { error: partErr } = await supabase.from('repair_parts').insert(payload)
+                if (partErr) throw partErr
+                setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
+                setPartSuggestions([])
+                setShowPartSuggestions(false)
+            }
+
             const { error } = await supabase.from('repair_requests').update({
                 treatment_details: toNullable(completionData.treatment_details),
                 root_cause: toNullable(completionData.root_cause),
                 repair_duration_minutes: completionData.repair_duration_minutes ? Number(completionData.repair_duration_minutes) : null,
                 repair_cost: completionData.repair_cost ? Number(completionData.repair_cost) : null,
+                serial_no: toNullable(completionData.body_serial_no),
+                manufacturing_no: toNullable(completionData.manufacturing_no),
                 visit_completed_date: new Date().toISOString().split('T')[0],
-            }).eq('id', detailRequest.id)
+            }).eq('id', rid)
             if (error) throw error
-            setMessage('修理内容を保存しました')
-            await fetchRequests()
+            setMessage('修理内容を保存しました（完了日を記録）')
+            await fetchRequests({ silent: true })
             setDetailRequest(prev => prev ? {
                 ...prev,
                 treatment_details: completionData.treatment_details || null,
                 root_cause: completionData.root_cause || null,
                 repair_duration_minutes: completionData.repair_duration_minutes ? Number(completionData.repair_duration_minutes) : null,
                 repair_cost: completionData.repair_cost ? Number(completionData.repair_cost) : null,
+                serial_no: toNullable(completionData.body_serial_no),
+                manufacturing_no: toNullable(completionData.manufacturing_no),
+                visit_completed_date: new Date().toISOString().split('T')[0],
             } : null)
         } catch (e: any) {
             setMessage(`保存に失敗しました: ${e.message}`)
         }
     }
 
+    /**
+     * 閉じる・オーバーレイ・Esc: 修理メモ等をDBへ反映（完了日は付けない）。入力中の部品1行があれば追加保存。
+     * モーダルは即時に閉じ、保存はバックグラウンドで実行する（ネットワーク待ちで画面が固まらないようにする）。
+     */
+    const handleCloseDetailModal = () => {
+        if (!detailRequest) {
+            setDetailRequest(null)
+            return
+        }
+        const rid = detailRequest.id
+        const snapshot = {
+            customer_name: detailRequest.customer_name,
+            customer_address: detailRequest.customer_address ?? '',
+            customer_phone: detailRequest.customer_phone ?? '',
+            customer_mobile: detailRequest.customer_mobile ?? '',
+            customer_region: detailRequest.customer_region ?? '',
+            treatment_details: completionData.treatment_details ?? '',
+            root_cause: completionData.root_cause ?? '',
+            repair_duration_minutes: completionData.repair_duration_minutes ?? '',
+            repair_cost: completionData.repair_cost ?? '',
+            body_serial_no: completionData.body_serial_no ?? '',
+            manufacturing_no: completionData.manufacturing_no ?? '',
+        }
+        const pendingPart = newPart.part_name.trim()
+            ? {
+                    part_name: newPart.part_name.trim(),
+                    part_code: newPart.part_code,
+                    quantity: newPart.quantity,
+                    unit_price: newPart.unit_price,
+                    notes: newPart.notes,
+                }
+            : null
+
+        setDetailRequest(null)
+
+        void (async () => {
+            try {
+                const { error } = await supabase.from('repair_requests').update({
+                    customer_name: snapshot.customer_name.trim() || detailRequest.customer_name,
+                    customer_address: toNullable(snapshot.customer_address),
+                    customer_phone: toNullable(snapshot.customer_phone),
+                    customer_mobile: toNullable(snapshot.customer_mobile),
+                    customer_region: toNullable(snapshot.customer_region),
+                    treatment_details: toNullable(snapshot.treatment_details),
+                    root_cause: toNullable(snapshot.root_cause),
+                    repair_duration_minutes: snapshot.repair_duration_minutes ? Number(snapshot.repair_duration_minutes) : null,
+                    repair_cost: snapshot.repair_cost ? Number(snapshot.repair_cost) : null,
+                    serial_no: toNullable(snapshot.body_serial_no),
+                    manufacturing_no: toNullable(snapshot.manufacturing_no),
+                }).eq('id', rid)
+                if (error) throw error
+
+                if (pendingPart) {
+                    const payload = {
+                        repair_request_id: rid,
+                        part_name: pendingPart.part_name,
+                        part_code: toNullable(pendingPart.part_code),
+                        quantity: Number(pendingPart.quantity) || 1,
+                        unit_price: pendingPart.unit_price ? Number(pendingPart.unit_price) : null,
+                        notes: toNullable(pendingPart.notes ?? ''),
+                    }
+                    const { error: partErr } = await supabase.from('repair_parts').insert(payload)
+                    if (partErr) throw partErr
+                    setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
+                    setPartSuggestions([])
+                    setShowPartSuggestions(false)
+                }
+
+                setMessage('案件内容を保存して閉じました')
+                await fetchRequests({ silent: true })
+            } catch (e: any) {
+                console.error('repair_requests close-save:', e)
+                setMessage(`モーダルは閉じましたが保存に失敗しました: ${e.message}（一覧から案件を開き直して再度お試しください）`)
+                await fetchRequests({ silent: true })
+            }
+        })()
+    }
+
+    handleCloseDetailModalRef.current = handleCloseDetailModal
+
+    useEffect(() => {
+        if (!detailRequest) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.preventDefault()
+                handleCloseDetailModalRef.current()
+            }
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [detailRequest])
+
     const handlePartNameChange = async (value: string) => {
         setNewPart(p => ({ ...p, part_name: value }))
-        if (value.trim().length < 1) {
+        const raw = value.trim()
+        if (raw.length < 1) {
             setPartSuggestions([])
             setShowPartSuggestions(false)
             return
         }
+        const pat = `%${escapeForIlikeFragment(raw)}%`
+        const sel = 'id, name, cost_price, retail_price'
         try {
-            const { data } = await supabase
+            const nameQPromise = supabase
                 .from('products')
-                .select('id, name, cost_price, retail_price')
-                .ilike('name', `%${value.trim()}%`)
+                .select(sel)
+                .ilike('name', pat)
                 .order('name')
-                .limit(10)
-            setPartSuggestions((data || []) as any)
-            setShowPartSuggestions((data || []).length > 0)
-        } catch {
+                .limit(PART_SUGGESTION_LIMIT)
+
+            const specQPromise = supabase
+                .from('products')
+                .select(sel)
+                .ilike('spec', pat)
+                .order('name')
+                .limit(PART_SUGGESTION_LIMIT)
+
+            const idQPromise = supabase
+                .from('products')
+                .select(sel)
+                .ilike('id', pat)
+                .order('name')
+                .limit(100)
+
+            const [nameQ, specQ, idQ] = await Promise.all([nameQPromise, specQPromise, idQPromise])
+
+            if (nameQ.error) throw nameQ.error
+
+            const specRows = specQ.error ? [] : (specQ.data || [])
+            const idRows = idQ.error ? [] : (idQ.data || [])
+
+            const merged = new Map<string, { id: string; name: string; cost_price: number | null; retail_price: number | null }>()
+            for (const row of [...(nameQ.data || []), ...specRows, ...idRows]) {
+                const id = String((row as any).id)
+                merged.set(id, row as any)
+            }
+            const list = Array.from(merged.values()).sort((a, b) =>
+                (a.name || '').localeCompare(b.name || '', 'ja'),
+            )
+            setPartSuggestions(list)
+            setShowPartSuggestions(list.length > 0)
+        } catch (e) {
+            console.error('部品（商品マスタ）検索エラー:', e)
             setPartSuggestions([])
+            setShowPartSuggestions(false)
         }
     }
 
@@ -828,10 +1166,15 @@ export default function RepairRequestsPage() {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                     <div>
                                         <label style={labelStyle}>分野</label>
-                                        <input type="text" value={formData.category} onChange={e => handleChange('category', e.target.value)} list="rr-category-list" style={inputStyle} />
-                                        <datalist id="rr-category-list">
-                                            {CATEGORY_OPTIONS.map(o => <option key={o} value={o} />)}
-                                        </datalist>
+                                        <select
+                                            value={formData.category || 'unknown'}
+                                            onChange={e => handleChange('category', e.target.value)}
+                                            style={inputStyle}
+                                        >
+                                            {SHEET_TYPE_OPTIONS.map(o => (
+                                                <option key={o.value} value={o.value}>{o.label}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                     <div>
                                         <label style={labelStyle}>型式</label>
@@ -840,9 +1183,15 @@ export default function RepairRequestsPage() {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                     <div>
-                                        <label style={labelStyle}>製造番号</label>
+                                        <label style={labelStyle}>本体番号（カルテ照合用）</label>
                                         <input type="text" value={formData.serial_no} onChange={e => handleChange('serial_no', e.target.value)} style={inputStyle} />
                                     </div>
+                                    <div>
+                                        <label style={labelStyle}>製造番号（銘板・任意）</label>
+                                        <input type="text" value={formData.manufacturing_no} onChange={e => handleChange('manufacturing_no', e.target.value)} style={inputStyle} />
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                     <div>
                                         <label style={labelStyle}>年式</label>
                                         <input type="text" value={formData.manufacturing_year} onChange={e => handleChange('manufacturing_year', e.target.value)} placeholder="例: 2015" style={inputStyle} />
@@ -851,6 +1200,37 @@ export default function RepairRequestsPage() {
                                 <div>
                                     <label style={labelStyle}>使用年数</label>
                                     <input type="number" step="0.5" value={formData.usage_years} onChange={e => handleChange('usage_years', e.target.value)} style={inputStyle} />
+                                </div>
+                                <div style={{ marginTop: 12, padding: 12, background: '#1e293b', borderRadius: 10, border: '1px solid #334155' }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', marginBottom: 6 }}>顧客カルテとの紐づけ</div>
+                                    <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 10px 0', lineHeight: 1.5 }}>
+                                        上記の「本体番号（カルテ照合用）」と顧客カルテの「本体番号」が同じ行を検索し、この修理案件に <code style={{ color: '#cbd5e1' }}>customer_register_id</code> を保存します。保存後にカルテの明細に修理が表示されます。
+                                    </p>
+                                    {formData.customer_register_id ? (
+                                        <div style={{ fontSize: 12, color: '#86efac', marginBottom: 10 }}>
+                                            紐づけ済み（保存で確定）… {formData.customer_register_id.slice(0, 8)}…
+                                        </div>
+                                    ) : (
+                                        <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>未紐づけ</div>
+                                    )}
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        <button type="button" onClick={handleLookupChartBySerial} className="btn-3d" style={{ padding: '8px 14px', fontSize: 12, background: '#0e7490', border: '1px solid #0891b2' }}>
+                                            本体番号でカルテを検索
+                                        </button>
+                                        {formData.customer_register_id ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleChange('customer_register_id', '')
+                                                    setMessage('紐づけを解除しました（保存で反映）')
+                                                }}
+                                                className="btn-3d"
+                                                style={{ padding: '8px 14px', fontSize: 12, background: '#475569', border: '1px solid #64748b' }}
+                                            >
+                                                紐づけを解除
+                                            </button>
+                                        ) : null}
+                                    </div>
                                 </div>
                             </div>
                         </fieldset>
@@ -893,8 +1273,13 @@ export default function RepairRequestsPage() {
                                         <label style={labelStyle}>担当者</label>
                                         <input type="text" value={formData.assigned_staff} onChange={e => handleChange('assigned_staff', e.target.value)} list="rr-staff-list" style={inputStyle} />
                                         <datalist id="rr-staff-list">
-                                            {staffs.map(s => <option key={s.id} value={s.name} />)}
+                                            {staffOptionsForBranch.map(s => <option key={s.id} value={s.name} />)}
                                         </datalist>
+                                        {formData.assigned_branch && (
+                                            <p style={{ fontSize: 11, color: '#94a3b8', margin: '4px 0 0 0' }}>
+                                                部署が {getStaffDepartmentsForBranch(formData.assigned_branch).join('・')} の担当者を優先表示
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <div>
@@ -966,7 +1351,7 @@ export default function RepairRequestsPage() {
                                             </td>
                                             <td style={tdStyle}>{via}</td>
                                             <td style={tdStyle}>{row.customer_name}</td>
-                                            <td style={tdStyle}>{row.category || '-'}</td>
+                                            <td style={tdStyle}>{formatRepairCategoryDisplay(row.category)}</td>
                                             <td style={tdStyle}>{row.model || '-'}</td>
                                             <td style={{ ...tdStyle, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {row.symptom}
@@ -989,7 +1374,10 @@ export default function RepairRequestsPage() {
             {/* Detail Modal */}
             {detailRequest && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-                    onClick={() => setDetailRequest(null)}
+                    onClick={e => {
+                        if (e.target !== e.currentTarget) return
+                        handleCloseDetailModal()
+                    }}
                 >
                     <div style={{ ...panelStyle, maxWidth: 900, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 28 }}
                         onClick={e => e.stopPropagation()}
@@ -1013,18 +1401,39 @@ export default function RepairRequestsPage() {
                                     )}
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', gap: 8 }}>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleBulkStaffNotify(detailRequest.id)}
+                                    className="btn-3d"
+                                    style={{ padding: '8px 14px', background: '#2563eb', border: '1px solid #1d4ed8', fontSize: 12 }}
+                                >
+                                    担当者へ通知
+                                </button>
                                 {detailRequest.assigned_staff && (
                                     <button
-                                        onClick={() => handleLineNotifyStaff(detailRequest.id, detailRequest.assigned_staff!)}
+                                        type="button"
+                                        onClick={() => void handleLineNotifyStaff(detailRequest.id, detailRequest.assigned_staff!)}
                                         className="btn-3d"
                                         style={{ padding: '8px 14px', background: '#06c755', border: '1px solid #05a847', fontSize: 12 }}
                                     >
-                                        LINE通知
+                                        担当者LINE（個別）
                                     </button>
                                 )}
-                                <button onClick={() => setDetailRequest(null)} className="btn-3d" style={{ padding: '8px 14px', background: '#475569', border: '1px solid #64748b' }}>
-                                    閉じる
+                                <button
+                                    type="button"
+                                    onClick={e => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        handleCloseDetailModal()
+                                    }}
+                                    className="btn-3d"
+                                    style={{
+                                        padding: '8px 14px', background: '#475569', border: '1px solid #64748b',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    保存して閉じる
                                 </button>
                             </div>
                         </div>
@@ -1051,12 +1460,58 @@ export default function RepairRequestsPage() {
                             {/* Customer info */}
                             <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
                                 <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#4ade80' }}>顧客情報</h3>
-                                <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-                                    <div><strong>{detailRequest.customer_name}</strong></div>
-                                    {detailRequest.customer_address && <div>{detailRequest.customer_address}</div>}
-                                    {detailRequest.customer_phone && <div>TEL: {detailRequest.customer_phone}</div>}
-                                    {detailRequest.customer_mobile && <div>携帯: {detailRequest.customer_mobile}</div>}
-                                    {detailRequest.customer_region && <div>地域: {detailRequest.customer_region}</div>}
+                                <p style={{ margin: '0 0 10px 0', fontSize: 11, color: '#94a3b8' }}>
+                                    編集内容は「保存して閉じる」で保存されます。
+                                </p>
+                                <div style={{ display: 'grid', gap: 8 }}>
+                                    <div>
+                                        <label style={{ ...labelStyle, marginBottom: 4 }}>顧客名</label>
+                                        <input
+                                            type="text"
+                                            value={detailRequest.customer_name}
+                                            onChange={e => setDetailRequest(prev => prev ? { ...prev, customer_name: e.target.value } : null)}
+                                            style={inputStyle}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ ...labelStyle, marginBottom: 4 }}>住所</label>
+                                        <input
+                                            type="text"
+                                            value={detailRequest.customer_address || ''}
+                                            onChange={e => setDetailRequest(prev => prev ? { ...prev, customer_address: e.target.value || null } : null)}
+                                            style={inputStyle}
+                                        />
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                        <div>
+                                            <label style={{ ...labelStyle, marginBottom: 4 }}>固定電話</label>
+                                            <input
+                                                type="text"
+                                                value={detailRequest.customer_phone || ''}
+                                                onChange={e => setDetailRequest(prev => prev ? { ...prev, customer_phone: e.target.value || null } : null)}
+                                                style={inputStyle}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={{ ...labelStyle, marginBottom: 4 }}>携帯</label>
+                                            <input
+                                                type="text"
+                                                value={detailRequest.customer_mobile || ''}
+                                                onChange={e => setDetailRequest(prev => prev ? { ...prev, customer_mobile: e.target.value || null } : null)}
+                                                style={inputStyle}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style={{ ...labelStyle, marginBottom: 4 }}>地域</label>
+                                        <input
+                                            type="text"
+                                            value={detailRequest.customer_region || ''}
+                                            onChange={e => setDetailRequest(prev => prev ? { ...prev, customer_region: e.target.value || null } : null)}
+                                            placeholder="例: 宮崎県"
+                                            style={inputStyle}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -1064,11 +1519,20 @@ export default function RepairRequestsPage() {
                             <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
                                 <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#fbbf24' }}>機械情報</h3>
                                 <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-                                    {detailRequest.category && <div>分野: {detailRequest.category}</div>}
+                                    {detailRequest.category && <div>分野: {formatRepairCategoryDisplay(detailRequest.category)}</div>}
                                     {detailRequest.model && <div>型式: {detailRequest.model}</div>}
-                                    {detailRequest.serial_no && <div>製造番号: {detailRequest.serial_no}</div>}
+                                    {detailRequest.serial_no && <div>本体番号: {detailRequest.serial_no}</div>}
+                                    {detailRequest.manufacturing_no && <div>製造番号: {detailRequest.manufacturing_no}</div>}
+                                    {!detailRequest.serial_no && !detailRequest.manufacturing_no && (
+                                        <div style={{ fontSize: 12, color: '#94a3b8' }}>本体番号・製造番号: 未入力（下部「修理内容・完了報告」で現地入力可）</div>
+                                    )}
                                     {detailRequest.manufacturing_year && <div>年式: {detailRequest.manufacturing_year}</div>}
                                     {detailRequest.usage_years != null && <div>使用年数: {detailRequest.usage_years}年</div>}
+                                    {detailRequest.customer_register_id ? (
+                                        <div style={{ marginTop: 8, fontSize: 12, color: '#86efac' }}>顧客カルテ: 紐づけ済み</div>
+                                    ) : (
+                                        <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>顧客カルテ: 未紐づけ（一覧で編集から紐づけ可能）</div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1080,6 +1544,66 @@ export default function RepairRequestsPage() {
                             {detailRequest.symptom_category && <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8' }}>分類: {detailRequest.symptom_category}</div>}
                             {detailRequest.error_code && <div style={{ fontSize: 12, color: '#94a3b8' }}>エラーコード: {detailRequest.error_code}</div>}
                         </div>
+
+                        {lineWorksAcks.length > 0 && (
+                            <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155', marginTop: 16 }}>
+                                <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#38bdf8' }}>LINE WORKS 確認状況</h3>
+                                <div style={{ fontSize: 13 }}>
+                                    {lineWorksAcks.map((a) => (
+                                        <div
+                                            key={a.staff_name}
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                gap: 12,
+                                                padding: '6px 0',
+                                                borderBottom: '1px solid #334155',
+                                            }}
+                                        >
+                                            <span>{a.staff_name}</span>
+                                            <span style={{
+                                                color: a.status === 'acknowledged' ? '#86efac' : a.status === 'failed' ? '#f87171' : '#fbbf24',
+                                                fontSize: 12,
+                                                textAlign: 'right',
+                                            }}>
+                                                {a.status === 'acknowledged'
+                                                    ? `確認済 ${a.acknowledged_at ? new Date(a.acknowledged_at).toLocaleString('ja-JP') : ''}`
+                                                    : a.status === 'failed'
+                                                        ? '送信失敗'
+                                                        : '未確認'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {detailRequest.photo_urls.length > 0 && (
+                            <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155', marginTop: 16 }}>
+                                <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#a78bfa' }}>添付写真 ({detailRequest.photo_urls.length}枚)</h3>
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                                    gap: 10,
+                                }}>
+                                    {detailRequest.photo_urls.map((url, i) => (
+                                        <a
+                                            key={`${url}-${i}`}
+                                            href={url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ display: 'block', borderRadius: 8, overflow: 'hidden', border: '1px solid #334155' }}
+                                        >
+                                            <img
+                                                src={url}
+                                                alt={`添付写真 ${i + 1}`}
+                                                style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block', background: '#0f172a' }}
+                                            />
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {/* AI Search (Dify) */}
                         <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #10b98150', marginTop: 16 }}>
@@ -1117,6 +1641,31 @@ export default function RepairRequestsPage() {
                         <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155', marginTop: 16 }}>
                             <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#38bdf8' }}>修理内容・完了報告</h3>
                             <div style={{ display: 'grid', gap: 10 }}>
+                                <div style={{ padding: 10, background: '#0f172a', borderRadius: 8, border: '1px solid #334155' }}>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>現地で判明した番号（電話・LINE受付時は未入力のことがあります）</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                                        <div>
+                                            <label style={labelStyle}>本体番号</label>
+                                            <input
+                                                type="text"
+                                                value={completionData.body_serial_no}
+                                                onChange={e => setCompletionData(p => ({ ...p, body_serial_no: e.target.value }))}
+                                                placeholder="銘板・現地で確認した本体番号"
+                                                style={inputStyle}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>製造番号</label>
+                                            <input
+                                                type="text"
+                                                value={completionData.manufacturing_no}
+                                                onChange={e => setCompletionData(p => ({ ...p, manufacturing_no: e.target.value }))}
+                                                placeholder="銘板の製造番号"
+                                                style={inputStyle}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                                 <div>
                                     <label style={labelStyle}>処置内容</label>
                                     <textarea value={completionData.treatment_details} onChange={e => setCompletionData(p => ({ ...p, treatment_details: e.target.value }))} rows={3} style={inputStyle} />
@@ -1138,6 +1687,10 @@ export default function RepairRequestsPage() {
                                 <button onClick={handleSaveCompletion} className="btn-3d btn-primary" style={{ padding: '8px 14px', width: 'fit-content' }}>
                                     修理内容を保存
                                 </button>
+                                <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0 0', lineHeight: 1.55 }}>
+                                    「保存して閉じる」・画面外クリック・Esc でも処置内容・原因・時間・費用は保存されます（完了日は付きません）。
+                                    現場完了として本日の完了日を記録する場合は上のボタンを押してください。
+                                </p>
                             </div>
                         </div>
 
@@ -1186,7 +1739,7 @@ export default function RepairRequestsPage() {
                                         <div style={{
                                             position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
                                             background: '#1e293b', border: '1px solid #475569', borderRadius: 8,
-                                            maxHeight: 200, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                                            maxHeight: 280, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                                         }}>
                                             {partSuggestions.map(p => (
                                                 <div
@@ -1278,6 +1831,42 @@ export default function RepairRequestsPage() {
                 </div>
             )}
 
+            {/* 顧客カルテ複数候補 */}
+            {chartLinkCandidates && chartLinkCandidates.length > 0 && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                    <div style={{ ...panelStyle, maxWidth: 520, width: '100%', padding: 24 }}>
+                        <h2 style={{ margin: '0 0 12px 0', fontSize: 18, color: '#f8fafc' }}>顧客カルテを選択</h2>
+                        <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 14 }}>製造番号が一致する行が複数あります。1件を選んでください。</p>
+                        <div style={{ maxHeight: 320, overflowY: 'auto', marginBottom: 16 }}>
+                            {chartLinkCandidates.map((c) => (
+                                <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => {
+                                        handleChange('customer_register_id', c.id)
+                                        setChartLinkCandidates(null)
+                                        setMessage('顧客カルテを選択しました（保存で反映）')
+                                    }}
+                                    className="btn-3d"
+                                    style={{
+                                        display: 'block', width: '100%', textAlign: 'left', marginBottom: 8,
+                                        padding: 12, background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0',
+                                    }}
+                                >
+                                    <div style={{ fontWeight: 600 }}>{c.customer_name?.trim() || '（氏名なし）'}</div>
+                                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                                        本体番号: {c.serial_no || '—'} / TEL: {c.phone || '—'}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                        <button type="button" className="btn-3d" style={{ padding: '8px 16px', background: '#475569' }} onClick={() => setChartLinkCandidates(null)}>
+                            キャンセル
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Customer Sync Dialog */}
             {customerSyncDialog && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -1298,6 +1887,12 @@ export default function RepairRequestsPage() {
                                     {customerSyncDialog.customerData.mobile ? <div><strong>携帯:</strong> {String(customerSyncDialog.customerData.mobile)}</div> : null}
                                     {customerSyncDialog.customerData.model ? <div><strong>型式:</strong> {String(customerSyncDialog.customerData.model)}</div> : null}
                                     {customerSyncDialog.customerData.serial_no ? <div><strong>製造番号:</strong> {String(customerSyncDialog.customerData.serial_no)}</div> : null}
+                                    {customerSyncDialog.customerData.sheet_type ? (
+                                        <div><strong>分野:</strong> {getSheetTypeLabel(String(customerSyncDialog.customerData.sheet_type))}</div>
+                                    ) : null}
+                                    {customerSyncDialog.customerData.dealer_name ? (
+                                        <div><strong>販売店（経路）:</strong> {String(customerSyncDialog.customerData.dealer_name)}</div>
+                                    ) : null}
                                 </div>
                                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                                     <button onClick={handleCustomerSyncCancel} className="btn-3d" style={{ padding: '10px 20px', background: '#475569', border: '1px solid #64748b' }}>

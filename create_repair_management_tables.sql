@@ -42,6 +42,7 @@ create table if not exists public.repair_requests (
     machine_type text,
     model text,
     serial_no text,
+    manufacturing_no text,
     manufacturing_year text,
     usage_years numeric(4, 1),
 
@@ -172,7 +173,8 @@ select
                 and extract(epoch from (now() - cr.shipment_date::timestamp)) / (365.25 * 86400) >= 15)
         then true
         else false
-    end as update_recommended
+    end as update_recommended,
+    cr.created_at as registration_at
 from public.customer_register_rows cr
 left join lateral (
     select
@@ -188,7 +190,7 @@ left join lateral (
        or rr.customer_register_id = cr.id
 ) repair_stats on true;
 
-comment on view public.machine_cards is '機械カルテビュー（顧客登録情報＋修理履歴統合）';
+comment on view public.machine_cards is '機械カルテビュー（顧客登録＋修理統合、registration_at=顧客登録行の作成日時）';
 
 -- ⑤ updated_at 自動更新トリガー
 create or replace function public.fn_repair_requests_update_timestamp()

@@ -75,14 +75,23 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: 'Staff LINE mapping not found', staff_name: staffName }, { status: 404 })
             }
 
-            await notifyStaffNewRepair(
-                mapping.line_user_id,
-                repair.request_no,
-                repair.customer_name,
-                repair.symptom,
-                repair.priority,
-                repair.model,
-            )
+            const photoCount = Array.isArray(repair.photo_urls) ? repair.photo_urls.length : 0
+            await notifyStaffNewRepair(mapping.line_user_id, {
+                repairRequestId: repair.id,
+                requestNo: repair.request_no,
+                customerName: repair.customer_name,
+                symptom: repair.symptom,
+                priority: repair.priority,
+                model: repair.model,
+                category: repair.category,
+                customerAddress: repair.customer_address,
+                customerPhone: repair.customer_phone,
+                customerMobile: repair.customer_mobile,
+                customerRegion: repair.customer_region,
+                assignedBranch: repair.assigned_branch,
+                assignedStaff: repair.assigned_staff,
+                photoCount,
+            })
 
             return NextResponse.json({ status: 'ok', notified: staffName })
         }

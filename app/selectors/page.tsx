@@ -152,6 +152,12 @@ export default function MasterSelectorPage() {
               <Link href="/repair-dashboard" className="selector-button primary">
                 故障分析
               </Link>
+              <Link href="/lineworks-staff-notify" className="selector-button primary">
+                修理通知 LINE WORKS
+              </Link>
+              <Link href="/line-staff-notify" className="selector-button primary">
+                修理通知 LINE（公式）
+              </Link>
             </div>
           </div>
 
@@ -206,16 +212,16 @@ export default function MasterSelectorPage() {
             </div>
           </div>
 
-          {/* 顧客登録情報 */}
+          {/* 顧客カルテ */}
           <div className="selector-card">
             <div className="selector-card-header">
               <FiUsers className="icon" />
-              <h2>顧客登録情報</h2>
+              <h2>顧客カルテ</h2>
             </div>
-            <p>機種ごとに異なる列を吸収しながら、顧客リストを入力・検索・Excel取込できます。</p>
+            <p>顧客名で検索し、基本情報と修理履歴・交換部品を一覧できます。新規登録・保証書取込にも対応します。</p>
             <div className="selector-card-buttons">
               <Link href="/customer-register" className="selector-button primary">
-                顧客登録情報
+                顧客カルテ
               </Link>
             </div>
           </div>

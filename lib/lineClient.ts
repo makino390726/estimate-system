@@ -9,6 +9,8 @@
  * .env.local に上記2つを設定してください。
  */
 
+import { buildStaffRepairNotifyFlex, type StaffRepairLineNotify } from '@/lib/repairStaffLineMessage'
+
 const LINE_API_BASE = 'https://api.line.me/v2/bot'
 const LINE_DATA_API_BASE = 'https://api-data.line.me/v2/bot'
 
@@ -482,31 +484,11 @@ export async function sendNotebookLMSearch(
     }
 }
 
-/** 担当者へ新規修理受付を通知（Flex Message） */
+/** 担当者へ新規修理受付を通知（Flex Message・案件詳細リンク付き） */
 export async function notifyStaffNewRepair(
     staffLineUserId: string,
-    requestNo: number,
-    customerName: string,
-    symptom: string,
-    priority: string,
-    model?: string,
+    input: StaffRepairLineNotify,
 ) {
-    const priorityLabel: Record<string, string> = {
-        urgent: '🔴 緊急',
-        high: '🟠 高',
-        normal: '🔵 通常',
-        low: '⚪ 低',
-    }
-
-    const text = [
-        `【新規修理受付 #${requestNo}】`,
-        `優先度: ${priorityLabel[priority] || priority}`,
-        `顧客名: ${customerName}`,
-        model ? `型式: ${model}` : null,
-        `症状: ${symptom}`,
-        '',
-        '修理案件管理画面で詳細を確認してください。',
-    ].filter(Boolean).join('\n')
-
-    await pushMessage(staffLineUserId, text)
+    const flexMessage = buildStaffRepairNotifyFlex(input)
+    await pushMessages(staffLineUserId, [flexMessage])
 }

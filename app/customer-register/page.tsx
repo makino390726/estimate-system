@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import {
     loadWarrantyMapping,
@@ -10,6 +10,7 @@ import {
     type WarrantyFieldMapping,
     type WarrantySavedMapping,
 } from '@/lib/warrantyMappingStorage'
+import { SHEET_TYPE_OPTIONS, getSheetTypeLabel } from '@/lib/customerRegisterSheetTypes'
 
 const WarrantyPdfMapper = dynamic(() => import('@/components/WarrantyPdfMapper'), { ssr: false })
 
@@ -63,18 +64,6 @@ type FormState = {
     outlet_type: string
     raw_data_json: string
 }
-
-const SHEET_TYPE_OPTIONS = [
-    { value: 'heating', label: '暖房機' },
-    { value: 'co2_device', label: '光合成促進装置' },
-    { value: 'food_dryer', label: '食品乾燥機' },
-    { value: 'soumen_dryer', label: 'ソーメン乾燥機' },
-    { value: 'leaf_dryer', label: '薬草乾燥機' },
-    { value: 'sweetpotato_dryer', label: '干し芋乾燥機' },
-    { value: 'tobacco_dryer', label: 'たばこ乾燥機' },
-    { value: 'cooling_equipment', label: '冷熱機器' },
-    { value: 'unknown', label: 'その他' },
-]
 
 const pageStyle: React.CSSProperties = {
     padding: 24,
@@ -150,6 +139,92 @@ const initialForm: FormState = {
 const toNullable = (value: string) => {
     const v = value.trim()
     return v ? v : null
+}
+
+type RepairChartRow = {
+    id: string
+    customer_register_id: string | null
+    serial_no: string | null
+    request_no: number
+    received_at: string
+    visit_completed_date: string | null
+    symptom: string
+    treatment_details: string | null
+    root_cause: string | null
+    status: string
+}
+
+type RepairPartRow = {
+    repair_request_id: string
+    part_name: string
+    quantity: number
+    part_code: string | null
+}
+
+function escapeForIlikeFragment(raw: string): string {
+    return raw
+        .replace(/\\/g, '\\\\')
+        .replace(/%/g, '\\%')
+        .replace(/_/g, '\\_')
+}
+
+/** PostgREST .or() 用: キーワードを複数列の ilike に展開（氏名未入力行は製造番号・電話等でヒット） */
+function buildCustomerRegisterSearchOr(keyword: string): string {
+    const safe = keyword.replace(/,/g, ' ').trim()
+    if (!safe) return ''
+    const frag = escapeForIlikeFragment(safe)
+    const pattern = `%${frag}%`
+    const cols = [
+        'customer_name',
+        'serial_no',
+        'phone',
+        'mobile',
+        'address',
+        'dealer_name',
+        'model',
+        'model_no',
+        'manufacturing_no',
+        'slip_no',
+    ]
+    return cols.map((c) => `${c}.ilike.${pattern}`).join(',')
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+    const out: T[][] = []
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+    return out
+}
+
+const REPAIR_STATUS_LABEL: Record<string, string> = {
+    received: '受付',
+    confirming: '確認中',
+    phone_done: '電話対応済',
+    visit_scheduled: '出張予定',
+    parts_waiting: '部品待ち',
+    repairing: '修理中',
+    completed: '修理完了',
+    billed: '請求済',
+    closed: 'クローズ',
+}
+
+function formatChartDate(iso: string | null | undefined): string {
+    if (!iso) return '-'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10)
+    return d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+function summarizeParts(rid: string, partsByRepairId: Record<string, RepairPartRow[]>): string {
+    const list = partsByRepairId[rid] || []
+    if (list.length === 0) return '-'
+    return list
+        .map((p) => `${p.part_name}${p.quantity > 1 ? `×${p.quantity}` : ''}${p.part_code ? ` (${p.part_code})` : ''}`)
+        .join('、')
+}
+
+function summarizeRepairContent(r: RepairChartRow): string {
+    const parts = [r.treatment_details, r.root_cause].filter(Boolean) as string[]
+    return parts.length ? parts.join(' / ') : '-'
 }
 
 const normalizeMatchText = (value: unknown) => String(value || '')
@@ -286,12 +361,11 @@ const getModelPreview = (row: Pick<CustomerRegisterRow, 'sheet_type' | 'model' |
     return row.model || row.model_no || '-'
 }
 
-const findSheetTypeLabel = (value: string) => SHEET_TYPE_OPTIONS.find((opt) => opt.value === value)?.label || 'その他'
-
 export default function CustomerRegisterPage() {
-    const [rows, setRows] = useState<CustomerRegisterRow[]>([])
+    const [chartRows, setChartRows] = useState<CustomerRegisterRow[]>([])
     const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
-    const [loading, setLoading] = useState(false)
+    const [chartLoading, setChartLoading] = useState(false)
+    const [chartNonce, setChartNonce] = useState(0)
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState<string | null>(null)
     const [editingId, setEditingId] = useState<string | null>(null)
@@ -303,54 +377,171 @@ export default function CustomerRegisterPage() {
     const [pdfPreviewImage, setPdfPreviewImage] = useState<string | null>(null)
     const [showWarrantyMapper, setShowWarrantyMapper] = useState(false)
     const [savedMapping, setSavedMapping] = useState<WarrantySavedMapping | null>(null)
-    const topScrollRef = useRef<HTMLDivElement | null>(null)
-    const topScrollInnerRef = useRef<HTMLDivElement | null>(null)
-    const bottomScrollRef = useRef<HTMLDivElement | null>(null)
-    const isSyncingScroll = useRef(false)
-    const stickyTopOffset = 8
-    const topScrollbarHeight = 14
-    const stickyHeaderTop = 0
-    const stickyThStyle: React.CSSProperties = {
-        ...thStyle,
-        position: 'sticky',
-        top: stickyHeaderTop,
-        zIndex: 40,
-        background: '#1e293b',
-    }
+    const [repairsByRowId, setRepairsByRowId] = useState<Record<string, RepairChartRow[]>>({})
+    const [partsByRepairId, setPartsByRepairId] = useState<Record<string, RepairPartRow[]>>({})
+    const [chartPage, setChartPage] = useState(0)
+    const [chartPageSize, setChartPageSize] = useState(50)
+    const [chartTotalCount, setChartTotalCount] = useState<number | null>(null)
 
     useEffect(() => {
-        fetchRows()
+        setChartPage(0)
+    }, [searchKeyword, filterSheetType, chartPageSize])
+
+    useEffect(() => {
         fetchStaffOptions()
         setSavedMapping(loadWarrantyMapping())
     }, [])
 
     useEffect(() => {
-        const syncTopScrollWidth = () => {
-            if (!topScrollInnerRef.current || !bottomScrollRef.current) return
-            topScrollInnerRef.current.style.width = `${bottomScrollRef.current.scrollWidth}px`
+        const kw = searchKeyword.trim()
+        if (!kw && !filterSheetType) {
+            setChartRows([])
+            setChartTotalCount(null)
+            setChartLoading(false)
+            return
         }
+        let cancelled = false
+        setChartLoading(true)
+        const t = setTimeout(async () => {
+            try {
+                let countQ = supabase.from('customer_register_rows').select('id', { count: 'exact', head: true })
+                let dataQ = supabase.from('customer_register_rows').select('*')
+                if (kw) {
+                    const orClause = buildCustomerRegisterSearchOr(kw)
+                    if (orClause) {
+                        countQ = countQ.or(orClause)
+                        dataQ = dataQ.or(orClause)
+                    }
+                }
+                if (filterSheetType) {
+                    countQ = countQ.eq('sheet_type', filterSheetType)
+                    dataQ = dataQ.eq('sheet_type', filterSheetType)
+                }
+                const from = chartPage * chartPageSize
+                const to = from + chartPageSize - 1
+                dataQ = dataQ
+                    .order('created_at', { ascending: false })
+                    .order('shipment_date', { ascending: false, nullsFirst: false })
+                    .range(from, to)
 
-        syncTopScrollWidth()
-        window.addEventListener('resize', syncTopScrollWidth)
-        return () => window.removeEventListener('resize', syncTopScrollWidth)
-    }, [rows, searchKeyword, filterSheetType, loading])
-
-    const syncHorizontalScroll = (source: 'top' | 'bottom') => {
-        if (isSyncingScroll.current) return
-        isSyncingScroll.current = true
-
-        if (source === 'top' && topScrollRef.current && bottomScrollRef.current) {
-            bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft
+                const [{ count, error: cErr }, { data, error: dErr }] = await Promise.all([countQ, dataQ])
+                if (cErr) throw cErr
+                if (dErr) throw dErr
+                if (!cancelled) {
+                    setChartTotalCount(typeof count === 'number' ? count : 0)
+                    setChartRows((data || []) as CustomerRegisterRow[])
+                }
+            } catch (e: any) {
+                if (!cancelled) {
+                    setMessage(`検索に失敗しました: ${e.message || String(e)}`)
+                    setChartRows([])
+                    setChartTotalCount(null)
+                }
+            } finally {
+                if (!cancelled) setChartLoading(false)
+            }
+        }, 320)
+        return () => {
+            cancelled = true
+            clearTimeout(t)
         }
+    }, [searchKeyword, filterSheetType, chartPage, chartPageSize, chartNonce])
 
-        if (source === 'bottom' && topScrollRef.current && bottomScrollRef.current) {
-            topScrollRef.current.scrollLeft = bottomScrollRef.current.scrollLeft
+    useEffect(() => {
+        if (chartTotalCount === null) return
+        const maxPage = Math.max(0, Math.ceil(chartTotalCount / chartPageSize) - 1)
+        if (chartPage > maxPage) setChartPage(maxPage)
+    }, [chartTotalCount, chartPageSize, chartPage])
+
+    useEffect(() => {
+        const rows = chartRows
+        if (rows.length === 0) {
+            setRepairsByRowId({})
+            setPartsByRepairId({})
+            return
         }
+        let cancelled = false
+        ;(async () => {
+            try {
+                const ids = rows.map((r) => r.id)
+                const serials = [...new Set(rows.map((r) => r.serial_no?.trim()).filter(Boolean))] as string[]
 
-        requestAnimationFrame(() => {
-            isSyncingScroll.current = false
-        })
-    }
+                const repairMap = new Map<string, RepairChartRow>()
+                const cols = 'id, customer_register_id, serial_no, request_no, received_at, visit_completed_date, symptom, treatment_details, root_cause, status'
+
+                for (const idChunk of chunkArray(ids, 80)) {
+                    const { data, error } = await supabase
+                        .from('repair_requests')
+                        .select(cols)
+                        .in('customer_register_id', idChunk)
+                    if (error) throw error
+                    for (const r of data || []) {
+                        repairMap.set((r as RepairChartRow).id, r as RepairChartRow)
+                    }
+                }
+                for (const serChunk of chunkArray(serials, 80)) {
+                    const { data, error } = await supabase.from('repair_requests').select(cols).in('serial_no', serChunk)
+                    if (error) throw error
+                    for (const r of data || []) {
+                        repairMap.set((r as RepairChartRow).id, r as RepairChartRow)
+                    }
+                }
+
+                const allRepairs = Array.from(repairMap.values())
+                const byRow: Record<string, RepairChartRow[]> = {}
+                for (const row of rows) {
+                    byRow[row.id] = []
+                }
+                for (const r of allRepairs) {
+                    for (const row of rows) {
+                        const idMatch = r.customer_register_id === row.id
+                        const s1 = row.serial_no?.trim()
+                        const s2 = r.serial_no?.trim()
+                        const serialMatch = !!(s1 && s2 && s1 === s2)
+                        if (idMatch || serialMatch) {
+                            const list = byRow[row.id]
+                            if (!list.some((x) => x.id === r.id)) list.push(r)
+                        }
+                    }
+                }
+                for (const id of Object.keys(byRow)) {
+                    byRow[id].sort(
+                        (a, b) =>
+                            new Date(b.visit_completed_date || b.received_at).getTime() -
+                            new Date(a.visit_completed_date || a.received_at).getTime(),
+                    )
+                }
+
+                const repairIds = allRepairs.map((r) => r.id)
+                const partsMap: Record<string, RepairPartRow[]> = {}
+                if (repairIds.length > 0) {
+                    for (const idChunk of chunkArray(repairIds, 100)) {
+                        const { data: parts, error: pe } = await supabase
+                            .from('repair_parts')
+                            .select('repair_request_id, part_name, quantity, part_code')
+                            .in('repair_request_id', idChunk)
+                        if (pe) throw pe
+                        for (const p of parts || []) {
+                            const pr = p as RepairPartRow
+                            const rid = pr.repair_request_id
+                            if (!partsMap[rid]) partsMap[rid] = []
+                            partsMap[rid].push(pr)
+                        }
+                    }
+                }
+
+                if (!cancelled) {
+                    setRepairsByRowId(byRow)
+                    setPartsByRepairId(partsMap)
+                }
+            } catch (e: any) {
+                if (!cancelled) console.error('顧客カルテ修理取得:', e)
+            }
+        })()
+        return () => {
+            cancelled = true
+        }
+    }, [chartRows])
 
     const fetchStaffOptions = async () => {
         try {
@@ -363,47 +554,6 @@ export default function CustomerRegisterPage() {
             console.error('担当者マスタ取得失敗:', error?.message || error)
         }
     }
-
-    const fetchRows = async () => {
-        setLoading(true)
-        let timeoutId: ReturnType<typeof setTimeout> | null = null
-
-        try {
-            const { data, error } = await supabase
-                .from('customer_register_rows')
-                .select('*')
-                .order('shipment_date', { ascending: false, nullsFirst: false })
-                .order('created_at', { ascending: false })
-                .limit(5000)
-            if (error) throw error
-            setRows((data || []) as CustomerRegisterRow[])
-        } catch (error: any) {
-            setMessage(`一覧取得に失敗しました: ${error.message || '詳細はコンソールを確認してください'}`)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const filteredRows = useMemo(() => {
-        const keyword = searchKeyword.trim().toLowerCase()
-        return rows.filter((row) => {
-            if (filterSheetType && row.sheet_type !== filterSheetType) return false
-            if (!keyword) return true
-            const values = [
-                row.sheet_name,
-                row.customer_name || '',
-                row.dealer_name || '',
-                row.model_full || row.model || row.model_no || '',
-                row.serial_no || '',
-                row.manufacturing_no || '',
-                row.burner_no || '',
-                row.phone || '',
-                row.mobile || '',
-                row.address || '',
-            ]
-            return values.some((v) => v.toLowerCase().includes(keyword))
-        })
-    }, [rows, searchKeyword, filterSheetType])
 
     const resetForm = () => {
         setEditingId(null)
@@ -455,7 +605,7 @@ export default function CustomerRegisterPage() {
 
             const rawData = parseRawData()
             const payload = {
-                sheet_name: toNullable(form.sheet_name) || findSheetTypeLabel(form.sheet_type),
+                sheet_name: toNullable(form.sheet_name) || getSheetTypeLabel(form.sheet_type),
                 sheet_type: toNullable(form.sheet_type) || 'unknown',
                 source_row_no: form.source_row_no ? Number(form.source_row_no) : null,
                 shipment_date: toNullable(form.shipment_date),
@@ -480,15 +630,15 @@ export default function CustomerRegisterPage() {
             if (editingId) {
                 const { error } = await supabase.from('customer_register_rows').update(payload).eq('id', editingId)
                 if (error) throw error
-                setMessage('顧客登録情報を更新しました')
+                setMessage('顧客カルテを更新しました')
             } else {
                 const { error } = await supabase.from('customer_register_rows').insert(payload)
                 if (error) throw error
-                setMessage('顧客登録情報を登録しました')
+                setMessage('顧客カルテに登録しました')
             }
 
             resetForm()
-            await fetchRows()
+            setChartNonce((n) => n + 1)
         } catch (error: any) {
             setMessage(`保存に失敗しました: ${error.message || '詳細はコンソールを確認してください'}`)
         } finally {
@@ -503,7 +653,7 @@ export default function CustomerRegisterPage() {
             if (error) throw error
             if (editingId === id) resetForm()
             setMessage('削除しました')
-            await fetchRows()
+            setChartNonce((n) => n + 1)
         } catch (error: any) {
             setMessage(`削除に失敗しました: ${error.message || '詳細はコンソールを確認してください'}`)
         }
@@ -563,7 +713,7 @@ export default function CustomerRegisterPage() {
 
             // 製品名 → sheet_type を推定
             const sheetType = inferSheetType(ext.product_name || '')
-            const sheetLabel = findSheetTypeLabel(sheetType)
+            const sheetLabel = getSheetTypeLabel(sheetType)
 
             // 型式番号を model / outlet_type に分割（暖房機の場合）
             let model = ''
@@ -650,8 +800,10 @@ export default function CustomerRegisterPage() {
         <div style={pageStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
                 <div>
-                    <h1 style={{ margin: 0, fontSize: 32, color: '#f8fafc' }}>顧客登録情報（顧客リスト）</h1>
-                    <p style={{ margin: '8px 0 0 0', color: '#94a3b8' }}>機種ごとの差分列に対応した顧客情報を管理します。</p>
+                    <h1 style={{ margin: 0, fontSize: 32, color: '#f8fafc' }}>顧客カルテ</h1>
+                    <p style={{ margin: '8px 0 0 0', color: '#94a3b8' }}>
+                        顧客名のあいまい検索でカルテを表示します。ヘッダに基本・機種情報、明細に修理履歴・交換部品を表示します。
+                    </p>
                 </div>
                 <Link href="/selectors">
                     <button className="btn-3d btn-reset" style={{ padding: '10px 16px', background: '#16a34a', border: '1px solid #15803d' }}>
@@ -778,7 +930,7 @@ export default function CustomerRegisterPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 520px) minmax(0, 1fr)', gap: 20, alignItems: 'stretch' }}>
                 <section style={{ ...panelStyle, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                        <h2 style={{ margin: 0, fontSize: 22 }}>{editingId ? '顧客情報を編集' : '顧客情報を登録'}</h2>
+                        <h2 style={{ margin: 0, fontSize: 22 }}>{editingId ? 'カルテを編集' : 'カルテに登録'}</h2>
                         {editingId && (
                             <button className="btn-3d" onClick={resetForm} style={{ padding: '8px 12px', background: '#475569', border: '1px solid #64748b' }}>
                                 新規入力に戻す
@@ -794,7 +946,7 @@ export default function CustomerRegisterPage() {
                                 onChange={(e) => {
                                     const nextType = e.target.value
                                     setField('sheet_type', nextType)
-                                    setField('sheet_name', findSheetTypeLabel(nextType))
+                                    setField('sheet_name', getSheetTypeLabel(nextType))
                                 }}
                                 style={inputStyle}
                             >
@@ -901,96 +1053,178 @@ export default function CustomerRegisterPage() {
                     </div>
                 </section>
 
-                <section style={panelStyle}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: 10, marginBottom: 12 }}>
-                        <input
-                            type="text"
-                            value={searchKeyword}
-                            onChange={(e) => setSearchKeyword(e.target.value)}
-                            placeholder="氏名・販売店・型式・番号で検索"
-                            style={inputStyle}
-                        />
-                        <select value={filterSheetType} onChange={(e) => setFilterSheetType(e.target.value)} style={inputStyle}>
-                            <option value="">全機種</option>
-                            {SHEET_TYPE_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                        </select>
+                <section style={{ ...panelStyle, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 200px', gap: 10, flex: 1, minWidth: 0 }}>
+                            <input
+                                type="text"
+                                value={searchKeyword}
+                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                placeholder="氏名・電話・本体番号・型式など（複数列あいまい）"
+                                style={inputStyle}
+                            />
+                            <select value={filterSheetType} onChange={(e) => setFilterSheetType(e.target.value)} style={inputStyle}>
+                                <option value="">全機種</option>
+                                {SHEET_TYPE_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <Link href="/repair-requests">
+                            <button type="button" className="btn-3d" style={{ padding: '8px 14px', background: '#2563eb', border: '1px solid #1d4ed8', fontSize: 13, whiteSpace: 'nowrap' }}>
+                                修理案件管理
+                            </button>
+                        </Link>
+                    </div>
+                    <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8' }}>
+                        キーワードは氏名だけでなく、電話・本体番号・型式・販売店などでもヒットします。機種のみ選ぶと該当機種のカルテをページ送りで一覧できます。
+                    </p>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                        <div style={{ color: '#94a3b8', fontSize: 13 }}>
+                            {chartLoading ? (
+                                '検索中…'
+                            ) : chartTotalCount != null ? (
+                                <>
+                                    全 <strong style={{ color: '#e2e8f0' }}>{chartTotalCount}</strong> 件中{' '}
+                                    {chartTotalCount === 0 ? '0' : `${chartPage * chartPageSize + 1}–${Math.min((chartPage + 1) * chartPageSize, chartTotalCount)}`}
+                                    件を表示（1ページあたり {chartPageSize} 件）
+                                </>
+                            ) : (
+                                '—'
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                            <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                件数
+                                <select
+                                    value={chartPageSize}
+                                    onChange={(e) => setChartPageSize(Number(e.target.value))}
+                                    style={{ ...inputStyle, width: 'auto', minWidth: 80, padding: '6px 10px' }}
+                                >
+                                    {[25, 50, 100, 200].map((n) => (
+                                        <option key={n} value={n}>{n}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <button
+                                type="button"
+                                className="btn-3d"
+                                disabled={chartPage <= 0 || chartLoading}
+                                onClick={() => setChartPage((p) => Math.max(0, p - 1))}
+                                style={{ padding: '6px 12px', fontSize: 12, background: '#334155', border: '1px solid #475569' }}
+                            >
+                                前へ
+                            </button>
+                            <span style={{ fontSize: 12, color: '#cbd5e1' }}>
+                                {chartTotalCount != null && chartPageSize > 0
+                                    ? `${chartPage + 1} / ${Math.max(1, Math.ceil(chartTotalCount / chartPageSize))}`
+                                    : '—'}
+                            </span>
+                            <button
+                                type="button"
+                                className="btn-3d"
+                                disabled={
+                                    chartLoading
+                                    || chartTotalCount == null
+                                    || (chartPage + 1) * chartPageSize >= chartTotalCount
+                                }
+                                onClick={() => setChartPage((p) => p + 1)}
+                                style={{ padding: '6px 12px', fontSize: 12, background: '#334155', border: '1px solid #475569' }}
+                            >
+                                次へ
+                            </button>
+                        </div>
                     </div>
 
-                    <div style={{ marginBottom: 10, color: '#94a3b8', fontSize: 13 }}>
-                        表示件数: {filteredRows.length}件
-                    </div>
-
-                    <div
-                        ref={topScrollRef}
-                        onScroll={() => syncHorizontalScroll('top')}
-                        style={{
-                            overflowX: 'auto',
-                            overflowY: 'hidden',
-                            height: topScrollbarHeight,
-                            marginBottom: 8,
-                            position: 'sticky',
-                            top: stickyTopOffset,
-                            zIndex: 30,
-                            background: '#0f172a',
-                        }}
-                        aria-label="顧客一覧テーブル上部スクロール"
-                    >
-                        <div ref={topScrollInnerRef} style={{ height: 1 }} />
-                    </div>
-
-                    <div
-                        ref={bottomScrollRef}
-                        onScroll={() => syncHorizontalScroll('bottom')}
-                        style={{ overflowX: 'auto', overflowY: 'auto', height: '100%', minHeight: 0, position: 'relative' }}
-                    >
-                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 1300 }}>
-                            <thead>
-                                <tr>
-                                    <th style={stickyThStyle}>出荷日</th>
-                                    <th style={stickyThStyle}>シート</th>
-                                    <th style={stickyThStyle}>表示型式</th>
-                                    <th style={stickyThStyle}>お客様氏名</th>
-                                    <th style={stickyThStyle}>販売店名</th>
-                                    <th style={stickyThStyle}>本体番号</th>
-                                    <th style={stickyThStyle}>製造番号</th>
-                                    <th style={stickyThStyle}>バーナ番号</th>
-                                    <th style={stickyThStyle}>伝票番号</th>
-                                    <th style={stickyThStyle}>担当者</th>
-                                    <th style={stickyThStyle}>連絡先</th>
-                                    <th style={{ ...stickyThStyle, textAlign: 'center', width: 110 }}>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loading ? (
-                                    <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>読み込み中...</td></tr>
-                                ) : filteredRows.length === 0 ? (
-                                    <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>データがありません</td></tr>
-                                ) : (
-                                    filteredRows.map((row) => (
-                                        <tr key={row.id}>
-                                            <td style={tdStyle}>{row.shipment_date || '-'}</td>
-                                            <td style={tdStyle}>{row.sheet_name} ({row.sheet_type})</td>
-                                            <td style={tdStyle}>{getModelPreview(row)}</td>
-                                            <td style={tdStyle}>{row.customer_name || '-'}</td>
-                                            <td style={tdStyle}>{row.dealer_name || '-'}</td>
-                                            <td style={tdStyle}>{row.serial_no || '-'}</td>
-                                            <td style={tdStyle}>{row.manufacturing_no || '-'}</td>
-                                            <td style={tdStyle}>{row.burner_no || '-'}</td>
-                                            <td style={tdStyle}>{row.slip_no || '-'}</td>
-                                            <td style={tdStyle}>{row.staff_name || '-'}</td>
-                                            <td style={tdStyle}>{row.phone || '-'} / {row.mobile || '-'}</td>
-                                            <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                                <button onClick={() => handleEdit(row)} className="btn-3d" style={{ padding: '4px 8px', marginRight: 4, fontSize: 12 }}>編集</button>
-                                                <button onClick={() => handleDelete(row.id)} className="btn-3d btn-reset" style={{ padding: '4px 8px', fontSize: 12, background: '#dc2626', border: '1px solid #b91c1c' }}>削除</button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                    {chartLoading && chartRows.length === 0 ? (
+                        <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>読み込み中...</div>
+                    ) : chartRows.length === 0 ? (
+                        <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', border: '1px dashed #334155', borderRadius: 12 }}>
+                            キーワードを入力するか、機種だけ選択して検索してください。
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                            {chartRows.map((row) => {
+                                const repairs = repairsByRowId[row.id] || []
+                                return (
+                                    <div
+                                        key={row.id}
+                                        style={{
+                                            border: '1px solid #334155',
+                                            borderRadius: 14,
+                                            overflow: 'hidden',
+                                            background: '#0f172a',
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                padding: '14px 16px',
+                                                background: 'linear-gradient(90deg, #1e293b 0%, #0f172a 100%)',
+                                                borderBottom: '1px solid #334155',
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                                                <div style={{ flex: 1, minWidth: 200 }}>
+                                                    <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc', marginBottom: 8 }}>
+                                                        {row.customer_name || '（氏名未設定）'}
+                                                    </div>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '6px 16px', fontSize: 13, color: '#cbd5e1' }}>
+                                                        <div><span style={{ color: '#64748b' }}>住所</span> {row.address?.trim() || '—'}</div>
+                                                        <div><span style={{ color: '#64748b' }}>電話</span> {row.phone?.trim() || '—'} / <span style={{ color: '#64748b' }}>携帯</span> {row.mobile?.trim() || '—'}</div>
+                                                        <div><span style={{ color: '#64748b' }}>出荷日</span> {row.shipment_date || '—'}</div>
+                                                        <div><span style={{ color: '#64748b' }}>販売店</span> {row.dealer_name?.trim() || '—'}</div>
+                                                        <div><span style={{ color: '#64748b' }}>機種</span> {getSheetTypeLabel(row.sheet_type)}</div>
+                                                        <div><span style={{ color: '#64748b' }}>表示型式</span> {getModelPreview(row)}</div>
+                                                        <div><span style={{ color: '#64748b' }}>本体番号</span> {row.serial_no?.trim() || '—'}</div>
+                                                        <div><span style={{ color: '#64748b' }}>製造番号</span> {row.manufacturing_no?.trim() || '—'}</div>
+                                                        <div><span style={{ color: '#64748b' }}>担当</span> {row.staff_name?.trim() || '—'}</div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                                                    <button type="button" onClick={() => handleEdit(row)} className="btn-3d" style={{ padding: '6px 12px', fontSize: 12 }}>編集</button>
+                                                    <button type="button" onClick={() => handleDelete(row.id)} className="btn-3d btn-reset" style={{ padding: '6px 12px', fontSize: 12, background: '#dc2626', border: '1px solid #b91c1c' }}>削除</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{ padding: 12 }}>
+                                            <div style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>修理履歴</div>
+                                            {repairs.length === 0 ? (
+                                                <div style={{ fontSize: 13, color: '#64748b', padding: '8px 0' }}>紐づく修理案件はありません（製造番号・顧客登録IDで自動紐づけ）。</div>
+                                            ) : (
+                                                <div style={{ overflowX: 'auto' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+                                                        <thead>
+                                                            <tr>
+                                                                <th style={thStyle}>修理日</th>
+                                                                <th style={thStyle}>受付</th>
+                                                                <th style={thStyle}>症状</th>
+                                                                <th style={thStyle}>修理内容</th>
+                                                                <th style={thStyle}>交換部品</th>
+                                                                <th style={thStyle}>状態</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {repairs.map((r) => (
+                                                                <tr key={r.id}>
+                                                                    <td style={tdStyle}>{formatChartDate(r.visit_completed_date || r.received_at)}</td>
+                                                                    <td style={tdStyle}>#{r.request_no}</td>
+                                                                    <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'pre-wrap' }}>{r.symptom || '—'}</td>
+                                                                    <td style={{ ...tdStyle, maxWidth: 260, whiteSpace: 'pre-wrap' }}>{summarizeRepairContent(r)}</td>
+                                                                    <td style={{ ...tdStyle, maxWidth: 280, whiteSpace: 'pre-wrap', fontSize: 11 }}>{summarizeParts(r.id, partsByRepairId)}</td>
+                                                                    <td style={tdStyle}>{REPAIR_STATUS_LABEL[r.status] || r.status}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
                 </section>
             </div>
         </div>

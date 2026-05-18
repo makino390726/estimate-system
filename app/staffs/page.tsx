@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabaseClient'
+import { DEPARTMENTS } from '@/lib/departments'
 
 type Staff = {
   id: string
@@ -10,6 +11,7 @@ type Staff = {
   furigana: string | null
   email: string | null
   phone: string | null
+  department: string | null
   note: string | null
   stamp_path: string | null
   approver_section_head_id: string | null
@@ -33,6 +35,7 @@ export default function StaffsPage() {
     furigana: '',
     email: '',
     phone: '',
+    department: '',
     note: '',
     stamp_path: '',
     approver_section_head_id: null,
@@ -71,6 +74,7 @@ export default function StaffsPage() {
       furigana: staff.furigana,
       email: staff.email,
       phone: staff.phone,
+      department: staff.department || '',
       note: staff.note,
       stamp_path: staff.stamp_path,
       approver_section_head_id: staff.approver_section_head_id,
@@ -88,6 +92,7 @@ export default function StaffsPage() {
       furigana: '',
       email: '',
       phone: '',
+      department: '',
       note: '',
       stamp_path: '',
       approver_section_head_id: null,
@@ -106,6 +111,7 @@ export default function StaffsPage() {
       furigana: '',
       email: '',
       phone: '',
+      department: '',
       note: '',
       stamp_path: '',
       approver_section_head_id: null,
@@ -181,6 +187,7 @@ export default function StaffsPage() {
         furigana: formData.furigana || null,
         email: formData.email || null,
         phone: formData.phone || null,
+        department: formData.department?.trim() || null,
         note: formData.note || null,
         stamp_path: stampPath || null,
         approver_section_head_id: normalizeId(formData.approver_section_head_id),
@@ -209,6 +216,7 @@ export default function StaffsPage() {
         furigana: formData.furigana || null,
         email: formData.email || null,
         phone: formData.phone || null,
+        department: formData.department?.trim() || null,
         note: formData.note || null,
         stamp_path: null, // 先にレコードを作成
         approver_section_head_id: normalizeId(formData.approver_section_head_id),
@@ -390,7 +398,10 @@ export default function StaffsPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 'bold', fontSize: 14, color: '#e2e8f0' }}>{staff.name}</div>
                   <div style={{ fontSize: 12, color: '#cbd5e1' }}>{staff.furigana}</div>
-                  <div style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    {staff.department || '部署未設定'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {staff.email}
                   </div>
                 </div>
@@ -469,6 +480,30 @@ export default function StaffsPage() {
                       style={{ width: '100%' }}
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
+                    部署
+                  </label>
+                  <select
+                    value={formData.department || ''}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    className="input-inset"
+                    style={{ width: '100%', maxWidth: 400 }}
+                  >
+                    <option value="">-- 未設定 --</option>
+                    {DEPARTMENTS.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                    {formData.department &&
+                      !(DEPARTMENTS as readonly string[]).includes(formData.department) && (
+                      <option value={formData.department}>{formData.department}（既存）</option>
+                    )}
+                  </select>
+                  <p style={{ fontSize: 11, color: '#94a3b8', margin: '8px 0 0 0' }}>
+                    メールと部署（営業所・出張所など）を設定すると、修理案件の管轄営業所と一致する担当者に通知メールが届きます。
+                  </p>
                 </div>
 
                 <div>

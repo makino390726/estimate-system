@@ -11,6 +11,15 @@ import {
     sendRepairMethodChoice,
     pushRepairMethodChoice,
 } from '@/lib/lineClient'
+import { notifyRepairRequestCreated } from '@/lib/repairStaffNotify'
+import { repairCategoryToSheetType } from '@/lib/customerRegisterSheetTypes'
+import {
+    buildStaffLineHelpReply,
+    buildStaffRegisterFailReply,
+    buildStaffRegisterSuccessReply,
+    isStaffLineHelpCommand,
+    parseStaffRegisterCommand,
+} from '@/lib/lineStaffRegisterWebhook'
 
 export const runtime = 'nodejs'
 
@@ -125,7 +134,15 @@ export async function POST(request: Request) {
 
         for (const event of events) {
             console.log('LINE event type:', event.type, 'message type:', event.message?.type, 'text:', event.message?.text)
-            if (event.type !== 'message' || !event.source.userId) continue
+            const userId = event.source?.userId
+            if (!userId) continue
+
+            if (event.type === 'follow') {
+                await handleStaffFollow(event, userId)
+                continue
+            }
+
+            if (event.type !== 'message') continue
             await handleMessage(event)
         }
 
@@ -141,10 +158,63 @@ export async function GET() {
     return NextResponse.json({ status: 'ok' })
 }
 
+async function handleStaffFollow(event: LineEvent, userId: string) {
+    try {
+        const profile = await getProfile(userId).catch(() => null)
+        const text = buildStaffLineHelpReply(userId, profile?.displayName)
+        await replyMessage(event.replyToken, text)
+    } catch (e) {
+        console.error('handleStaffFollow failed:', e)
+    }
+}
+
+async function tryHandleStaffLineRegister(event: LineEvent, userId: string, text: string): Promise<boolean> {
+    if (isStaffLineHelpCommand(text)) {
+        const profile = await getProfile(userId).catch(() => null)
+        await replyMessage(event.replyToken, buildStaffLineHelpReply(userId, profile?.displayName))
+        return true
+    }
+
+    const staffName = parseStaffRegisterCommand(text)
+    if (!staffName) return false
+
+    const sb = getSupabase()
+    const { data: staffRow } = await sb.from('staffs').select('name').eq('name', staffName).maybeSingle()
+    if (!staffRow) {
+        await replyMessage(event.replyToken, buildStaffRegisterFailReply(`担当者「${staffName}」が見つかりません`))
+        return true
+    }
+
+    const profile = await getProfile(userId).catch(() => null)
+    const { error } = await sb.from('line_staff_mappings').upsert(
+        {
+            staff_name: staffName,
+            line_user_id: userId,
+            line_display_name: profile?.displayName || null,
+            notify_enabled: true,
+        },
+        { onConflict: 'staff_name' },
+    )
+
+    if (error) {
+        await replyMessage(event.replyToken, buildStaffRegisterFailReply(error.message))
+        return true
+    }
+
+    await replyMessage(event.replyToken, buildStaffRegisterSuccessReply(staffName))
+    return true
+}
+
 async function handleMessage(event: LineEvent) {
     const userId = event.source.userId
     const msg = event.message
     if (!msg) return
+
+    if (msg.type === 'text' && msg.text) {
+        if (await tryHandleStaffLineRegister(event, userId, msg.text)) {
+            return
+        }
+    }
 
     const state = conversations.get(userId) || { step: 'idle' }
 
@@ -509,7 +579,7 @@ async function registerRepairRequest(event: LineEvent, state: ConversationState,
         priority: 'normal',
         status: 'received',
         customer_name: state.customer_name || profile?.displayName || 'LINE顧客',
-        category: state.category || null,
+        category: state.category?.trim() ? repairCategoryToSheetType(state.category) : null,
         symptom: state.symptom || '',
         model: state.model || null,
         line_user_id: userId,
@@ -537,6 +607,7 @@ async function registerRepairRequest(event: LineEvent, state: ConversationState,
     }
 
     state.repair_request_id = data.id
+    notifyRepairRequestCreated(data.id)
 
     try {
         await sendRepairConfirmation(userId, data.request_no, state.symptom || '', state.model)

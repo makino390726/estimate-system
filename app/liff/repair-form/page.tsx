@@ -11,9 +11,22 @@
  * - 公式HP 等: 従来どおり外部 URL で可
  */
 
-import { Suspense, useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { SHEET_TYPE_OPTIONS, repairCategoryToSheetType, getSheetTypeLabel } from '@/lib/customerRegisterSheetTypes'
+import { BRANCHES, getStaffDepartmentsForBranch } from '@/lib/branches'
+
+type StaffOption = { name: string; branch_id: string | null; department: string | null }
+
+function staffOptionsForBranch(staffs: StaffOption[], branchId: string): StaffOption[] {
+    if (!branchId) return []
+    const deptNames = new Set(getStaffDepartmentsForBranch(branchId))
+    return staffs.filter((s) => {
+        if (s.branch_id === branchId) return true
+        if (s.department && deptNames.has(s.department)) return true
+        return false
+    })
+}
 
 const LIFF_PREFILL_KEY = 'liff_repair_prefill_v1'
 
@@ -53,9 +66,16 @@ function RepairFormInner() {
         model: '',
         symptom: '',
         symptom_category: '',
+        customer_address: '',
         customer_phone: '',
+        customer_mobile: '',
+        customer_region: '',
+        assigned_branch: '',
+        assigned_staff: '',
         notes: '',
     })
+    const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
+    const [optionsLoading, setOptionsLoading] = useState(true)
     const [photos, setPhotos] = useState<File[]>([])
     const [photoPreviewUrls, setPhotoPreviewUrls] = useState<string[]>([])
 
@@ -63,6 +83,28 @@ function RepairFormInner() {
     const [aiSymptom, setAiSymptom] = useState('')
     const [aiAnswer, setAiAnswer] = useState<string | null>(null)
     const [aiSearching, setAiSearching] = useState(false)
+
+    const filteredStaffOptions = useMemo(
+        () => staffOptionsForBranch(staffOptions, form.assigned_branch),
+        [staffOptions, form.assigned_branch],
+    )
+
+    useEffect(() => {
+        if (mode !== 'repair') return
+        let cancelled = false
+        setOptionsLoading(true)
+        fetch('/api/repair-form-options')
+            .then((res) => res.json())
+            .then((data) => {
+                if (cancelled) return
+                if (data.staffs) setStaffOptions(data.staffs as StaffOption[])
+            })
+            .catch(() => { /* ignore */ })
+            .finally(() => {
+                if (!cancelled) setOptionsLoading(false)
+            })
+        return () => { cancelled = true }
+    }, [mode])
 
     useEffect(() => {
         // AI用 LIFF ID が未設定でも修理用 ID で init（同一チャネルで LIFF を1つだけ作っている場合）
@@ -186,6 +228,18 @@ function RepairFormInner() {
         }
         if (!form.category) {
             setError('機械の種別を選択してください')
+            return
+        }
+        if (!form.customer_phone.trim()) {
+            setError('電話番号を入力してください')
+            return
+        }
+        if (!form.assigned_branch) {
+            setError('管轄営業所を選択してください')
+            return
+        }
+        if (!form.assigned_staff) {
+            setError('担当者を選択してください')
             return
         }
         setSubmitting(true)
@@ -388,14 +442,99 @@ function RepairFormInner() {
                     </div>
 
                     <div style={styles.field}>
-                        <label style={styles.label}>電話番号</label>
+                        <label style={styles.label}>住所</label>
+                        <input
+                            type="text"
+                            value={form.customer_address}
+                            onChange={e => setForm(prev => ({ ...prev, customer_address: e.target.value }))}
+                            placeholder="例: 宮崎県宮崎市…"
+                            style={styles.input}
+                        />
+                    </div>
+
+                    <div style={styles.field}>
+                        <label style={styles.label}>
+                            電話番号<span style={styles.required}>*</span>
+                        </label>
                         <input
                             type="tel"
                             value={form.customer_phone}
                             onChange={e => setForm(prev => ({ ...prev, customer_phone: e.target.value }))}
+                            placeholder="例: 0985-00-0000"
+                            style={styles.input}
+                            required
+                        />
+                    </div>
+
+                    <div style={styles.field}>
+                        <label style={styles.label}>携帯電話</label>
+                        <input
+                            type="tel"
+                            value={form.customer_mobile}
+                            onChange={e => setForm(prev => ({ ...prev, customer_mobile: e.target.value }))}
                             placeholder="例: 090-1234-5678"
                             style={styles.input}
                         />
+                    </div>
+
+                    <div style={styles.field}>
+                        <label style={styles.label}>地域</label>
+                        <input
+                            type="text"
+                            value={form.customer_region}
+                            onChange={e => setForm(prev => ({ ...prev, customer_region: e.target.value }))}
+                            placeholder="例: 宮崎県"
+                            style={styles.input}
+                        />
+                    </div>
+
+                    <div style={styles.field}>
+                        <label style={styles.label}>
+                            管轄営業所<span style={styles.required}>*</span>
+                        </label>
+                        <select
+                            value={form.assigned_branch}
+                            onChange={e => setForm(prev => ({
+                                ...prev,
+                                assigned_branch: e.target.value,
+                                assigned_staff: '',
+                            }))}
+                            style={styles.select}
+                            required
+                            disabled={optionsLoading}
+                        >
+                            <option value="">選択してください</option>
+                            {BRANCHES.map((b) => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div style={styles.field}>
+                        <label style={styles.label}>
+                            担当者<span style={styles.required}>*</span>
+                        </label>
+                        <select
+                            value={form.assigned_staff}
+                            onChange={e => setForm(prev => ({ ...prev, assigned_staff: e.target.value }))}
+                            style={styles.select}
+                            required
+                            disabled={optionsLoading || !form.assigned_branch}
+                        >
+                            <option value="">
+                                {!form.assigned_branch
+                                    ? '先に営業所を選択'
+                                    : filteredStaffOptions.length === 0
+                                        ? '担当者が未登録'
+                                        : '選択してください'}
+                            </option>
+                            {filteredStaffOptions.map((s) => (
+                                <option key={s.name} value={s.name}>{s.name}</option>
+                            ))}
+                        </select>
+                        <p style={styles.fieldHint}>
+                            選択した担当者へ、LINE連携済みの場合は受付後に案件詳細リンクを自動送信します。
+                        </p>
                     </div>
 
                     <div style={styles.field}>
@@ -549,6 +688,12 @@ const styles: Record<string, React.CSSProperties> = {
     required: {
         color: '#e53e3e',
         marginLeft: '2px',
+    },
+    fieldHint: {
+        margin: '6px 0 0',
+        fontSize: '12px',
+        color: '#64748b',
+        lineHeight: 1.4,
     },
     input: {
         width: '100%',

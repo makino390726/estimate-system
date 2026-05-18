@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { repairCategoryToSheetType, formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
 
 // ── Types ──
 
@@ -17,6 +18,7 @@ type RepairRequest = {
     category: string | null
     model: string | null
     serial_no: string | null
+    manufacturing_no: string | null
     symptom: string
     symptom_category: string | null
     assigned_branch: string | null
@@ -171,7 +173,22 @@ export default function RepairDashboardPage() {
     const regionRanking = useMemo(() => buildRanking(r => r.customer_region), [repairs])
     const branchRanking = useMemo(() => buildRanking(r => r.assigned_branch ? (BRANCH_NAMES[r.assigned_branch] || r.assigned_branch) : null), [repairs])
     const staffRanking = useMemo(() => buildRanking(r => r.assigned_staff), [repairs])
-    const categoryRanking = useMemo(() => buildRanking(r => r.category), [repairs])
+    const categoryRanking = useMemo((): RankItem[] => {
+        const map: Record<string, number> = {}
+        repairs.forEach((r) => {
+            const code = repairCategoryToSheetType(r.category || '')
+            map[code] = (map[code] || 0) + 1
+        })
+        const total = repairs.length || 1
+        return Object.entries(map)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([code, count]) => ({
+                label: formatRepairCategoryDisplay(code),
+                count,
+                pct: (count / total) * 100,
+            }))
+    }, [repairs])
 
     const partRanking = useMemo((): RankItem[] => {
         const map: Record<string, number> = {}
