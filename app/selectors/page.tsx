@@ -152,9 +152,6 @@ export default function MasterSelectorPage() {
               <Link href="/repair-dashboard" className="selector-button primary">
                 故障分析
               </Link>
-              <Link href="/lineworks-staff-notify" className="selector-button primary">
-                修理通知 LINE WORKS
-              </Link>
               <Link href="/line-staff-notify" className="selector-button primary">
                 修理通知 LINE（公式）
               </Link>

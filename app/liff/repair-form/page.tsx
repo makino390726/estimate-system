@@ -222,8 +222,8 @@ function RepairFormInner() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!form.customer_name || !form.symptom) {
-            setError('お名前と症状は必須です')
+        if (!form.customer_name.trim()) {
+            setError('お名前を入力してください')
             return
         }
         if (!form.category) {
@@ -240,6 +240,10 @@ function RepairFormInner() {
         }
         if (!form.assigned_staff) {
             setError('担当者を選択してください')
+            return
+        }
+        if (!form.symptom_category) {
+            setError('症状のカテゴリを選択してください')
             return
         }
         setSubmitting(true)
@@ -399,7 +403,17 @@ function RepairFormInner() {
 
                 {error && <div style={styles.errorBox}>{error}</div>}
 
-                <form onSubmit={handleSubmit} style={styles.form}>
+                <style>{`
+                    .repair-liff-form input::placeholder,
+                    .repair-liff-form textarea::placeholder {
+                        color: #94a3b8;
+                    }
+                    .repair-liff-field option {
+                        background: #0f172a;
+                        color: #f8fafc;
+                    }
+                `}</style>
+                <form onSubmit={handleSubmit} style={styles.form} className="repair-liff-form">
                     <div style={styles.field}>
                         <label style={styles.label}>
                             お名前（会社名）<span style={styles.required}>*</span>
@@ -422,6 +436,7 @@ function RepairFormInner() {
                             value={form.category}
                             onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))}
                             style={styles.select}
+                            className="repair-liff-field"
                             required
                         >
                             <option value="">選択してください</option>
@@ -500,6 +515,7 @@ function RepairFormInner() {
                                 assigned_staff: '',
                             }))}
                             style={styles.select}
+                            className="repair-liff-field"
                             required
                             disabled={optionsLoading}
                         >
@@ -518,6 +534,7 @@ function RepairFormInner() {
                             value={form.assigned_staff}
                             onChange={e => setForm(prev => ({ ...prev, assigned_staff: e.target.value }))}
                             style={styles.select}
+                            className="repair-liff-field"
                             required
                             disabled={optionsLoading || !form.assigned_branch}
                         >
@@ -549,11 +566,15 @@ function RepairFormInner() {
                     </div>
 
                     <div style={styles.field}>
-                        <label style={styles.label}>症状のカテゴリ</label>
+                        <label style={styles.label}>
+                            症状のカテゴリ<span style={styles.required}>*</span>
+                        </label>
                         <select
                             value={form.symptom_category}
                             onChange={e => setForm(prev => ({ ...prev, symptom_category: e.target.value }))}
                             style={styles.select}
+                            className="repair-liff-field"
+                            required
                         >
                             <option value="">選択してください</option>
                             {SYMPTOM_CATEGORIES.filter(Boolean).map(c => (
@@ -563,16 +584,13 @@ function RepairFormInner() {
                     </div>
 
                     <div style={styles.field}>
-                        <label style={styles.label}>
-                            症状の詳細<span style={styles.required}>*</span>
-                        </label>
+                        <label style={styles.label}>症状の詳細</label>
                         <textarea
                             value={form.symptom}
                             onChange={e => setForm(prev => ({ ...prev, symptom: e.target.value }))}
-                            placeholder="具体的な症状をご記入ください"
+                            placeholder="具体的な症状があればご記入ください（任意）"
                             style={styles.textarea}
                             rows={4}
-                            required
                         />
                     </div>
 
@@ -674,6 +692,7 @@ const styles: Record<string, React.CSSProperties> = {
     },
     form: {
         padding: '20px 24px 24px',
+        background: '#0f172a',
     },
     field: {
         marginBottom: '16px',
@@ -682,7 +701,7 @@ const styles: Record<string, React.CSSProperties> = {
         display: 'block',
         fontSize: '14px',
         fontWeight: 600,
-        color: '#333',
+        color: '#f8fafc',
         marginBottom: '6px',
     },
     required: {
@@ -692,39 +711,45 @@ const styles: Record<string, React.CSSProperties> = {
     fieldHint: {
         margin: '6px 0 0',
         fontSize: '12px',
-        color: '#64748b',
+        color: '#94a3b8',
         lineHeight: 1.4,
     },
     input: {
         width: '100%',
         padding: '10px 12px',
-        border: '1px solid #d1d5db',
+        border: '1px solid #475569',
         borderRadius: '8px',
         fontSize: '16px',
         outline: 'none',
         boxSizing: 'border-box',
         WebkitAppearance: 'none',
+        background: '#1e293b',
+        color: '#f8fafc',
     },
     select: {
         width: '100%',
         padding: '10px 12px',
-        border: '1px solid #d1d5db',
+        border: '1px solid #475569',
         borderRadius: '8px',
         fontSize: '16px',
-        background: '#fff',
+        background: '#1e293b',
+        color: '#f8fafc',
         outline: 'none',
         boxSizing: 'border-box',
+        WebkitAppearance: 'none',
     },
     textarea: {
         width: '100%',
         padding: '10px 12px',
-        border: '1px solid #d1d5db',
+        border: '1px solid #475569',
         borderRadius: '8px',
         fontSize: '16px',
         outline: 'none',
         resize: 'vertical' as const,
         boxSizing: 'border-box',
         fontFamily: 'inherit',
+        background: '#1e293b',
+        color: '#f8fafc',
     },
     photoButton: {
         display: 'inline-flex',
@@ -787,10 +812,11 @@ const styles: Record<string, React.CSSProperties> = {
     errorBox: {
         margin: '0 24px',
         padding: '10px 14px',
-        background: '#fef2f2',
-        color: '#b91c1c',
+        background: '#450a0a',
+        color: '#fecaca',
         borderRadius: '8px',
         fontSize: '14px',
+        border: '1px solid #991b1b',
     },
     loadingWrapper: {
         display: 'flex',

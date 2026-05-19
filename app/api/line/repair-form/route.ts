@@ -48,16 +48,25 @@ function strField(fd: FormData, key: string): string {
     return typeof v === 'string' ? v.trim() : ''
 }
 
+/** symptom は DB NOT NULL のため、詳細が空ならカテゴリを格納 */
+function resolveSymptomText(symptom: string, symptomCategory: string | null): string {
+    const detail = symptom.trim()
+    const category = symptomCategory?.trim() || ''
+    if (detail) return detail
+    return category
+}
+
 function parseJsonFields(body: Record<string, unknown>): RepairFormFields | null {
     const customer_name = String(body.customer_name || '').trim()
-    const symptom = String(body.symptom || '').trim()
-    if (!customer_name || !symptom) return null
+    const symptom_category = String(body.symptom_category || '').trim()
+    if (!customer_name || !symptom_category) return null
+    const symptomDetail = String(body.symptom || '').trim()
     return {
         customer_name,
-        symptom,
+        symptom: resolveSymptomText(symptomDetail, symptom_category),
         category: body.category ? repairCategoryToSheetType(String(body.category)) : null,
         model: body.model ? String(body.model).trim() || null : null,
-        symptom_category: body.symptom_category ? String(body.symptom_category).trim() || null : null,
+        symptom_category,
         customer_phone: body.customer_phone ? String(body.customer_phone).trim() || null : null,
         customer_mobile: body.customer_mobile ? String(body.customer_mobile).trim() || null : null,
         customer_address: body.customer_address ? String(body.customer_address).trim() || null : null,
@@ -72,15 +81,16 @@ function parseJsonFields(body: Record<string, unknown>): RepairFormFields | null
 
 function parseMultipartFields(fd: FormData): RepairFormFields | null {
     const customer_name = strField(fd, 'customer_name')
-    const symptom = strField(fd, 'symptom')
-    if (!customer_name || !symptom) return null
+    const symptom_category = strField(fd, 'symptom_category')
+    if (!customer_name || !symptom_category) return null
     const categoryRaw = strField(fd, 'category')
+    const symptomDetail = strField(fd, 'symptom')
     return {
         customer_name,
-        symptom,
+        symptom: resolveSymptomText(symptomDetail, symptom_category),
         category: categoryRaw ? repairCategoryToSheetType(categoryRaw) : null,
         model: strField(fd, 'model') || null,
-        symptom_category: strField(fd, 'symptom_category') || null,
+        symptom_category,
         customer_phone: strField(fd, 'customer_phone') || null,
         customer_mobile: strField(fd, 'customer_mobile') || null,
         customer_address: strField(fd, 'customer_address') || null,
@@ -224,7 +234,7 @@ export async function POST(request: Request) {
             const fields = parseMultipartFields(fd)
             if (!fields) {
                 return NextResponse.json(
-                    { error: 'お名前と症状は必須です' },
+                    { error: 'お名前と症状のカテゴリは必須です' },
                     { status: 400 },
                 )
             }
@@ -243,7 +253,7 @@ export async function POST(request: Request) {
         const fields = parseJsonFields(body)
         if (!fields) {
             return NextResponse.json(
-                { error: 'お名前と症状は必須です' },
+                { error: 'お名前と症状のカテゴリは必須です' },
                 { status: 400 },
             )
         }
