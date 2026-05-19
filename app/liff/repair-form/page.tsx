@@ -94,12 +94,18 @@ function RepairFormInner() {
         let cancelled = false
         setOptionsLoading(true)
         fetch('/api/repair-form-options')
-            .then((res) => res.json())
-            .then((data) => {
+            .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
                 if (cancelled) return
+                if (!ok || data.error) {
+                    setError(data.error || '担当者・営業所の取得に失敗しました')
+                    return
+                }
                 if (data.staffs) setStaffOptions(data.staffs as StaffOption[])
             })
-            .catch(() => { /* ignore */ })
+            .catch(() => {
+                if (!cancelled) setError('担当者・営業所の取得に失敗しました')
+            })
             .finally(() => {
                 if (!cancelled) setOptionsLoading(false)
             })
