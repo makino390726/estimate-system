@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resolveStaffName } from '@/lib/staffNameMatch'
 
 export const runtime = 'nodejs'
 
@@ -47,8 +48,13 @@ export async function POST(request: Request) {
         }
 
         const sb = getSupabaseAdmin()
-        const { data: staffRow } = await sb.from('staffs').select('name').eq('name', staff_name).maybeSingle()
-        if (!staffRow) {
+        const { data: staffRows, error: staffListErr } = await sb.from('staffs').select('name').order('name')
+        if (staffListErr) {
+            return NextResponse.json({ ok: false, error: staffListErr.message }, { status: 500 })
+        }
+        const staffNames = (staffRows || []).map((r) => String(r.name || '').trim()).filter(Boolean)
+        const canonicalName = resolveStaffName(staff_name, staffNames)
+        if (!canonicalName) {
             return NextResponse.json(
                 { ok: false, error: `担当者「${staff_name}」が staffs に見つかりません` },
                 { status: 400 },
@@ -57,7 +63,7 @@ export async function POST(request: Request) {
 
         const { error } = await sb.from('line_staff_mappings').upsert(
             {
-                staff_name,
+                staff_name: canonicalName,
                 line_user_id,
                 line_display_name,
                 notify_enabled: true,
@@ -69,7 +75,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
         }
 
-        return NextResponse.json({ ok: true, staff_name, line_user_id })
+        return NextResponse.json({ ok: true, staff_name: canonicalName, line_user_id })
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e)
         return NextResponse.json({ ok: false, error: message }, { status: 500 })

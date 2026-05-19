@@ -20,6 +20,7 @@ import {
     isStaffLineHelpCommand,
     parseStaffRegisterCommand,
 } from '@/lib/lineStaffRegisterWebhook'
+import { resolveStaffName } from '@/lib/staffNameMatch'
 
 export const runtime = 'nodejs'
 
@@ -179,8 +180,14 @@ async function tryHandleStaffLineRegister(event: LineEvent, userId: string, text
     if (!staffName) return false
 
     const sb = getSupabase()
-    const { data: staffRow } = await sb.from('staffs').select('name').eq('name', staffName).maybeSingle()
-    if (!staffRow) {
+    const { data: staffRows, error: staffListErr } = await sb.from('staffs').select('name').order('name')
+    if (staffListErr) {
+        await replyMessage(event.replyToken, buildStaffRegisterFailReply(staffListErr.message))
+        return true
+    }
+    const staffNames = (staffRows || []).map((r) => String(r.name || '').trim()).filter(Boolean)
+    const canonicalName = resolveStaffName(staffName, staffNames)
+    if (!canonicalName) {
         await replyMessage(event.replyToken, buildStaffRegisterFailReply(`担当者「${staffName}」が見つかりません`))
         return true
     }
@@ -188,7 +195,7 @@ async function tryHandleStaffLineRegister(event: LineEvent, userId: string, text
     const profile = await getProfile(userId).catch(() => null)
     const { error } = await sb.from('line_staff_mappings').upsert(
         {
-            staff_name: staffName,
+            staff_name: canonicalName,
             line_user_id: userId,
             line_display_name: profile?.displayName || null,
             notify_enabled: true,
@@ -201,7 +208,7 @@ async function tryHandleStaffLineRegister(event: LineEvent, userId: string, text
         return true
     }
 
-    await replyMessage(event.replyToken, buildStaffRegisterSuccessReply(staffName))
+    await replyMessage(event.replyToken, buildStaffRegisterSuccessReply(canonicalName))
     return true
 }
 

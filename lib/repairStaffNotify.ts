@@ -11,6 +11,7 @@ import {
     staffMatchesRepairBranch,
     type RepairNotifyStaffRow,
 } from '@/lib/repairNotifyRecipients'
+import { resolveStaffName } from '@/lib/staffNameMatch'
 
 export type RepairStaffNotifyResult = {
     ok: boolean
@@ -83,12 +84,14 @@ async function sendRepairRequestLineOaToStaff(
     if (staffErr) return { ok: false, error: staffErr.message }
 
     const assignedStaff = trim(repair.assigned_staff)
+    const allStaffNames = (staffRows || []).map((s) => trim(s.name)).filter(Boolean)
     let matchedStaff = (staffRows || []).filter((s) =>
         staffMatchesRepairBranch(s as RepairNotifyStaffRow, branchId, departmentNames),
     )
     if (assignedStaff) {
-        const byName = (staffRows || []).filter((s) => trim(s.name) === assignedStaff)
-        matchedStaff = byName.length > 0 ? byName : matchedStaff.filter((s) => trim(s.name) === assignedStaff)
+        const resolved = resolveStaffName(assignedStaff, allStaffNames)
+        const byName = (staffRows || []).filter((s) => trim(s.name) === (resolved || assignedStaff))
+        matchedStaff = byName.length > 0 ? byName : matchedStaff
     }
     const staffNames = matchedStaff.map((s) => trim(s.name)).filter(Boolean)
     if (staffNames.length === 0) {

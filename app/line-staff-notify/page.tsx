@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { QRCode } from 'react-qr-code'
 import { supabase } from '@/lib/supabaseClient'
 import { getStaffLineRegisterLiffUrl, QR_SCAN_HINTS, type QrScanPayload } from '@/lib/lineStaffRegister'
+import { resolveStaffName } from '@/lib/staffNameMatch'
 
 const LineStaffQrScanner = dynamic(() => import('@/components/LineStaffQrScanner'), { ssr: false })
 
@@ -85,13 +86,18 @@ export default function LineStaffNotifyPage() {
             setMsg('担当者名と LINE User ID は必須です')
             return
         }
+        const canonicalName = resolveStaffName(staff_name, staffNames)
+        if (!canonicalName) {
+            setMsg(`担当者「${staff_name}」が staffs に見つかりません`)
+            return
+        }
         if (!line_user_id.startsWith('U')) {
             setMsg('LINE User ID は U で始まる形式です')
             return
         }
         const { error } = await supabase.from('line_staff_mappings').upsert(
             {
-                staff_name,
+                staff_name: canonicalName,
                 line_user_id,
                 line_display_name: form.line_display_name.trim() || null,
                 notify_enabled: true,
@@ -102,7 +108,7 @@ export default function LineStaffNotifyPage() {
             setMsg(`保存失敗: ${error.message}`)
             return
         }
-        setMsg(`${staff_name} の LINE 通知を登録しました`)
+        setMsg(`${canonicalName} の LINE 通知を登録しました`)
         setForm({ staff_name: '', line_user_id: '', line_display_name: '' })
         await fetchAll()
     }

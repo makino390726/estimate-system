@@ -124,7 +124,7 @@ function StaffLineRegisterInner() {
                     公式アカウントの友だち追加後、この画面で担当者名を確認して登録してください。
                 </p>
                 {error && <div style={styles.error}>{error}</div>}
-                <label style={styles.label}>担当者名（staffs と同じ表記）</label>
+                <label style={styles.label}>担当者名（姓と名の間のスペースは不要）</label>
                 <input
                     type="text"
                     value={staffName}

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { resolveStaffName } from '@/lib/staffNameMatch'
 
 type Mapping = {
     id: string
@@ -73,9 +74,14 @@ export default function LineWorksStaffNotifyPage() {
             setMsg('担当者名と LINE WORKS ID（メール）は必須です')
             return
         }
+        const canonicalName = resolveStaffName(staff_name, staffNames)
+        if (!canonicalName) {
+            setMsg(`担当者「${staff_name}」が staffs に見つかりません`)
+            return
+        }
         const { error } = await supabase.from('lineworks_staff_mappings').upsert(
             {
-                staff_name,
+                staff_name: canonicalName,
                 lineworks_user_id,
                 display_name: form.display_name.trim() || null,
                 notify_enabled: true,
@@ -86,7 +92,7 @@ export default function LineWorksStaffNotifyPage() {
             setMsg(`保存失敗: ${error.message}`)
             return
         }
-        setMsg(`${staff_name} の LINE WORKS 通知を登録しました`)
+        setMsg(`${canonicalName} の LINE WORKS 通知を登録しました`)
         setForm({ staff_name: '', lineworks_user_id: '', display_name: '' })
         await fetchAll()
     }
