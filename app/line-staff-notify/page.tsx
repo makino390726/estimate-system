@@ -4,7 +4,6 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { QRCode } from 'react-qr-code'
-import { supabase } from '@/lib/supabaseClient'
 import { getStaffLineRegisterLiffUrl, QR_SCAN_HINTS, type QrScanPayload } from '@/lib/lineStaffRegister'
 import { resolveStaffName } from '@/lib/staffNameMatch'
 
@@ -59,20 +58,22 @@ export default function LineStaffNotifyPage() {
     )
 
     const fetchAll = useCallback(async () => {
-        const [{ data: mappings, error: mErr }, { data: staffs, error: sErr }] = await Promise.all([
-            supabase.from('line_staff_mappings').select('*').order('staff_name'),
-            supabase.from('staffs').select('name').order('name'),
+        const [mapRes, staffRes] = await Promise.all([
+            fetch('/api/line/staff-mappings', { cache: 'no-store' }),
+            fetch('/api/line/staff-mappings/staffs', { cache: 'no-store' }),
         ])
-        if (mErr) {
-            setMsg(`取得エラー: ${mErr.message}`)
+        const mapData = await mapRes.json().catch(() => ({}))
+        const staffData = await staffRes.json().catch(() => ({}))
+        if (!mapRes.ok || !mapData.ok) {
+            setMsg(`取得エラー: ${mapData.error || mapRes.statusText}`)
             return
         }
-        if (sErr) {
-            setMsg(`担当者取得エラー: ${sErr.message}`)
+        if (!staffRes.ok || !staffData.ok) {
+            setMsg(`担当者取得エラー: ${staffData.error || staffRes.statusText}`)
             return
         }
-        setRows((mappings || []) as Mapping[])
-        setStaffNames((staffs || []).map((s) => String(s.name || '').trim()).filter(Boolean))
+        setRows((mapData.mappings || []) as Mapping[])
+        setStaffNames((staffData.names || []) as string[])
     }, [])
 
     useEffect(() => {
@@ -95,17 +96,18 @@ export default function LineStaffNotifyPage() {
             setMsg('LINE User ID は U で始まる形式です')
             return
         }
-        const { error } = await supabase.from('line_staff_mappings').upsert(
-            {
+        const res = await fetch('/api/line/staff-mappings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 staff_name: canonicalName,
                 line_user_id,
                 line_display_name: form.line_display_name.trim() || null,
-                notify_enabled: true,
-            },
-            { onConflict: 'staff_name' },
-        )
-        if (error) {
-            setMsg(`保存失敗: ${error.message}`)
+            }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) {
+            setMsg(`保存失敗: ${data.error || res.statusText}`)
             return
         }
         setMsg(`${canonicalName} の LINE 通知を登録しました`)
@@ -141,12 +143,14 @@ export default function LineStaffNotifyPage() {
     const copyUserIdHelp = `公式LINEに「連携」と送信すると、User ID が返信されます。`
 
     const toggleEnabled = async (row: Mapping) => {
-        const { error } = await supabase
-            .from('line_staff_mappings')
-            .update({ notify_enabled: !row.notify_enabled })
-            .eq('id', row.id)
-        if (error) {
-            setMsg(error.message)
+        const res = await fetch('/api/line/staff-mappings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: row.id, notify_enabled: !row.notify_enabled }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) {
+            setMsg(data.error || res.statusText)
             return
         }
         await fetchAll()
@@ -154,9 +158,12 @@ export default function LineStaffNotifyPage() {
 
     const handleDelete = async (id: string) => {
         if (!confirm('この LINE 連携を削除しますか？')) return
-        const { error } = await supabase.from('line_staff_mappings').delete().eq('id', id)
-        if (error) {
-            setMsg(error.message)
+        const res = await fetch(`/api/line/staff-mappings?id=${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) {
+            setMsg(data.error || res.statusText)
             return
         }
         await fetchAll()
@@ -334,7 +341,27 @@ export default function LineStaffNotifyPage() {
                 )}
             </div>
             <div style={panelStyle}>
-                <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>登録一覧</h2>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                    <h2 style={{ margin: 0, fontSize: 16 }}>登録一覧</h2>
+                    <button
+                        type="button"
+                        onClick={() => void fetchAll()}
+                        style={{
+                            padding: '6px 12px',
+                            borderRadius: 6,
+                            border: '1px solid #475569',
+                            background: '#1e293b',
+                            color: '#e2e8f0',
+                            fontSize: 13,
+                            cursor: 'pointer',
+                        }}
+                    >
+                        一覧を更新
+                    </button>
+                </div>
+                <p style={{ margin: '0 0 12px', fontSize: 12, color: '#94a3b8' }}>
+                    スマホで LIFF 登録したあと、この画面で「一覧を更新」を押すと反映されます。
+                </p>
                 {rows.length === 0 ? (
                     <p style={{ color: '#64748b', fontSize: 14 }}>未登録です</p>
                 ) : (
