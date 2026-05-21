@@ -197,6 +197,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 
 const REPAIR_STATUS_LABEL: Record<string, string> = {
     received: '受付',
+    staff_confirmed: '担当者確認',
     confirming: '確認中',
     phone_done: '電話対応済',
     visit_scheduled: '出張予定',

@@ -21,6 +21,7 @@ import {
     parseStaffRegisterCommand,
 } from '@/lib/lineStaffRegisterWebhook'
 import { resolveStaffName } from '@/lib/staffNameMatch'
+import { searchDifyRepairKnowledge } from '@/lib/difyClient'
 
 export const runtime = 'nodejs'
 
@@ -92,7 +93,6 @@ function isAiSearchStart(text: string): boolean {
     return t === '検索' || t === '検索開始'
 }
 
-const DIFY_API_BASE = process.env.DIFY_API_BASE || 'https://api.dify.ai/v1'
 const DIFY_API_KEY = process.env.DIFY_API_KEY || ''
 
 const MACHINE_CATEGORIES = [
@@ -462,36 +462,16 @@ async function handleMessage(event: LineEvent) {
 }
 
 async function searchDify(category: string, symptom: string, userId: string): Promise<string | null> {
-    const query = [
-        category ? `機械の種別: ${category}` : '',
-        `症状: ${symptom}`,
-        '',
-        '考えられる原因と対処方法を教えてください。',
-    ].filter(Boolean).join('\n')
-
-    const res = await fetch(`${DIFY_API_BASE}/chat-messages`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${DIFY_API_KEY}`,
-        },
-        body: JSON.stringify({
-            inputs: {},
-            query,
-            response_mode: 'blocking',
-            conversation_id: '',
-            user: `line-${userId}`,
-        }),
+    const result = await searchDifyRepairKnowledge({
+        category,
+        symptomText: symptom,
+        userId: `line-${userId}`,
     })
-
-    if (!res.ok) {
-        const errBody = await res.text()
-        console.error('Dify API error:', res.status, errBody)
+    if ('error' in result) {
+        console.error('Dify search:', result.error)
         return null
     }
-
-    const data = await res.json()
-    return data.answer || null
+    return result.answer
 }
 
 async function showMethodChoiceAfterAi(userId: string, state: ConversationState) {
@@ -614,7 +594,9 @@ async function registerRepairRequest(event: LineEvent, state: ConversationState,
     }
 
     state.repair_request_id = data.id
-    notifyRepairRequestCreated(data.id)
+    void notifyRepairRequestCreated(data.id).catch((e) => {
+        console.error('repair staff notify from webhook:', e)
+    })
 
     try {
         await sendRepairConfirmation(userId, data.request_no, state.symptom || '', state.model)

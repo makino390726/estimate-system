@@ -4,7 +4,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { QRCode } from 'react-qr-code'
-import { getStaffLineRegisterLiffUrl, QR_SCAN_HINTS, type QrScanPayload } from '@/lib/lineStaffRegister'
+import { getStaffLineRegisterLiffUrl, parseQrScanPayload, QR_SCAN_HINTS, type QrScanPayload } from '@/lib/lineStaffRegister'
 import { resolveStaffName } from '@/lib/staffNameMatch'
 
 const LineStaffQrScanner = dynamic(() => import('@/components/LineStaffQrScanner'), { ssr: false })
@@ -115,7 +115,12 @@ export default function LineStaffNotifyPage() {
         await fetchAll()
     }
 
-    const handleQrScan = (payload: QrScanPayload) => {
+    const handleQrDecoded = (decoded: string): boolean => {
+        if (decoded.includes('カメラ')) {
+            setMsg(decoded)
+            return false
+        }
+        const payload: QrScanPayload = parseQrScanPayload(decoded)
         if (payload.kind === 'line_user_id') {
             setForm((p) => ({
                 ...p,
@@ -123,7 +128,7 @@ export default function LineStaffNotifyPage() {
                 staff_name: p.staff_name || qrStaffName,
             }))
             setMsg(`LINE User ID を読み取りました: ${payload.lineUserId}`)
-            return
+            return true
         }
         if (payload.kind === 'staff_register_url') {
             if (payload.staffName) {
@@ -131,13 +136,10 @@ export default function LineStaffNotifyPage() {
                 setForm((p) => ({ ...p, staff_name: payload.staffName! }))
             }
             setMsg(QR_SCAN_HINTS.staffRegisterUrl)
-            return
-        }
-        if (payload.raw.includes('カメラ')) {
-            setMsg(payload.raw)
-            return
+            return false
         }
         setMsg(QR_SCAN_HINTS.unrecognized)
+        return false
     }
 
     const copyUserIdHelp = `公式LINEに「連携」と送信すると、User ID が返信されます。`
@@ -284,7 +286,7 @@ export default function LineStaffNotifyPage() {
                             <p style={{ margin: '0 0 8px', fontSize: 12, color: '#94a3b8' }}>
                                 User ID だけが入ったQR向け（登録用QRは使えません）
                             </p>
-                            <LineStaffQrScanner onScan={handleQrScan} />
+                            <LineStaffQrScanner onScan={handleQrDecoded} />
                         </div>
                         <div>
                             <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>手動登録</h3>

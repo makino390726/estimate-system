@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { parseQrScanPayload, type QrScanPayload } from '@/lib/lineStaffRegister'
-
 type Props = {
-    onScan: (payload: QrScanPayload) => void
+    /** 読み取り成功時。true を返すとカメラを停止 */
+    onScan: (decoded: string) => boolean | void
 }
 
 export default function LineStaffQrScanner({ onScan }: Props) {
@@ -45,21 +44,18 @@ export default function LineStaffQrScanner({ onScan }: Props) {
                 (decoded) => {
                     if (decoded === lastDecodedRef.current) return
                     lastDecodedRef.current = decoded
-                    const payload = parseQrScanPayload(decoded)
-                    if (payload.kind === 'line_user_id') {
-                        onScan(payload)
+                    const stop = onScan(decoded)
+                    if (stop) {
                         void stopScanner()
                         setActive(false)
-                        return
                     }
-                    onScan(payload)
                 },
                 () => { /* frame miss */ },
             )
             setActive(true)
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : 'カメラを起動できませんでした'
-            onScan({ kind: 'unrecognized', raw: message })
+            onScan(message)
             setActive(false)
         } finally {
             setStarting(false)

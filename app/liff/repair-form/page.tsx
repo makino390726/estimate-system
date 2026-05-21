@@ -14,12 +14,21 @@
 import { Suspense, useEffect, useState, useRef, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { SHEET_TYPE_OPTIONS, repairCategoryToSheetType, getSheetTypeLabel } from '@/lib/customerRegisterSheetTypes'
-import { BRANCHES, getStaffDepartmentsForBranch } from '@/lib/branches'
+import {
+    getStaffDepartmentsForBranch,
+    isBranchOther,
+    isStaffOutsideSalesBranches,
+    LIFF_REPAIR_BRANCH_OPTIONS,
+} from '@/lib/branches'
+import { toEndUserRepairAiError } from '@/lib/difyClient'
 
 type StaffOption = { name: string; branch_id: string | null; department: string | null }
 
 function staffOptionsForBranch(staffs: StaffOption[], branchId: string): StaffOption[] {
     if (!branchId) return []
+    if (isBranchOther(branchId)) {
+        return staffs.filter((s) => isStaffOutsideSalesBranches(s))
+    }
     const deptNames = new Set(getStaffDepartmentsForBranch(branchId))
     return staffs.filter((s) => {
         if (s.branch_id === branchId) return true
@@ -33,6 +42,7 @@ const LIFF_PREFILL_KEY = 'liff_repair_prefill_v1'
 type LiffModule = {
     init: (config: { liffId: string }) => Promise<void>
     isLoggedIn: () => boolean
+    isInClient: () => boolean
     login: () => void
     getProfile: () => Promise<{ userId: string; displayName: string; pictureUrl?: string }>
     closeWindow: () => void
@@ -46,6 +56,17 @@ function isAiEntryPath(): boolean {
     return window.location.pathname.replace(/\/$/, '').endsWith('/liff/ai')
 }
 
+function formatLiffInitError(e: unknown): string {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (/invalid liff|liff id/i.test(msg)) {
+        return 'LIFF IDが正しくありません。LINE Developers のエンドポイントURLと Vercel の LIFF ID 設定を確認してください。'
+    }
+    if (/init|permission|denied/i.test(msg)) {
+        return 'LINEアプリから開いてください。ブラウザだけでは連携できない場合があります。'
+    }
+    return 'LINEとの連携に失敗しました。LINEアプリから再度お試しください。'
+}
+
 function RepairFormInner() {
     const searchParams = useSearchParams()
     const mode = searchParams.get('mode') === 'ai' || isAiEntryPath() ? 'ai' : 'repair'
@@ -57,6 +78,8 @@ function RepairFormInner() {
     const [submitted, setSubmitted] = useState(false)
     const [requestNo, setRequestNo] = useState<number | null>(null)
     const [error, setError] = useState('')
+    /** AIモード: LIFF失敗時も検索は続行（赤い致命エラーにしない） */
+    const [liffNotice, setLiffNotice] = useState('')
     const photoInputRef = useRef<HTMLInputElement>(null)
 
     const [form, setForm] = useState({
@@ -83,6 +106,7 @@ function RepairFormInner() {
     const [aiSymptom, setAiSymptom] = useState('')
     const [aiAnswer, setAiAnswer] = useState<string | null>(null)
     const [aiSearching, setAiSearching] = useState(false)
+    const [closeHint, setCloseHint] = useState('')
 
     const filteredStaffOptions = useMemo(
         () => staffOptionsForBranch(staffOptions, form.assigned_branch),
@@ -113,13 +137,48 @@ function RepairFormInner() {
     }, [mode])
 
     useEffect(() => {
-        // AI用 LIFF ID が未設定でも修理用 ID で init（同一チャネルで LIFF を1つだけ作っている場合）
-        const liffId = isAiEntryPath() ? (LIFF_ID_AI || LIFF_ID) : LIFF_ID
+        const isAi = mode === 'ai'
+        const liffId = isAi ? (LIFF_ID_AI || LIFF_ID) : LIFF_ID
+
+        const applyUrlAndSessionPrefill = (displayName?: string) => {
+            const urlParams = new URLSearchParams(window.location.search)
+            const preCategory = urlParams.get('category') || ''
+            const preSymptom = urlParams.get('symptom') || ''
+            let stored: { category?: string; symptom?: string } | null = null
+            try {
+                const raw = sessionStorage.getItem(LIFF_PREFILL_KEY)
+                if (raw) stored = JSON.parse(raw) as { category?: string; symptom?: string }
+            } catch { /* ignore */ }
+            sessionStorage.removeItem(LIFF_PREFILL_KEY)
+
+            if (isAi) {
+                const cat = preCategory ? repairCategoryToSheetType(preCategory) : (stored?.category || '')
+                const sym = preSymptom || stored?.symptom || ''
+                setAiSheetCategory(cat)
+                setAiSymptom(sym)
+            } else {
+                const catFromStore = stored?.category ? repairCategoryToSheetType(stored.category) : ''
+                const symFromStore = stored?.symptom || ''
+                setForm(prev => ({
+                    ...prev,
+                    customer_name: displayName || prev.customer_name,
+                    ...(preCategory ? { category: repairCategoryToSheetType(preCategory) } : catFromStore ? { category: catFromStore } : {}),
+                    ...(preSymptom ? { symptom: preSymptom } : symFromStore ? { symptom: symFromStore } : {}),
+                }))
+            }
+        }
+
         if (!liffId) {
-            setError('LIFF IDが設定されていません（NEXT_PUBLIC_LIFF_ID）')
+            if (isAi) {
+                setLiffNotice('LINE連携は未設定ですが、AI検索は利用できます。')
+                applyUrlAndSessionPrefill()
+            } else {
+                setError('LIFF IDが設定されていません（NEXT_PUBLIC_LIFF_ID）')
+            }
             setLoading(false)
             return
         }
+
         import('@line/liff').then(mod => {
             const liffMod = mod.default as unknown as LiffModule
             liffMod.init({ liffId }).then(() => {
@@ -128,44 +187,42 @@ function RepairFormInner() {
                     liffMod.login()
                     return
                 }
-                liffMod.getProfile().then(p => {
-                    setProfile(p)
-                    const urlParams = new URLSearchParams(window.location.search)
-                    const preCategory = urlParams.get('category') || ''
-                    const preSymptom = urlParams.get('symptom') || ''
-                    const isAi = urlParams.get('mode') === 'ai' || isAiEntryPath()
-
-                    let stored: { category?: string; symptom?: string } | null = null
-                    try {
-                        const raw = sessionStorage.getItem(LIFF_PREFILL_KEY)
-                        if (raw) stored = JSON.parse(raw) as { category?: string; symptom?: string }
-                    } catch { /* ignore */ }
-                    sessionStorage.removeItem(LIFF_PREFILL_KEY)
-
-                    if (isAi) {
-                        const cat = preCategory ? repairCategoryToSheetType(preCategory) : (stored?.category || '')
-                        const sym = preSymptom || stored?.symptom || ''
-                        setAiSheetCategory(cat)
-                        setAiSymptom(sym)
-                    } else {
-                        const catFromStore = stored?.category ? repairCategoryToSheetType(stored.category) : ''
-                        const symFromStore = stored?.symptom || ''
-                        setForm(prev => ({
-                            ...prev,
-                            customer_name: p.displayName,
-                            ...(preCategory ? { category: repairCategoryToSheetType(preCategory) } : catFromStore ? { category: catFromStore } : {}),
-                            ...(preSymptom ? { symptom: preSymptom } : symFromStore ? { symptom: symFromStore } : {}),
-                        }))
-                    }
-                    setLoading(false)
-                })
-            }).catch((e: Error) => {
-                console.error('LIFF init error:', e)
-                setError('LINEとの連携に失敗しました')
+                return liffMod.getProfile()
+                    .then((p) => {
+                        setProfile(p)
+                        applyUrlAndSessionPrefill(p.displayName)
+                    })
+                    .catch((e) => {
+                        console.error('LIFF getProfile error:', e)
+                        if (isAi) {
+                            setLiffNotice('LINEプロフィールは取得できませんでしたが、AI検索は利用できます。')
+                            applyUrlAndSessionPrefill()
+                        } else {
+                            setError('LINEプロフィールの取得に失敗しました。LINEアプリから再度開いてください。')
+                        }
+                    })
+                    .finally(() => setLoading(false))
+            }).catch((e: unknown) => {
+                console.error('LIFF init error:', e, { liffId, isAi })
+                if (isAi) {
+                    setLiffNotice('LINE連携に失敗しましたが、AI検索は利用できます。')
+                    applyUrlAndSessionPrefill()
+                } else {
+                    setError(formatLiffInitError(e))
+                }
                 setLoading(false)
             })
+        }).catch((e) => {
+            console.error('LIFF SDK load error:', e)
+            if (isAi) {
+                setLiffNotice('LINE連携に失敗しましたが、AI検索は利用できます。')
+                applyUrlAndSessionPrefill()
+            } else {
+                setError('LINE連携モジュールの読み込みに失敗しました。')
+            }
+            setLoading(false)
         })
-    }, [])
+    }, [mode])
 
     useEffect(() => {
         return () => {
@@ -209,8 +266,9 @@ function RepairFormInner() {
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'AI検索に失敗しました')
             setAiAnswer(data.answer || '')
-        } catch (e: any) {
-            setAiAnswer(`エラー: ${e.message}`)
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : 'AI検索に失敗しました'
+            setAiAnswer(toEndUserRepairAiError(msg))
         } finally {
             setAiSearching(false)
         }
@@ -286,11 +344,26 @@ function RepairFormInner() {
     }
 
     const handleClose = () => {
-        if (liff) {
-            try { liff.closeWindow() } catch { window.close() }
-        } else {
-            window.close()
-        }
+        setCloseHint('')
+        void import('@line/liff').then((mod) => {
+            const liffSdk = mod.default as unknown as LiffModule
+            try {
+                if (typeof liffSdk.isInClient === 'function' && !liffSdk.isInClient()) {
+                    setCloseHint(
+                        'LINEアプリのトーク内で開いていないため、自動では閉じられません。画面左上の「×」または戻るでトーク画面に戻ってください。',
+                    )
+                    return
+                }
+                liffSdk.closeWindow()
+            } catch (e) {
+                console.error('liff.closeWindow error:', e)
+                setCloseHint(
+                    '画面を閉じられませんでした。LINEアプリの「×」または戻るでトーク画面に戻ってください。',
+                )
+            }
+        }).catch(() => {
+            setCloseHint('LINE連携を読み込めませんでした。ブラウザの戻る、またはLINEの「×」でトークに戻ってください。')
+        })
     }
 
     if (loading) {
@@ -313,6 +386,9 @@ function RepairFormInner() {
                         <p style={styles.headerSub}>機種と症状から参考情報を表示します（確定診断ではありません）</p>
                     </div>
                     <div style={styles.form}>
+                        {liffNotice && (
+                            <div style={{ ...styles.noticeBox, margin: '0 0 16px' }}>{liffNotice}</div>
+                        )}
                         {error && <div style={{ ...styles.errorBox, margin: '0 0 16px' }}>{error}</div>}
                         <div style={styles.field}>
                             <label style={styles.label}>機械の種別（任意）</label>
@@ -386,9 +462,14 @@ function RepairFormInner() {
                         担当者より折り返しご連絡いたします。<br />
                         LINEにも確認メッセージをお送りしました。
                     </p>
-                    <button onClick={handleClose} style={styles.closeButton}>
+                    <button type="button" onClick={handleClose} style={styles.closeButton}>
                         閉じる
                     </button>
+                    {closeHint && (
+                        <p style={{ marginTop: 14, fontSize: 13, color: '#fde68a', lineHeight: 1.6, textAlign: 'center' }}>
+                            {closeHint}
+                        </p>
+                    )}
                 </div>
             </div>
         )
@@ -526,7 +607,7 @@ function RepairFormInner() {
                             disabled={optionsLoading}
                         >
                             <option value="">選択してください</option>
-                            {BRANCHES.map((b) => (
+                            {LIFF_REPAIR_BRANCH_OPTIONS.map((b) => (
                                 <option key={b.id} value={b.id}>{b.name}</option>
                             ))}
                         </select>
@@ -548,15 +629,23 @@ function RepairFormInner() {
                                 {!form.assigned_branch
                                     ? '先に営業所を選択'
                                     : filteredStaffOptions.length === 0
-                                        ? '担当者が未登録'
+                                        ? isBranchOther(form.assigned_branch)
+                                            ? '営業所所属外の担当者が未登録'
+                                            : '担当者が未登録'
                                         : '選択してください'}
                             </option>
                             {filteredStaffOptions.map((s) => (
-                                <option key={s.name} value={s.name}>{s.name}</option>
+                                <option key={s.name} value={s.name}>
+                                    {s.department && isBranchOther(form.assigned_branch)
+                                        ? `${s.name}（${s.department}）`
+                                        : s.name}
+                                </option>
                             ))}
                         </select>
                         <p style={styles.fieldHint}>
-                            選択した担当者へ、LINE連携済みの場合は受付後に案件詳細リンクを自動送信します。
+                            {isBranchOther(form.assigned_branch)
+                                ? '企画部など、営業所に所属しない担当者が表示されます。選択した担当者へ、LINE連携済みの場合は受付後に案件詳細リンクを自動送信します。'
+                                : '選択した担当者へ、LINE連携済みの場合は受付後に案件詳細リンクを自動送信します。'}
                         </p>
                     </div>
 
@@ -823,6 +912,15 @@ const styles: Record<string, React.CSSProperties> = {
         borderRadius: '8px',
         fontSize: '14px',
         border: '1px solid #991b1b',
+    },
+    noticeBox: {
+        padding: '10px 14px',
+        background: '#422006',
+        color: '#fde68a',
+        borderRadius: '8px',
+        fontSize: '13px',
+        border: '1px solid #b45309',
+        lineHeight: 1.5,
     },
     loadingWrapper: {
         display: 'flex',

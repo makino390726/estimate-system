@@ -15,6 +15,68 @@ export async function listStaffLineMappings(sb: SupabaseClient) {
     return sb.from('line_staff_mappings').select('*').order('staff_name')
 }
 
+function trim(v: unknown) {
+    return typeof v === 'string' ? v.trim() : ''
+}
+
+type LineMappingRow = { staff_name: string; line_user_id: string; notify_enabled?: boolean }
+
+/** 担当者名（空白差異あり）から LINE 連携を解決 */
+export async function findStaffLineMapping(
+    sb: SupabaseClient,
+    staffName: string,
+): Promise<{ staff_name: string; line_user_id: string } | null> {
+    const input = trim(staffName)
+    if (!input) return null
+
+    const { data, error } = await sb
+        .from('line_staff_mappings')
+        .select('staff_name, line_user_id, notify_enabled')
+        .eq('notify_enabled', true)
+
+    if (error) throw error
+
+    const rows = (data || []) as LineMappingRow[]
+    const valid = rows.filter((m) => trim(m.line_user_id).startsWith('U'))
+    const mappingNames = valid.map((m) => trim(m.staff_name)).filter(Boolean)
+    const resolved = resolveStaffName(input, mappingNames)
+    if (!resolved) return null
+
+    const row = valid.find((m) => trim(m.staff_name) === resolved)
+    if (!row) return null
+    return { staff_name: resolved, line_user_id: trim(row.line_user_id) }
+}
+
+/** 複数担当者の LINE 連携を一括解決 */
+export async function findStaffLineMappingsForNames(
+    sb: SupabaseClient,
+    staffNames: string[],
+): Promise<Array<{ staffName: string; lineUserId: string }>> {
+    const unique = [...new Set(staffNames.map((n) => trim(n)).filter(Boolean))]
+    if (unique.length === 0) return []
+
+    const { data, error } = await sb
+        .from('line_staff_mappings')
+        .select('staff_name, line_user_id, notify_enabled')
+        .eq('notify_enabled', true)
+
+    if (error) throw error
+
+    const rows = (data || []) as LineMappingRow[]
+    const valid = rows.filter((m) => trim(m.line_user_id).startsWith('U'))
+    const mappingNames = valid.map((m) => trim(m.staff_name)).filter(Boolean)
+    const targets: Array<{ staffName: string; lineUserId: string }> = []
+
+    for (const name of unique) {
+        const resolved = resolveStaffName(name, mappingNames)
+        if (!resolved) continue
+        const row = valid.find((m) => trim(m.staff_name) === resolved)
+        if (!row) continue
+        targets.push({ staffName: resolved, lineUserId: trim(row.line_user_id) })
+    }
+    return targets
+}
+
 export async function upsertStaffLineMapping(
     sb: SupabaseClient,
     input: {

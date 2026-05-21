@@ -1,15 +1,15 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { randomUUID } from 'crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
-import {
-    buildRepairAckPostbackData,
-    isLineWorksConfigured,
-    sendLineWorksUserMessage,
-} from '@/lib/lineWorksClient'
+import { findLineWorksStaffMappingsForNames } from '@/lib/lineworksStaffMappingDb'
+import { isLineWorksConfigured, sendLineWorksUserMessage } from '@/lib/lineWorksClient'
 import {
     resolveRepairNotifyScope,
-    staffMatchesRepairBranch,
+    resolveRepairNotifyStaffNames,
     type RepairNotifyStaffRow,
 } from '@/lib/repairNotifyRecipients'
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { resolveStaffName } from '@/lib/staffNameMatch'
 
 export type RepairLineWorksNotifyResult = {
     ok: boolean
@@ -22,12 +22,6 @@ export type RepairLineWorksNotifyResult = {
 
 function trim(v: unknown) {
     return typeof v === 'string' ? v.trim() : ''
-}
-
-function getSupabaseAdmin(): SupabaseClient {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    return createClient(url, key)
 }
 
 function getBaseUrl(): string {
@@ -65,7 +59,14 @@ async function logNotify(
     }
 }
 
-function buildButtonTemplateMessage(params: {
+/** 修理案件詳細モーダルを開く URL（LINE WORKS 通知のリンク先） */
+export function getRepairCaseDetailUrl(repairRequestId: string): string {
+    const id = trim(repairRequestId)
+    return `${getBaseUrl()}/repair-requests?id=${encodeURIComponent(id)}`
+}
+
+/** 案件画面へのリンクのみ（LINE WORKS 上で「確認しました」ボタンは使わない） */
+function buildCaseLinkMessage(params: {
     requestNo: number
     customerName: string
     branchLabel: string
@@ -73,8 +74,7 @@ function buildButtonTemplateMessage(params: {
     model?: string | null
     category?: string | null
     priority: string
-    detailUrl: string
-    notificationId: string
+    caseUrl: string
 }) {
     const lines = [
         `【新規修理受付 #${params.requestNo}】`,
@@ -85,7 +85,8 @@ function buildButtonTemplateMessage(params: {
         params.category ? `分野: ${formatRepairCategoryDisplay(params.category)}` : null,
         `症状: ${params.symptom}`,
         '',
-        '内容を確認したら「確認しました」を押してください。',
+        '下の「案件を開く」から案件画面を表示し、',
+        '「→ 担当者確認」を押して保存してください。',
     ].filter(Boolean)
 
     return {
@@ -93,22 +94,23 @@ function buildButtonTemplateMessage(params: {
         contentText: lines.join('\n'),
         actions: [
             {
-                type: 'postback',
-                label: '確認しました',
-                postback: buildRepairAckPostbackData(params.notificationId),
-            },
-            {
                 type: 'uri',
                 label: '案件を開く',
-                uri: params.detailUrl,
+                uri: params.caseUrl,
             },
         ],
     }
 }
 
-/** 管轄担当者へ LINE WORKS 通知（確認ボタン付き） */
+export type LineWorksStaffNotifyOptions = {
+    /** 指定時はこの担当者のみ通知 */
+    staffNameOnly?: string
+}
+
+/** 管轄担当者へ LINE WORKS 通知（案件画面リンク） */
 export async function sendRepairRequestLineWorksToStaff(
     repairRequestId: string,
+    options?: LineWorksStaffNotifyOptions,
 ): Promise<RepairLineWorksNotifyResult> {
     if (!isLineWorksConfigured()) {
         return { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
@@ -133,10 +135,20 @@ export async function sendRepairRequestLineWorksToStaff(
 
     if (staffErr) return { ok: false, error: staffErr.message }
 
-    const matchedStaff = (staffRows || []).filter((s) =>
-        staffMatchesRepairBranch(s as RepairNotifyStaffRow, branchId, departmentNames),
+    const staffNameOnly = trim(options?.staffNameOnly)
+    let staffNames = resolveRepairNotifyStaffNames(
+        repair,
+        (staffRows || []) as RepairNotifyStaffRow[],
+        branchId,
+        departmentNames,
     )
-    const staffNames = matchedStaff.map((s) => trim(s.name)).filter(Boolean)
+
+    if (staffNameOnly) {
+        const allStaffNames = (staffRows || []).map((s) => trim(s.name)).filter(Boolean)
+        const resolved = resolveStaffName(staffNameOnly, allStaffNames) || staffNameOnly
+        staffNames = [resolved]
+    }
+
     if (staffNames.length === 0) {
         return {
             ok: true,
@@ -145,35 +157,30 @@ export async function sendRepairRequestLineWorksToStaff(
         }
     }
 
-    const { data: mappings, error: mapErr } = await sb
-        .from('lineworks_staff_mappings')
-        .select('staff_name, lineworks_user_id, notify_enabled')
-        .in('staff_name', staffNames)
-        .eq('notify_enabled', true)
-
-    if (mapErr) return { ok: false, error: mapErr.message }
-
-    const targets = (mappings || [])
-        .map((m) => ({
-            staffName: trim(m.staff_name),
-            lineWorksUserId: trim(m.lineworks_user_id),
-        }))
-        .filter((m) => m.staffName && m.lineWorksUserId)
+    let targets: Array<{ staffName: string; lineWorksUserId: string }>
+    try {
+        targets = await findLineWorksStaffMappingsForNames(sb, staffNames)
+    } catch (mapErr) {
+        const msg = mapErr instanceof Error ? mapErr.message : String(mapErr)
+        return { ok: false, error: msg }
+    }
 
     if (targets.length === 0) {
         await logNotify(sb, repairRequestId, '(none)', 'skipped', 'LINE WORKS mapping missing')
         return {
             ok: true,
             skipped: true,
-            reason: '担当者の LINE WORKS 連携が未登録です（lineworks-staff-notify で設定）',
+            reason: `担当者の LINE WORKS 連携が未登録です（対象: ${staffNames.join(' / ')}）。/lineworks-staff-notify で登録してください`,
         }
     }
 
-    const detailUrl = `${getBaseUrl()}/repair-requests`
+    const caseUrl = getRepairCaseDetailUrl(repairRequestId)
     let sent = 0
     const recipients: string[] = []
+    let lastError: string | null = null
 
     for (const target of targets) {
+        let notificationId = randomUUID()
         const { data: row, error: insErr } = await sb
             .from('repair_lineworks_notifications')
             .upsert(
@@ -191,14 +198,14 @@ export async function sendRepairRequestLineWorksToStaff(
             .select('id')
             .single()
 
-        if (insErr || !row?.id) {
-            console.error('repair_lineworks_notifications upsert:', insErr)
-            await logNotify(sb, repairRequestId, target.staffName, 'failed', insErr?.message)
-            continue
+        if (!insErr && row?.id) {
+            notificationId = row.id
+        } else if (insErr) {
+            console.warn('repair_lineworks_notifications upsert:', insErr.message)
         }
 
         try {
-            const content = buildButtonTemplateMessage({
+            const content = buildCaseLinkMessage({
                 requestNo: repair.request_no,
                 customerName: repair.customer_name,
                 branchLabel,
@@ -206,39 +213,126 @@ export async function sendRepairRequestLineWorksToStaff(
                 model: repair.model,
                 category: repair.category,
                 priority: repair.priority,
-                detailUrl,
-                notificationId: row.id,
+                caseUrl,
             })
             await sendLineWorksUserMessage(target.lineWorksUserId, content)
-            await sb
-                .from('repair_lineworks_notifications')
-                .update({ status: 'pending', sent_at: new Date().toISOString(), error_message: null })
-                .eq('id', row.id)
+            if (row?.id) {
+                await sb
+                    .from('repair_lineworks_notifications')
+                    .update({ status: 'pending', sent_at: new Date().toISOString(), error_message: null })
+                    .eq('id', row.id)
+            }
             sent++
             recipients.push(target.staffName)
             await logNotify(sb, repairRequestId, target.staffName, 'sent')
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e)
-            await sb
-                .from('repair_lineworks_notifications')
-                .update({ status: 'failed', error_message: msg })
-                .eq('id', row.id)
+            lastError = `${target.staffName}: ${msg}`
+            if (row?.id) {
+                await sb
+                    .from('repair_lineworks_notifications')
+                    .update({ status: 'failed', error_message: msg })
+                    .eq('id', row.id)
+            }
             await logNotify(sb, repairRequestId, target.staffName, 'failed', msg)
             console.error('LINE WORKS notify failed:', target.staffName, e)
         }
     }
 
     if (sent === 0) {
-        return { ok: false, error: 'all LINE WORKS sends failed' }
+        const summary = `targets=${targets.length}, sent=0`
+        return {
+            ok: false,
+            error: lastError || 'all LINE WORKS sends failed',
+            reason: lastError ? `${summary} — ${lastError}` : summary,
+        }
     }
     return { ok: true, sent, recipients }
+}
+
+/** 受付 → 担当者確認（LINE WORKS「確認しました」） */
+export async function upgradeRepairStatusToStaffConfirmed(
+    sb: SupabaseClient,
+    repairRequestId: string,
+): Promise<{ updated: boolean; error?: string }> {
+    const { data: repair, error: fetchErr } = await sb
+        .from('repair_requests')
+        .select('status')
+        .eq('id', repairRequestId)
+        .single()
+
+    if (fetchErr || !repair) {
+        return { updated: false, error: fetchErr?.message || '案件が見つかりません' }
+    }
+    if (repair.status !== 'received') {
+        return { updated: false }
+    }
+
+    const { error: statusErr } = await sb
+        .from('repair_requests')
+        .update({ status: 'staff_confirmed' })
+        .eq('id', repairRequestId)
+        .eq('status', 'received')
+
+    if (statusErr) {
+        const hint = /check|constraint|violates/i.test(statusErr.message)
+            ? '（Supabase で add_repair_status_staff_confirmed.sql の実行が必要です）'
+            : ''
+        return { updated: false, error: `${statusErr.message}${hint}` }
+    }
+    return { updated: true }
+}
+
+const LINEWORKS_ACK_TEXTS = new Set(['確認しました', '確認済み', '確認', '了解', '承知しました'])
+
+/** 未確認の通知をユーザーから特定（ボタン以外のテキスト送信フォールバック用） */
+export async function findPendingLineWorksNotificationIdForUser(
+    lineWorksUserId: string,
+): Promise<string | null> {
+    const uid = trim(lineWorksUserId)
+    if (!uid) return null
+
+    const sb = getSupabaseAdmin()
+
+    const { data: direct } = await sb
+        .from('repair_lineworks_notifications')
+        .select('id')
+        .eq('status', 'pending')
+        .eq('lineworks_user_id', uid)
+        .order('sent_at', { ascending: true })
+        .limit(1)
+
+    if (direct?.[0]?.id) return direct[0].id
+
+    const { data: mappings } = await sb
+        .from('lineworks_staff_mappings')
+        .select('staff_name')
+        .eq('lineworks_user_id', uid)
+
+    const staffNames = (mappings || []).map((m) => trim(m.staff_name)).filter(Boolean)
+    if (staffNames.length === 0) return null
+
+    const { data: byStaff } = await sb
+        .from('repair_lineworks_notifications')
+        .select('id')
+        .eq('status', 'pending')
+        .in('staff_name', staffNames)
+        .order('sent_at', { ascending: true })
+        .limit(1)
+
+    return byStaff?.[0]?.id ?? null
+}
+
+export function isLineWorksAckText(text: unknown): boolean {
+    const t = trim(text)
+    return t.length > 0 && LINEWORKS_ACK_TEXTS.has(t)
 }
 
 /** postback「確認しました」 */
 export async function acknowledgeRepairLineWorksNotification(
     notificationId: string,
     lineWorksUserId: string,
-): Promise<{ ok: boolean; requestNo?: number; error?: string }> {
+): Promise<{ ok: boolean; requestNo?: number; statusUpdated?: boolean; error?: string }> {
     const sb = getSupabaseAdmin()
     const { data: row, error } = await sb
         .from('repair_lineworks_notifications')
@@ -251,12 +345,18 @@ export async function acknowledgeRepairLineWorksNotification(
     }
 
     if (row.status === 'acknowledged') {
+        const statusResult = await upgradeRepairStatusToStaffConfirmed(sb, row.repair_request_id)
         const { data: repair } = await sb
             .from('repair_requests')
             .select('request_no')
             .eq('id', row.repair_request_id)
             .single()
-        return { ok: true, requestNo: repair?.request_no }
+        return {
+            ok: true,
+            requestNo: repair?.request_no,
+            statusUpdated: statusResult.updated,
+            error: statusResult.error,
+        }
     }
 
     const { error: upErr } = await sb
@@ -270,13 +370,93 @@ export async function acknowledgeRepairLineWorksNotification(
 
     if (upErr) return { ok: false, error: upErr.message }
 
+    const statusResult = await upgradeRepairStatusToStaffConfirmed(sb, row.repair_request_id)
+    if (statusResult.error) {
+        console.error('repair_requests status -> staff_confirmed:', statusResult.error)
+    }
+
     const { data: repair } = await sb
         .from('repair_requests')
         .select('request_no')
         .eq('id', row.repair_request_id)
         .single()
 
-    return { ok: true, requestNo: repair?.request_no }
+    return {
+        ok: true,
+        requestNo: repair?.request_no,
+        statusUpdated: statusResult.updated,
+        error: statusResult.error,
+    }
+}
+
+/** 案件画面で「担当者確認」にしたあと、LINE WORKS へ確認メッセージを送る */
+export async function confirmRepairLineWorksFromWeb(
+    repairRequestId: string,
+): Promise<RepairLineWorksNotifyResult> {
+    if (!isLineWorksConfigured()) {
+        return { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
+    }
+
+    const sb = getSupabaseAdmin()
+    const { data: repair, error: repairErr } = await sb
+        .from('repair_requests')
+        .select('request_no, status')
+        .eq('id', repairRequestId)
+        .single()
+
+    if (repairErr || !repair) {
+        return { ok: false, error: repairErr?.message || '案件が見つかりません' }
+    }
+
+    const { data: rows, error: listErr } = await sb
+        .from('repair_lineworks_notifications')
+        .select('id, staff_name, lineworks_user_id, status')
+        .eq('repair_request_id', repairRequestId)
+
+    if (listErr) return { ok: false, error: listErr.message }
+
+    const targets = (rows || []).filter((r) => trim(r.lineworks_user_id))
+    if (targets.length === 0) {
+        return { ok: true, sent: 0, skipped: true, reason: 'LINE WORKS 通知履歴なし' }
+    }
+
+    const now = new Date().toISOString()
+    const ackText = `修理依頼 #${repair.request_no} を確認しました。担当者確認を記録しました。`
+    let sent = 0
+    let lastError: string | null = null
+
+    for (const row of targets) {
+        if (row.status !== 'acknowledged') {
+            const { error: upErr } = await sb
+                .from('repair_lineworks_notifications')
+                .update({
+                    status: 'acknowledged',
+                    acknowledged_at: now,
+                })
+                .eq('id', row.id)
+            if (upErr) {
+                lastError = upErr.message
+                continue
+            }
+        }
+        try {
+            await sendLineWorksUserMessage(trim(row.lineworks_user_id), {
+                type: 'text',
+                text: ackText,
+            })
+            sent++
+            await logNotify(sb, repairRequestId, trim(row.staff_name), 'sent')
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            lastError = `${row.staff_name}: ${msg}`
+            await logNotify(sb, repairRequestId, trim(row.staff_name), 'failed', msg)
+        }
+    }
+
+    if (sent === 0) {
+        return { ok: false, error: lastError || 'LINE WORKS 確認メッセージ送信に失敗' }
+    }
+    return { ok: true, sent }
 }
 
 export async function fetchRepairLineWorksAckSummary(repairRequestId: string) {

@@ -1,9 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
-import { resolveStaffName } from '@/lib/staffNameMatch'
+import dynamic from 'next/dynamic'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { QRCode } from 'react-qr-code'
+import {
+    getLineWorksStaffRegisterUrl,
+    LINEWORKS_QR_SCAN_HINTS,
+    parseLineWorksQrScanPayload,
+} from '@/lib/lineWorksStaffRegister'
+
+const LineStaffQrScanner = dynamic(() => import('@/components/LineStaffQrScanner'), { ssr: false })
 
 type Mapping = {
     id: string
@@ -40,32 +47,95 @@ export default function LineWorksStaffNotifyPage() {
     const [rows, setRows] = useState<Mapping[]>([])
     const [staffNames, setStaffNames] = useState<string[]>([])
     const [msg, setMsg] = useState<string | null>(null)
+    const [qrStaffName, setQrStaffName] = useState('')
+    const [showAdvanced, setShowAdvanced] = useState(false)
+    const [origin, setOrigin] = useState('')
     const [form, setForm] = useState({
         staff_name: '',
         lineworks_user_id: '',
         display_name: '',
     })
+    const [lwStatus, setLwStatus] = useState<{
+        ok?: boolean
+        configured?: boolean
+        tokenOk?: boolean
+        tokenError?: string | null
+        mappingCount?: number
+        hint?: string | null
+        notificationsTableOk?: boolean
+        notificationsTableError?: string | null
+        supabaseServiceRole?: boolean
+        env?: Record<string, boolean>
+        missingEnv?: string[]
+        hints?: string[]
+        deployNote?: string
+    } | null>(null)
+    const [testSending, setTestSending] = useState(false)
+
+    useEffect(() => {
+        setOrigin(window.location.origin)
+    }, [])
+
+    const registerUrl = useMemo(
+        () => (origin ? getLineWorksStaffRegisterUrl(qrStaffName, origin) : null),
+        [origin, qrStaffName],
+    )
 
     const fetchAll = useCallback(async () => {
-        const [{ data: mappings, error: mErr }, { data: staffs, error: sErr }] = await Promise.all([
-            supabase.from('lineworks_staff_mappings').select('*').order('staff_name'),
-            supabase.from('staffs').select('name, email').order('name'),
+        const [mapRes, staffRes] = await Promise.all([
+            fetch('/api/lineworks/staff-mappings', { cache: 'no-store' }),
+            fetch('/api/lineworks/staff-mappings/staffs', { cache: 'no-store' }),
         ])
-        if (mErr) {
-            setMsg(`取得エラー: ${mErr.message}`)
+        const mapData = await mapRes.json().catch(() => ({}))
+        const staffData = await staffRes.json().catch(() => ({}))
+        if (!mapRes.ok || !mapData.ok) {
+            setMsg(`取得エラー: ${mapData.error || mapRes.statusText}`)
             return
         }
-        if (sErr) {
-            setMsg(`担当者取得エラー: ${sErr.message}`)
+        if (!staffRes.ok || !staffData.ok) {
+            setMsg(`担当者取得エラー: ${staffData.error || staffRes.statusText}`)
             return
         }
-        setRows((mappings || []) as Mapping[])
-        setStaffNames((staffs || []).map((s) => String(s.name || '').trim()).filter(Boolean))
+        setRows((mapData.mappings || []) as Mapping[])
+        setStaffNames((staffData.names || []) as string[])
+    }, [])
+
+    const fetchStatus = useCallback(async () => {
+        const res = await fetch('/api/lineworks/status', { cache: 'no-store' })
+        const data = await res.json().catch(() => ({}))
+        setLwStatus(data)
     }, [])
 
     useEffect(() => {
         void fetchAll()
-    }, [fetchAll])
+        void fetchStatus()
+    }, [fetchAll, fetchStatus])
+
+    const handleTestMessage = async () => {
+        const userId = form.lineworks_user_id.trim()
+        if (!userId) {
+            setMsg('テスト送信する LINE WORKS ID を入力してください')
+            return
+        }
+        setTestSending(true)
+        try {
+            const res = await fetch('/api/lineworks/test-message', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lineworks_user_id: userId }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || !data.ok) {
+                setMsg(`テスト送信失敗: ${data.error || res.statusText}`)
+                return
+            }
+            setMsg(`${userId} へテストメッセージを送信しました。LINE WORKS を確認してください。`)
+        } catch (e: unknown) {
+            setMsg(e instanceof Error ? e.message : 'テスト送信に失敗しました')
+        } finally {
+            setTestSending(false)
+        }
+    }
 
     const handleSave = async () => {
         const staff_name = form.staff_name.trim()
@@ -74,36 +144,61 @@ export default function LineWorksStaffNotifyPage() {
             setMsg('担当者名と LINE WORKS ID（メール）は必須です')
             return
         }
-        const canonicalName = resolveStaffName(staff_name, staffNames)
-        if (!canonicalName) {
-            setMsg(`担当者「${staff_name}」が staffs に見つかりません`)
-            return
-        }
-        const { error } = await supabase.from('lineworks_staff_mappings').upsert(
-            {
-                staff_name: canonicalName,
+        const res = await fetch('/api/lineworks/staff-mappings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                staff_name,
                 lineworks_user_id,
                 display_name: form.display_name.trim() || null,
-                notify_enabled: true,
-            },
-            { onConflict: 'staff_name' },
-        )
-        if (error) {
-            setMsg(`保存失敗: ${error.message}`)
+            }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) {
+            setMsg(`保存失敗: ${data.error || res.statusText}`)
             return
         }
-        setMsg(`${canonicalName} の LINE WORKS 通知を登録しました`)
+        setMsg(`${data.staff_name} の LINE WORKS 通知を登録しました`)
         setForm({ staff_name: '', lineworks_user_id: '', display_name: '' })
         await fetchAll()
     }
 
+    const handleQrDecoded = (decoded: string): boolean => {
+        if (decoded.includes('カメラ')) {
+            setMsg(decoded)
+            return false
+        }
+        const payload = parseLineWorksQrScanPayload(decoded)
+        if (payload.kind === 'lineworks_user_id') {
+            setForm((p) => ({
+                ...p,
+                lineworks_user_id: payload.userId,
+                staff_name: p.staff_name || qrStaffName,
+            }))
+            setMsg(`LINE WORKS ID を読み取りました: ${payload.userId}`)
+            return true
+        }
+        if (payload.kind === 'staff_register_url') {
+            if (payload.staffName) {
+                setQrStaffName(payload.staffName)
+                setForm((p) => ({ ...p, staff_name: payload.staffName! }))
+            }
+            setMsg(LINEWORKS_QR_SCAN_HINTS.staffRegisterUrl)
+            return false
+        }
+        setMsg(LINEWORKS_QR_SCAN_HINTS.unrecognized)
+        return false
+    }
+
     const toggleEnabled = async (row: Mapping) => {
-        const { error } = await supabase
-            .from('lineworks_staff_mappings')
-            .update({ notify_enabled: !row.notify_enabled })
-            .eq('id', row.id)
-        if (error) {
-            setMsg(error.message)
+        const res = await fetch('/api/lineworks/staff-mappings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: row.id, notify_enabled: !row.notify_enabled }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) {
+            setMsg(data.error || res.statusText)
             return
         }
         await fetchAll()
@@ -111,9 +206,12 @@ export default function LineWorksStaffNotifyPage() {
 
     const handleDelete = async (id: string) => {
         if (!confirm('この LINE WORKS 連携を削除しますか？')) return
-        const { error } = await supabase.from('lineworks_staff_mappings').delete().eq('id', id)
-        if (error) {
-            setMsg(error.message)
+        const res = await fetch(`/api/lineworks/staff-mappings?id=${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.ok) {
+            setMsg(data.error || res.statusText)
             return
         }
         await fetchAll()
@@ -126,7 +224,7 @@ export default function LineWorksStaffNotifyPage() {
                 <h1 style={{ margin: '12px 0 8px', fontSize: 24 }}>修理通知 LINE WORKS 連携</h1>
                 <p style={{ margin: 0, color: '#94a3b8', fontSize: 14, lineHeight: 1.6 }}>
                     修理依頼受付時、管轄営業所の担当者へ LINE WORKS Bot から通知します。
-                    通知メッセージの「確認しました」ボタンで既読（確認）を記録します。
+                    通知は案件画面へのリンクのみです。担当者は案件画面で「→ 担当者確認」を押すと、LINE WORKS に確認メッセージが届きます。
                     <br />
                     <strong>lineworks_user_id</strong> にはログインメール（推奨）または WORKS ユーザー ID を入力してください。
                 </p>
@@ -138,56 +236,199 @@ export default function LineWorksStaffNotifyPage() {
                 </div>
             )}
 
-            <div style={{ ...panelStyle, marginBottom: 20 }}>
-                <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>新規登録</h2>
-                <div style={{ display: 'grid', gap: 10 }}>
-                    <div>
-                        <label style={{ fontSize: 12, color: '#94a3b8' }}>担当者名（staffs.name と一致）</label>
-                        <input
-                            list="lw-staff-name-list"
-                            value={form.staff_name}
-                            onChange={(e) => setForm((p) => ({ ...p, staff_name: e.target.value }))}
-                            style={inputStyle}
-                        />
-                        <datalist id="lw-staff-name-list">
-                            {staffNames.map((n) => (
-                                <option key={n} value={n} />
-                            ))}
-                        </datalist>
+            {lwStatus && (
+                <div style={{
+                    ...panelStyle,
+                    marginBottom: 16,
+                    borderColor: lwStatus.ok ? '#166534' : '#b45309',
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <h2 style={{ margin: 0, fontSize: 15, color: lwStatus.ok ? '#86efac' : '#fcd34d' }}>
+                            連携状態: {lwStatus.ok ? 'OK' : '要確認'}
+                        </h2>
+                        <button
+                            type="button"
+                            onClick={() => void fetchStatus()}
+                            style={{
+                                padding: '6px 12px', fontSize: 12, borderRadius: 6,
+                                border: '1px solid #334155', background: '#1e293b', color: '#e2e8f0', cursor: 'pointer',
+                            }}
+                        >
+                            再確認
+                        </button>
                     </div>
-                    <div>
-                        <label style={{ fontSize: 12, color: '#94a3b8' }}>LINE WORKS ID（メールまたはユーザーID）</label>
-                        <input
-                            value={form.lineworks_user_id}
-                            onChange={(e) => setForm((p) => ({ ...p, lineworks_user_id: e.target.value }))}
-                            placeholder="tanaka@example.com"
-                            style={inputStyle}
-                        />
-                    </div>
-                    <div>
-                        <label style={{ fontSize: 12, color: '#94a3b8' }}>表示名（任意）</label>
-                        <input
-                            value={form.display_name}
-                            onChange={(e) => setForm((p) => ({ ...p, display_name: e.target.value }))}
-                            style={inputStyle}
-                        />
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => void handleSave()}
-                        style={{
-                            padding: '12px',
-                            background: '#2563eb',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 8,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                        }}
-                    >
-                        保存
-                    </button>
+                    <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: 13, color: '#cbd5e1', lineHeight: 1.7 }}>
+                        <li>環境変数: {lwStatus.configured ? '設定済み' : '未設定'}</li>
+                        <li>APIトークン: {lwStatus.tokenOk ? '取得成功' : `失敗 ${lwStatus.tokenError || ''}`}</li>
+                        <li>担当者登録: {lwStatus.mappingCount ?? 0} 名</li>
+                        <li>確認用テーブル: {lwStatus.notificationsTableOk === false
+                            ? `未作成（${lwStatus.notificationsTableError}）`
+                            : 'OK'}</li>
+                        <li>Supabase service role: {lwStatus.supabaseServiceRole ? '設定済み' : '未設定（RLSで保存失敗の原因）'}</li>
+                    </ul>
+                    {lwStatus.missingEnv && lwStatus.missingEnv.length > 0 && (
+                        <p style={{ margin: '10px 0 0', fontSize: 12, color: '#f87171' }}>
+                            未設定の変数: {lwStatus.missingEnv.join('、')}
+                        </p>
+                    )}
+                    {(lwStatus.hints?.length ? lwStatus.hints : lwStatus.hint ? [lwStatus.hint] : []).map((h) => (
+                        <p key={h} style={{ margin: '10px 0 0', fontSize: 13, color: '#fbbf24' }}>{h}</p>
+                    ))}
                 </div>
+            )}
+
+            <div style={{ ...panelStyle, marginBottom: 20, borderColor: '#1d4ed8' }}>
+                <h2 style={{ margin: '0 0 12px', fontSize: 16, color: '#93c5fd' }}>QRコードで登録（推奨）</h2>
+                <div style={{
+                    marginBottom: 14,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    background: '#172554',
+                    fontSize: 13,
+                    color: '#bfdbfe',
+                    lineHeight: 1.55,
+                }}>
+                    <strong>管理PCのカメラで上のQRを読んでも登録は完了しません。</strong>
+                    担当者本人がスマートフォンで読み取り、LINE WORKS のログインメールを入力してください。
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, color: '#94a3b8' }}>登録する担当者名</label>
+                    <input
+                        list="lw-staff-name-list-qr"
+                        value={qrStaffName}
+                        onChange={(e) => {
+                            const v = e.target.value
+                            setQrStaffName(v)
+                            setForm((p) => ({ ...p, staff_name: v }))
+                        }}
+                        placeholder="staffs.name と同じ表記"
+                        style={inputStyle}
+                    />
+                    <datalist id="lw-staff-name-list-qr">
+                        {staffNames.map((n) => (
+                            <option key={n} value={n} />
+                        ))}
+                    </datalist>
+                </div>
+                {registerUrl ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+                        <div style={{ background: '#fff', padding: 12, borderRadius: 12 }}>
+                            <QRCode value={registerUrl} size={200} />
+                        </div>
+                        <div style={{ flex: '1 1 200px', fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
+                            <p style={{ margin: '0 0 8px' }}>
+                                1. 担当者名を上で選択<br />
+                                2. 担当者にこの QR をスマホで読み取ってもらう<br />
+                                3. 開いた画面で LINE WORKS のログインメールを入力して「登録する」
+                            </p>
+                            <p style={{ margin: 0, wordBreak: 'break-all' }}>
+                                <a href={registerUrl} style={{ color: '#60a5fa' }}>{registerUrl}</a>
+                            </p>
+                        </div>
+                    </div>
+                ) : (
+                    <p style={{ margin: 0, fontSize: 13, color: '#94a3b8' }}>QR を生成中…</p>
+                )}
+            </div>
+
+            <div style={{ ...panelStyle, marginBottom: 20 }}>
+                <button
+                    type="button"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                    style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        textAlign: 'left',
+                        background: 'transparent',
+                        border: '1px solid #334155',
+                        borderRadius: 8,
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                    }}
+                >
+                    {showAdvanced ? '▼' : '▶'} 詳細（PCカメラ・手動入力）
+                </button>
+                {showAdvanced && (
+                    <div style={{ marginTop: 14, display: 'grid', gap: 16 }}>
+                        <div>
+                            <p style={{ margin: '0 0 8px', fontSize: 12, color: '#94a3b8' }}>
+                                担当者の連絡先QR（メール入り）や登録用QRを読み取れます
+                            </p>
+                            <LineStaffQrScanner onScan={handleQrDecoded} />
+                        </div>
+                        <div>
+                            <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>手動登録</h3>
+                            <div style={{ display: 'grid', gap: 10 }}>
+                                <div>
+                                    <label style={{ fontSize: 12, color: '#94a3b8' }}>担当者名（staffs.name と一致）</label>
+                                    <input
+                                        list="lw-staff-name-list"
+                                        value={form.staff_name}
+                                        onChange={(e) => setForm((p) => ({ ...p, staff_name: e.target.value }))}
+                                        style={inputStyle}
+                                    />
+                                    <datalist id="lw-staff-name-list">
+                                        {staffNames.map((n) => (
+                                            <option key={n} value={n} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: '#94a3b8' }}>LINE WORKS ID（メールまたはユーザーID）</label>
+                                    <input
+                                        value={form.lineworks_user_id}
+                                        onChange={(e) => setForm((p) => ({ ...p, lineworks_user_id: e.target.value }))}
+                                        placeholder="tanaka@example.com"
+                                        style={inputStyle}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: '#94a3b8' }}>表示名（任意）</label>
+                                    <input
+                                        value={form.display_name}
+                                        onChange={(e) => setForm((p) => ({ ...p, display_name: e.target.value }))}
+                                        style={inputStyle}
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleSave()}
+                                        style={{
+                                            padding: '12px 16px',
+                                            background: '#2563eb',
+                                            color: '#fff',
+                                            border: 'none',
+                                            borderRadius: 8,
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        保存
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={testSending}
+                                        onClick={() => void handleTestMessage()}
+                                        style={{
+                                            padding: '12px 16px',
+                                            background: '#0f766e',
+                                            color: '#fff',
+                                            border: 'none',
+                                            borderRadius: 8,
+                                            fontWeight: 700,
+                                            cursor: testSending ? 'wait' : 'pointer',
+                                            opacity: testSending ? 0.7 : 1,
+                                        }}
+                                    >
+                                        {testSending ? '送信中…' : 'テスト送信'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div style={panelStyle}>

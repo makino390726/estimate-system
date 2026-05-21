@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { BRANCHES } from '@/lib/branches'
+import { LIFF_REPAIR_BRANCH_OPTIONS } from '@/lib/branches'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
 export const runtime = 'nodejs'
@@ -27,7 +27,7 @@ export async function GET() {
             .filter((s) => s.name)
 
         return NextResponse.json({
-            branches: BRANCHES.map((b) => ({ id: b.id, name: b.name })),
+            branches: LIFF_REPAIR_BRANCH_OPTIONS.map((b) => ({ id: b.id, name: b.name })),
             staffs,
         })
     } catch (e: unknown) {

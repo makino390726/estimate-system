@@ -205,7 +205,11 @@ function schedulePostAcceptTasks(
             console.error('background photo upload:', e)
         }
 
-        notifyRepairRequestCreated(data.id)
+        try {
+            await notifyRepairRequestCreated(data.id)
+        } catch (e) {
+            console.error('repair staff notify after LIFF accept:', e)
+        }
         await sendLineConfirmation(fields, data.request_no, photoCount)
     })
 }

@@ -20,6 +20,7 @@ create table if not exists public.repair_requests (
     status text not null default 'received'
         check (status in (
             'received',        -- 受付
+            'staff_confirmed', -- 担当者確認（LINE WORKS）
             'confirming',      -- 確認中
             'phone_done',      -- 電話対応済
             'visit_scheduled', -- 出張予定

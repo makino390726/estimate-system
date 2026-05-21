@@ -1,20 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { notifyStaffNewRepair, pushMessage } from '@/lib/lineClient'
+import { findStaffLineMapping } from '@/lib/lineStaffMappingDb'
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
 export const runtime = 'nodejs'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xdiqyslnokscgcuoakle.supabase.co'
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-
-function getSupabase() {
-    if (supabaseServiceKey) {
-        return createClient(supabaseUrl, supabaseServiceKey)
-    }
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhkaXF5c2xub2tzY2djdW9ha2xlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzOTQyMDMsImV4cCI6MjA3Nzk3MDIwM30.aGgaWQvsNhlnh6GO7wAgbTcL9JFpvT2xKnUQMZcnZuk'
-    return createClient(supabaseUrl, anonKey)
-}
 
 /**
  * LINE通知API
@@ -42,7 +31,7 @@ type NotifyBody = {
 export async function POST(request: Request) {
     try {
         const body = (await request.json().catch(() => ({}))) as NotifyBody
-        const sb = getSupabase()
+        const sb = getSupabaseAdmin()
 
         if (!body.type) {
             return NextResponse.json({ error: 'type is required' }, { status: 400 })
@@ -60,19 +49,24 @@ export async function POST(request: Request) {
             }
 
             // 担当者のLINE IDを取得
-            const staffName = body.staff_name || repair.assigned_staff
+            const staffName = String(body.staff_name || repair.assigned_staff || '').trim()
             if (!staffName) {
                 return NextResponse.json({ error: 'No staff assigned' }, { status: 400 })
             }
 
-            const { data: mapping } = await sb
-                .from('line_staff_mappings')
-                .select('line_user_id')
-                .eq('staff_name', staffName)
-                .single()
+            let mapping: { staff_name: string; line_user_id: string } | null = null
+            try {
+                mapping = await findStaffLineMapping(sb, staffName)
+            } catch (e) {
+                const message = e instanceof Error ? e.message : String(e)
+                return NextResponse.json({ error: message }, { status: 500 })
+            }
 
-            if (!mapping?.line_user_id) {
-                return NextResponse.json({ error: 'Staff LINE mapping not found', staff_name: staffName }, { status: 404 })
+            if (!mapping) {
+                return NextResponse.json({
+                    error: '担当者のLINE連携が未登録です。/line-staff-notify で登録してください',
+                    staff_name: staffName,
+                }, { status: 404 })
             }
 
             const photoCount = Array.isArray(repair.photo_urls) ? repair.photo_urls.length : 0
@@ -93,7 +87,7 @@ export async function POST(request: Request) {
                 photoCount,
             })
 
-            return NextResponse.json({ status: 'ok', notified: staffName })
+            return NextResponse.json({ status: 'ok', notified: mapping.staff_name })
         }
 
         if (body.type === 'status_change' && body.repair_request_id) {
@@ -111,6 +105,7 @@ export async function POST(request: Request) {
             if (repair.line_user_id) {
                 const statusLabels: Record<string, string> = {
                     received: '受付完了',
+                    staff_confirmed: '担当者確認済み',
                     confirming: '確認中',
                     phone_done: '電話対応済み',
                     visit_scheduled: '出張訪問予定',
@@ -144,15 +139,10 @@ export async function POST(request: Request) {
         if (body.type === 'custom' && body.message) {
             // 特定の担当者 or 顧客にカスタムメッセージ送信
             if (body.staff_name) {
-                const { data: mapping } = await sb
-                    .from('line_staff_mappings')
-                    .select('line_user_id')
-                    .eq('staff_name', body.staff_name)
-                    .single()
-
+                const mapping = await findStaffLineMapping(sb, body.staff_name)
                 if (mapping?.line_user_id) {
                     await pushMessage(mapping.line_user_id, body.message)
-                    return NextResponse.json({ status: 'ok', notified: body.staff_name })
+                    return NextResponse.json({ status: 'ok', notified: mapping.staff_name })
                 }
             }
 

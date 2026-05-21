@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import crypto, { createPrivateKey, type KeyObject } from 'crypto'
 import * as jose from 'jose'
 
 const TOKEN_URL = 'https://auth.worksmobile.com/oauth2/v2.0/token'
@@ -10,18 +10,55 @@ function trim(v: unknown) {
     return typeof v === 'string' ? v.trim() : ''
 }
 
+export function getLineWorksEnvStatus() {
+    return {
+        LINEWORKS_CLIENT_ID: Boolean(trim(process.env.LINEWORKS_CLIENT_ID)),
+        LINEWORKS_CLIENT_SECRET: Boolean(trim(process.env.LINEWORKS_CLIENT_SECRET)),
+        LINEWORKS_SERVICE_ACCOUNT: Boolean(trim(process.env.LINEWORKS_SERVICE_ACCOUNT)),
+        LINEWORKS_PRIVATE_KEY: Boolean(trim(process.env.LINEWORKS_PRIVATE_KEY)),
+        LINEWORKS_BOT_ID: Boolean(trim(process.env.LINEWORKS_BOT_ID)),
+        LINEWORKS_BOT_SECRET: Boolean(trim(process.env.LINEWORKS_BOT_SECRET)),
+    }
+}
+
 export function isLineWorksConfigured(): boolean {
-    return Boolean(
-        trim(process.env.LINEWORKS_CLIENT_ID) &&
-        trim(process.env.LINEWORKS_CLIENT_SECRET) &&
-        trim(process.env.LINEWORKS_SERVICE_ACCOUNT) &&
-        trim(process.env.LINEWORKS_PRIVATE_KEY) &&
-        trim(process.env.LINEWORKS_BOT_ID),
+    const s = getLineWorksEnvStatus()
+    return (
+        s.LINEWORKS_CLIENT_ID &&
+        s.LINEWORKS_CLIENT_SECRET &&
+        s.LINEWORKS_SERVICE_ACCOUNT &&
+        s.LINEWORKS_PRIVATE_KEY &&
+        s.LINEWORKS_BOT_ID
     )
 }
 
 function getPrivateKeyPem(): string {
-    return trim(process.env.LINEWORKS_PRIVATE_KEY).replace(/\\n/g, '\n')
+    let pem = trim(process.env.LINEWORKS_PRIVATE_KEY)
+    if (
+        (pem.startsWith('"') && pem.endsWith('"')) ||
+        (pem.startsWith("'") && pem.endsWith("'"))
+    ) {
+        pem = pem.slice(1, -1)
+    }
+    return pem.replace(/\\n/g, '\n')
+}
+
+/** PKCS#8 / PKCS#1（RSA PRIVATE KEY）どちらも Node crypto で読み込む */
+function importLineWorksPrivateKey(pem: string): KeyObject {
+    const normalized = pem.trim()
+    if (!normalized.includes('BEGIN') || !normalized.includes('PRIVATE KEY')) {
+        throw new Error(
+            'LINEWORKS_PRIVATE_KEY は PEM 形式である必要があります（-----BEGIN PRIVATE KEY----- または -----BEGIN RSA PRIVATE KEY-----）',
+        )
+    }
+    try {
+        return createPrivateKey({ key: normalized, format: 'pem' })
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        throw new Error(
+            `LINEWORKS_PRIVATE_KEY の読み込みに失敗: ${msg}。Developer Console から秘密鍵を再発行し、PEM 全文を貼り直してください。`,
+        )
+    }
 }
 
 export function getLineWorksBotId(): string {
@@ -43,7 +80,7 @@ export async function getLineWorksAccessToken(): Promise<string> {
     const serviceAccount = trim(process.env.LINEWORKS_SERVICE_ACCOUNT)
     const scope = trim(process.env.LINEWORKS_SCOPE) || 'bot'
 
-    const privateKey = await jose.importPKCS8(getPrivateKeyPem(), 'RS256')
+    const privateKey = importLineWorksPrivateKey(getPrivateKeyPem())
     const now = Math.floor(Date.now() / 1000)
     const jwt = await new jose.SignJWT({})
         .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
@@ -115,7 +152,14 @@ export async function sendLineWorksUserMessage(
     })
     if (!res.ok) {
         const text = await res.text()
-        throw new Error(`LINE WORKS message ${res.status}: ${text}`)
+        let detail = text
+        try {
+            const j = JSON.parse(text) as { message?: string; code?: string; description?: string }
+            detail = j.message || j.description || j.code || text
+        } catch {
+            /* raw text */
+        }
+        throw new Error(`LINE WORKS message ${res.status}: ${detail}`)
     }
 }
 

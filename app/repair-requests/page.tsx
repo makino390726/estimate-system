@@ -12,6 +12,7 @@ import {
     getSheetTypeLabel,
 } from '@/lib/customerRegisterSheetTypes'
 import { normalizeRepairMediaUrls } from '@/lib/repairPhotoStorage'
+import { buildRepairSymptomQuery } from '@/lib/repairSymptomText'
 
 // ── Types ──
 
@@ -80,8 +81,9 @@ type StaffOption = { id: string; name: string; department: string | null; email:
 // ── Constants ──
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-    received:        { label: '受付',       color: '#60a5fa', bg: '#1e3a5f' },
-    confirming:      { label: '確認中',     color: '#fbbf24', bg: '#4a3728' },
+    received:        { label: '受付',         color: '#60a5fa', bg: '#1e3a5f' },
+    staff_confirmed: { label: '担当者確認',   color: '#2dd4bf', bg: '#134e4a' },
+    confirming:      { label: '確認中',       color: '#fbbf24', bg: '#4a3728' },
     phone_done:      { label: '電話対応済', color: '#a78bfa', bg: '#3b2e5a' },
     visit_scheduled: { label: '出張予定',   color: '#fb923c', bg: '#4a3020' },
     parts_waiting:   { label: '部品待ち',   color: '#f87171', bg: '#4a2020' },
@@ -239,8 +241,16 @@ export default function RepairRequestsPage() {
         acknowledged_at: string | null
     }
     const [lineWorksAcks, setLineWorksAcks] = useState<LwAckRow[]>([])
+    const [detailNotifyMessage, setDetailNotifyMessage] = useState<string | null>(null)
+    /** 案件詳細を開いたときの DB 上のステータス（「保存して閉じる」まで確定しない） */
+    const [detailStatusBaseline, setDetailStatusBaseline] = useState<string | null>(null)
 
     const handleCloseDetailModalRef = useRef<() => void>(() => {})
+
+    const setNotifyFeedback = (text: string) => {
+        setMessage(text)
+        setDetailNotifyMessage(text)
+    }
     const deepLinkHandled = useRef(false)
 
     // Customer sync dialog
@@ -275,6 +285,8 @@ export default function RepairRequestsPage() {
 
             if (filterStatus === 'active') {
                 query = query.not('status', 'in', '("completed","billed","closed")')
+            } else if (filterStatus === 'needs_staff_ack') {
+                query = query.eq('status', 'received')
             } else if (filterStatus && filterStatus !== 'all') {
                 query = query.eq('status', filterStatus)
             }
@@ -298,6 +310,14 @@ export default function RepairRequestsPage() {
 
     useEffect(() => { fetchStaffs() }, [fetchStaffs])
     useEffect(() => { fetchRequests() }, [fetchRequests])
+
+    /** LINE WORKS 確認後のステータス変更を一覧に反映（20秒ごと） */
+    useEffect(() => {
+        const timer = setInterval(() => {
+            void fetchRequests({ silent: true })
+        }, 20_000)
+        return () => clearInterval(timer)
+    }, [fetchRequests])
 
     const filteredRows = useMemo(() => {
         const kw = searchKeyword.trim().toLowerCase()
@@ -529,82 +549,62 @@ export default function RepairRequestsPage() {
         setCustomerSyncDialog(null)
     }
 
-    const handleStatusChange = async (id: string, newStatus: string) => {
-        try {
-            const { error } = await supabase.from('repair_requests').update({ status: newStatus }).eq('id', id)
-            if (error) throw error
-
-            await supabase.from('repair_status_history').insert({
-                repair_request_id: id,
-                old_status: rows.find(r => r.id === id)?.status,
-                new_status: newStatus,
+    const notifyLineWorksStaffConfirmed = (repairId: string) => {
+        void fetch('/api/lineworks/confirm-from-web', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repair_request_id: repairId }),
+        })
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok || !data.ok) {
+                    if (!data.skipped) {
+                        console.warn('LINE WORKS confirm-from-web:', data.error)
+                    }
+                    return
+                }
+                if ((data.sent ?? 0) > 0) {
+                    setNotifyFeedback(`LINE WORKS に確認メッセージを送信しました（${data.sent}名）`)
+                }
             })
+            .catch((e) => console.warn('LINE WORKS confirm-from-web:', e))
+    }
 
-            // LINE顧客に自動通知（LINE経由の受付のみ）
-            const row = rows.find(r => r.id === id)
-            if (row?.received_via === 'line') {
-                fetch('/api/line/notify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'status_change', repair_request_id: id }),
-                }).catch(() => {})
-            }
+    /** 案件詳細を閉じる保存の一部としてステータスを確定（履歴・LINE 通知含む） */
+    const persistRepairStatusTransition = async (
+        repairId: string,
+        oldStatus: string,
+        newStatus: string,
+        receivedVia: string,
+    ) => {
+        const { error } = await supabase.from('repair_requests').update({ status: newStatus }).eq('id', repairId)
+        if (error) throw error
 
-            await fetchRequests()
-            if (detailRequest?.id === id) {
-                setDetailRequest(prev => prev ? { ...prev, status: newStatus } : null)
-            }
-        } catch (e: any) {
-            setMessage(`ステータス変更に失敗しました: ${e.message}`)
+        const { error: histErr } = await supabase.from('repair_status_history').insert({
+            repair_request_id: repairId,
+            old_status: oldStatus,
+            new_status: newStatus,
+        })
+        if (histErr) throw histErr
+
+        if (receivedVia === 'line') {
+            fetch('/api/line/notify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'status_change', repair_request_id: repairId }),
+            }).catch(() => {})
+        }
+
+        if (newStatus === 'staff_confirmed') {
+            notifyLineWorksStaffConfirmed(repairId)
         }
     }
 
-    const handleBulkStaffNotify = async (repairId: string) => {
-        try {
-            const res = await fetch('/api/repair-notify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repair_request_id: repairId }),
-            })
-            const data = await res.json()
-            if (!res.ok || !data.ok) {
-                setMessage(`担当者通知失敗: ${data.error || data.email?.error || data.line?.error || '不明'}`)
-                return
-            }
-            const emailSent = data.email?.sent ?? 0
-            const lwSent = data.lineworks?.sent ?? 0
-            const lineSent = data.line?.sent ?? 0
-            if (emailSent === 0 && lwSent === 0 && lineSent === 0) {
-                const reason = data.lineworks?.reason || data.line?.reason || data.email?.reason || '宛先なし'
-                setMessage(`担当者通知: ${reason}`)
-                return
-            }
-            const parts: string[] = []
-            if (emailSent > 0) parts.push(`メール ${emailSent}名`)
-            if (lwSent > 0) parts.push(`LINE WORKS ${lwSent}名`)
-            if (lineSent > 0) parts.push(`LINE ${lineSent}名`)
-            setMessage(`管轄担当者へ通知しました（${parts.join('・')}）`)
-        } catch (e: any) {
-            setMessage(`担当者通知に失敗: ${e.message}`)
-        }
-    }
-
-    const handleLineNotifyStaff = async (repairId: string, staffName: string) => {
-        try {
-            const res = await fetch('/api/line/notify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 'new_repair', repair_request_id: repairId, staff_name: staffName }),
-            })
-            const data = await res.json()
-            if (res.ok) {
-                setMessage(`${staffName} にLINE通知を送信しました`)
-            } else {
-                setMessage(`LINE通知失敗: ${data.error || '不明なエラー'}`)
-            }
-        } catch (e: any) {
-            setMessage(`LINE通知送信に失敗しました: ${e.message}`)
-        }
+    /** LINE WORKS で確認済みだが案件が「受付」のままのとき、ステータスだけ下書き変更（保存で確定） */
+    const handleApplyStaffConfirmedStatus = () => {
+        if (!detailRequest || detailRequest.status !== 'received') return
+        setDetailRequest((prev) => (prev ? { ...prev, status: 'staff_confirmed' } : null))
+        setDetailNotifyMessage('ステータスを「担当者確認」に変更しました。「保存して閉じる」で保存してください。')
     }
 
     const handleEdit = (row: RepairRequest) => {
@@ -657,6 +657,8 @@ export default function RepairRequestsPage() {
             photo_urls: normalizeRepairMediaUrls(row.photo_urls),
             video_urls: normalizeRepairMediaUrls(row.video_urls),
         })
+        setDetailStatusBaseline(row.status)
+        setDetailNotifyMessage(null)
         setAiAnswer(null)
         setCompletionData({
             treatment_details: row.treatment_details || '',
@@ -714,6 +716,17 @@ export default function RepairRequestsPage() {
 
     const handleAiSearch = async () => {
         if (!detailRequest) return
+        const symptomText = buildRepairSymptomQuery({
+            symptom: detailRequest.symptom,
+            symptom_category: detailRequest.symptom_category,
+            symptom_detail: detailRequest.symptom_detail,
+        })
+        if (!symptomText) {
+            setAiAnswer(
+                'エラー: 症状分類または症状の詳細がありません。LINE受付で詳細未入力の場合は、上の「分類」を確認するか、症状欄に追記してください。',
+            )
+            return
+        }
         setAiSearching(true)
         setAiAnswer(null)
         try {
@@ -722,7 +735,9 @@ export default function RepairRequestsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     category: getSheetTypeLabel(repairCategoryToSheetType(detailRequest.category || '')),
-                    symptom: detailRequest.symptom,
+                    symptom: symptomText,
+                    symptom_category: detailRequest.symptom_category || '',
+                    symptom_detail: detailRequest.symptom_detail || '',
                     user_id: `staff-${Date.now()}`,
                 }),
             })
@@ -790,11 +805,16 @@ export default function RepairRequestsPage() {
     const handleCloseDetailModal = () => {
         if (!detailRequest) {
             setDetailRequest(null)
+            setDetailStatusBaseline(null)
             return
         }
         const rid = detailRequest.id
+        const statusBaseline = detailStatusBaseline ?? detailRequest.status
+        const statusDraft = detailRequest.status
+        const receivedVia = detailRequest.received_via
         const snapshot = {
             customer_name: detailRequest.customer_name,
+            customerNameFallback: detailRequest.customer_name,
             customer_address: detailRequest.customer_address ?? '',
             customer_phone: detailRequest.customer_phone ?? '',
             customer_mobile: detailRequest.customer_mobile ?? '',
@@ -805,6 +825,9 @@ export default function RepairRequestsPage() {
             repair_cost: completionData.repair_cost ?? '',
             body_serial_no: completionData.body_serial_no ?? '',
             manufacturing_no: completionData.manufacturing_no ?? '',
+            statusBaseline,
+            statusDraft,
+            receivedVia,
         }
         const pendingPart = newPart.part_name.trim()
             ? {
@@ -817,11 +840,12 @@ export default function RepairRequestsPage() {
             : null
 
         setDetailRequest(null)
+        setDetailStatusBaseline(null)
 
         void (async () => {
             try {
                 const { error } = await supabase.from('repair_requests').update({
-                    customer_name: snapshot.customer_name.trim() || detailRequest.customer_name,
+                    customer_name: (snapshot.customer_name || '').trim() || snapshot.customerNameFallback,
                     customer_address: toNullable(snapshot.customer_address),
                     customer_phone: toNullable(snapshot.customer_phone),
                     customer_mobile: toNullable(snapshot.customer_mobile),
@@ -851,7 +875,21 @@ export default function RepairRequestsPage() {
                     setShowPartSuggestions(false)
                 }
 
-                setMessage('案件内容を保存して閉じました')
+                const statusChanged = snapshot.statusDraft !== snapshot.statusBaseline
+                if (statusChanged) {
+                    await persistRepairStatusTransition(
+                        rid,
+                        snapshot.statusBaseline,
+                        snapshot.statusDraft,
+                        snapshot.receivedVia,
+                    )
+                }
+
+                setMessage(
+                    statusChanged
+                        ? '案件内容とステータスを保存して閉じました'
+                        : '案件内容を保存して閉じました',
+                )
                 await fetchRequests({ silent: true })
             } catch (e: any) {
                 console.error('repair_requests close-save:', e)
@@ -987,7 +1025,8 @@ export default function RepairRequestsPage() {
 
     const getNextStatuses = (current: string): string[] => {
         const flow: Record<string, string[]> = {
-            received: ['confirming', 'phone_done', 'visit_scheduled'],
+            received: ['staff_confirmed', 'confirming', 'phone_done', 'visit_scheduled'],
+            staff_confirmed: ['confirming', 'phone_done', 'visit_scheduled'],
             confirming: ['phone_done', 'visit_scheduled', 'parts_waiting'],
             phone_done: ['visit_scheduled', 'parts_waiting', 'completed'],
             visit_scheduled: ['repairing', 'parts_waiting'],
@@ -1016,8 +1055,16 @@ export default function RepairRequestsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
                 <div>
                     <h1 style={{ margin: 0, fontSize: 32, color: '#f8fafc' }}>修理案件管理</h1>
-                    <p style={{ margin: '8px 0 0 0', color: '#94a3b8' }}>
+                    <p style={{ margin: '8px 0 0 0', color: '#94a3b8', lineHeight: 1.6 }}>
                         修理受付から完了・請求まで、案件のライフサイクルを一元管理します。
+                        <br />
+                        <span style={{ color: '#2dd4bf' }}>
+                            LINE WORKS の通知から案件画面を開き、
+                            <strong style={{ color: '#5eead4' }}>「→ 担当者確認」</strong>
+                            を選び、右上の
+                            <strong style={{ color: '#5eead4' }}>「保存して閉じる」</strong>
+                            で確定すると一覧が担当者確認になり、LINE WORKS に確認メッセージが届きます。
+                        </span>
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -1036,6 +1083,66 @@ export default function RepairRequestsPage() {
                             ← メニューに戻る
                         </button>
                     </Link>
+                </div>
+            </div>
+
+            {/* 担当者確認の見える化 */}
+            <div
+                style={{
+                    ...panelStyle,
+                    marginBottom: 16,
+                    padding: '14px 16px',
+                    borderColor: (statusCounts.received || 0) > 0 ? '#f59e0b' : '#334155',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 16,
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                }}
+            >
+                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                    <div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>要確認（受付・未押下）</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: '#60a5fa' }}>
+                            {statusCounts.received || 0}
+                            <span style={{ fontSize: 14, fontWeight: 600, marginLeft: 4 }}>件</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 12, color: '#94a3b8' }}>担当者確認済</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: '#2dd4bf' }}>
+                            {statusCounts.staff_confirmed || 0}
+                            <span style={{ fontSize: 14, fontWeight: 600, marginLeft: 4 }}>件</span>
+                        </div>
+                    </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                        type="button"
+                        className="btn-3d"
+                        onClick={() => setFilterStatus('needs_staff_ack')}
+                        style={{
+                            padding: '8px 14px',
+                            fontSize: 13,
+                            background: filterStatus === 'needs_staff_ack' ? '#1e3a5f' : '#334155',
+                            border: `1px solid ${filterStatus === 'needs_staff_ack' ? '#60a5fa' : '#475569'}`,
+                        }}
+                    >
+                        要確認のみ表示
+                    </button>
+                    <button
+                        type="button"
+                        className="btn-3d"
+                        onClick={() => setFilterStatus('staff_confirmed')}
+                        style={{
+                            padding: '8px 14px',
+                            fontSize: 13,
+                            background: filterStatus === 'staff_confirmed' ? '#134e4a' : '#334155',
+                            border: `1px solid ${filterStatus === 'staff_confirmed' ? '#2dd4bf' : '#475569'}`,
+                        }}
+                    >
+                        担当者確認済のみ
+                    </button>
                 </div>
             </div>
 
@@ -1064,6 +1171,7 @@ export default function RepairRequestsPage() {
                         <label style={labelStyle}>ステータス</label>
                         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={inputStyle}>
                             <option value="active">対応中のみ</option>
+                            <option value="needs_staff_ack">要確認（受付のみ）</option>
                             <option value="all">すべて</option>
                             {Object.entries(STATUS_CONFIG).map(([k, v]) => (
                                 <option key={k} value={k}>{v.label}</option>
@@ -1341,8 +1449,14 @@ export default function RepairRequestsPage() {
                                     const sc = STATUS_CONFIG[row.status] || STATUS_CONFIG.received
                                     const pc = PRIORITY_CONFIG[row.priority] || PRIORITY_CONFIG.normal
                                     const via = RECEIVED_VIA_OPTIONS.find(o => o.value === row.received_via)?.label || row.received_via
+                                    const rowHighlight =
+                                        row.status === 'received'
+                                            ? { boxShadow: 'inset 4px 0 0 #f59e0b' }
+                                            : row.status === 'staff_confirmed'
+                                                ? { boxShadow: 'inset 4px 0 0 #2dd4bf' }
+                                                : undefined
                                     return (
-                                        <tr key={row.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(row)}>
+                                        <tr key={row.id} style={{ cursor: 'pointer', ...rowHighlight }} onClick={() => openDetail(row)}>
                                             <td style={tdStyle}>{row.request_no}</td>
                                             <td style={tdStyle}><Badge config={pc} /></td>
                                             <td style={tdStyle}><Badge config={sc} /></td>
@@ -1401,25 +1515,7 @@ export default function RepairRequestsPage() {
                                     )}
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <button
-                                    type="button"
-                                    onClick={() => void handleBulkStaffNotify(detailRequest.id)}
-                                    className="btn-3d"
-                                    style={{ padding: '8px 14px', background: '#2563eb', border: '1px solid #1d4ed8', fontSize: 12 }}
-                                >
-                                    担当者へ通知
-                                </button>
-                                {detailRequest.assigned_staff && (
-                                    <button
-                                        type="button"
-                                        onClick={() => void handleLineNotifyStaff(detailRequest.id, detailRequest.assigned_staff!)}
-                                        className="btn-3d"
-                                        style={{ padding: '8px 14px', background: '#06c755', border: '1px solid #05a847', fontSize: 12 }}
-                                    >
-                                        担当者LINE（個別）
-                                    </button>
-                                )}
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                 <button
                                     type="button"
                                     onClick={e => {
@@ -1438,16 +1534,49 @@ export default function RepairRequestsPage() {
                             </div>
                         </div>
 
+                        {detailNotifyMessage && (
+                            <div
+                                style={{
+                                    marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+                                    background: detailNotifyMessage.includes('失敗') || detailNotifyMessage.includes('未登録')
+                                        ? '#450a0a'
+                                        : '#0a2e1a',
+                                    border: `1px solid ${detailNotifyMessage.includes('失敗') || detailNotifyMessage.includes('未登録') ? '#f87171' : '#06c755'}`,
+                                    color: detailNotifyMessage.includes('失敗') || detailNotifyMessage.includes('未登録') ? '#fecaca' : '#bbf7d0',
+                                    fontSize: 13,
+                                }}
+                            >
+                                {detailNotifyMessage}
+                            </div>
+                        )}
+
                         {/* Status transition */}
                         {getNextStatuses(detailRequest.status).length > 0 && (
                             <div style={{ marginBottom: 20, padding: '12px 14px', background: '#1e293b', borderRadius: 10, border: '1px solid #334155' }}>
-                                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>ステータスを変更:</div>
+                                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                                    次のステータスを選び、右上の「保存して閉じる」で確定します（通知ボタンはありません）。
+                                </div>
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     {getNextStatuses(detailRequest.status).map(ns => {
                                         const cfg = STATUS_CONFIG[ns]
                                         return (
-                                            <button key={ns} onClick={() => handleStatusChange(detailRequest.id, ns)}
-                                                className="btn-3d" style={{ padding: '6px 14px', fontSize: 12, background: cfg.bg, border: `1px solid ${cfg.color}50`, color: cfg.color }}>
+                                            <button
+                                                key={ns}
+                                                type="button"
+                                                onClick={() =>
+                                                    setDetailRequest((prev) =>
+                                                        prev ? { ...prev, status: ns } : null,
+                                                    )
+                                                }
+                                                className="btn-3d"
+                                                style={{
+                                                    padding: '6px 14px',
+                                                    fontSize: 12,
+                                                    background: cfg.bg,
+                                                    border: `1px solid ${cfg.color}50`,
+                                                    color: cfg.color,
+                                                }}
+                                            >
                                                 → {cfg.label}
                                             </button>
                                         )
@@ -1461,7 +1590,7 @@ export default function RepairRequestsPage() {
                             <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
                                 <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#4ade80' }}>顧客情報</h3>
                                 <p style={{ margin: '0 0 10px 0', fontSize: 11, color: '#94a3b8' }}>
-                                    編集内容は「保存して閉じる」で保存されます。
+                                    編集内容とステータスは「保存して閉じる」で保存されます。
                                 </p>
                                 <div style={{ display: 'grid', gap: 8 }}>
                                     <div>
@@ -1519,6 +1648,14 @@ export default function RepairRequestsPage() {
                             <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
                                 <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#fbbf24' }}>機械情報</h3>
                                 <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                                    {detailRequest.assigned_branch && (
+                                        <div>営業所: {getBranchName(detailRequest.assigned_branch)}</div>
+                                    )}
+                                    {detailRequest.assigned_staff ? (
+                                        <div>担当者: {detailRequest.assigned_staff}</div>
+                                    ) : (
+                                        <div style={{ color: '#fbbf24' }}>担当者: 未設定（LIFFで選択されていない可能性）</div>
+                                    )}
                                     {detailRequest.category && <div>分野: {formatRepairCategoryDisplay(detailRequest.category)}</div>}
                                     {detailRequest.model && <div>型式: {detailRequest.model}</div>}
                                     {detailRequest.serial_no && <div>本体番号: {detailRequest.serial_no}</div>}
@@ -1547,7 +1684,20 @@ export default function RepairRequestsPage() {
 
                         {lineWorksAcks.length > 0 && (
                             <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155', marginTop: 16 }}>
-                                <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#38bdf8' }}>LINE WORKS 確認状況</h3>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                                    <h3 style={{ margin: 0, fontSize: 14, color: '#38bdf8' }}>LINE WORKS 確認状況</h3>
+                                    {detailRequest.status === 'received' &&
+                                        lineWorksAcks.some((a) => a.status === 'acknowledged') && (
+                                        <button
+                                            type="button"
+                                            className="btn-3d"
+                                            onClick={() => handleApplyStaffConfirmedStatus()}
+                                            style={{ padding: '6px 12px', fontSize: 12, background: '#0f766e', border: '1px solid #14b8a6' }}
+                                        >
+                                            担当者確認へ反映
+                                        </button>
+                                    )}
+                                </div>
                                 <div style={{ fontSize: 13 }}>
                                     {lineWorksAcks.map((a) => (
                                         <div
@@ -1624,7 +1774,7 @@ export default function RepairRequestsPage() {
                                 </button>
                             </div>
                             <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 8px 0' }}>
-                                カテゴリと症状をもとに、過去の修理事例やマニュアルからAIが原因・対処方法を検索します。
+                                機械の分野と症状（分類のみの案件も可）から、過去事例・マニュアルをAI検索します。
                             </p>
                             {aiAnswer && (
                                 <div style={{

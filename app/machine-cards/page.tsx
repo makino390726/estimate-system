@@ -81,7 +81,7 @@ const tdStyle: React.CSSProperties = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-    received: '受付', confirming: '確認中', phone_done: '電話対応済',
+    received: '受付', staff_confirmed: '担当者確認', confirming: '確認中', phone_done: '電話対応済',
     visit_scheduled: '出張予定', parts_waiting: '部品待ち', repairing: '修理中',
     completed: '修理完了', billed: '請求済', closed: 'クローズ',
 }

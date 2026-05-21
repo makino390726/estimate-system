@@ -1,58 +1,50 @@
 import { NextResponse } from 'next/server'
+import { buildRepairSymptomQuery } from '@/lib/repairSymptomText'
+import { isDifyConfigured, searchDifyRepairKnowledge } from '@/lib/difyClient'
 
 export const runtime = 'nodejs'
-
-const DIFY_API_BASE = process.env.DIFY_API_BASE || 'https://api.dify.ai/v1'
-const DIFY_API_KEY = process.env.DIFY_API_KEY || ''
+export const maxDuration = 60
 
 export async function POST(request: Request) {
-    if (!DIFY_API_KEY) {
+    if (!isDifyConfigured()) {
         return NextResponse.json({ error: 'DIFY_API_KEY is not configured' }, { status: 500 })
     }
 
     try {
-        const { category, symptom, user_id } = await request.json()
-
-        if (!symptom) {
-            return NextResponse.json({ error: '症状を入力してください' }, { status: 400 })
-        }
-
-        const query = [
-            category ? `機械の種別: ${category}` : '',
-            `症状: ${symptom}`,
-            '',
-            '考えられる原因と対処方法を教えてください。',
-        ].filter(Boolean).join('\n')
-
-        const res = await fetch(`${DIFY_API_BASE}/chat-messages`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${DIFY_API_KEY}`,
-            },
-            body: JSON.stringify({
-                inputs: {},
-                query,
-                response_mode: 'blocking',
-                conversation_id: '',
-                user: user_id || 'system-user',
-            }),
+        const body = await request.json()
+        const category = typeof body.category === 'string' ? body.category.trim() : ''
+        const user_id = typeof body.user_id === 'string' ? body.user_id : ''
+        const symptomText = buildRepairSymptomQuery({
+            symptom: body.symptom,
+            symptom_category: body.symptom_category,
+            symptom_detail: body.symptom_detail,
         })
 
-        if (!res.ok) {
-            const errBody = await res.text()
-            console.error('Dify API error:', res.status, errBody)
-            return NextResponse.json({ error: 'AI検索に失敗しました' }, { status: 502 })
+        if (!symptomText) {
+            return NextResponse.json(
+                { error: '症状分類または症状の詳細を入力してください' },
+                { status: 400 },
+            )
         }
 
-        const data = await res.json()
+        const result = await searchDifyRepairKnowledge({
+            category,
+            symptomText,
+            userId: user_id || 'system-user',
+        })
+
+        if ('error' in result) {
+            const status = result.error.includes('DIFY_API_KEY') ? 500 : 502
+            return NextResponse.json({ error: result.error }, { status })
+        }
 
         return NextResponse.json({
-            answer: data.answer || '',
-            conversation_id: data.conversation_id || '',
+            answer: result.answer,
+            conversation_id: result.conversation_id || '',
         })
-    } catch (e: any) {
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e)
         console.error('Dify search error:', e)
-        return NextResponse.json({ error: e.message }, { status: 500 })
+        return NextResponse.json({ error: message }, { status: 500 })
     }
 }

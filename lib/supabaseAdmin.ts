@@ -4,6 +4,10 @@ const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xdiqyslnokscgcuoakle.supabase.co'
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
+export function hasSupabaseServiceRole(): boolean {
+    return Boolean(supabaseServiceKey)
+}
+
 /** サーバー API 用（RLS をバイパス） */
 export function getSupabaseAdmin(): SupabaseClient {
     if (supabaseServiceKey) {
