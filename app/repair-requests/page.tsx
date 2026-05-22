@@ -16,6 +16,7 @@ import { buildRepairSymptomQuery } from '@/lib/repairSymptomText'
 import { isValidLineUserId } from '@/lib/lineUserId'
 import { buildRepairLineLinkLiffUrl } from '@/lib/repairLiffUrls'
 import { canSubmitRepairCompletionReport, getRepairNextStatuses } from '@/lib/repairConstants'
+import { parseRepairApiJsonResponse } from '@/lib/repairApiResponse'
 import { RepairPhoneCallLinks } from '@/components/RepairPhoneCallLink'
 
 // ── Types ──
@@ -253,6 +254,7 @@ export default function RepairRequestsPage() {
     const [lineWorksAcks, setLineWorksAcks] = useState<LwAckRow[]>([])
     const [detailNotifyMessage, setDetailNotifyMessage] = useState<string | null>(null)
     const [submittingCompletion, setSubmittingCompletion] = useState(false)
+    const [deployHostWarning, setDeployHostWarning] = useState<string | null>(null)
     /** 案件詳細を開いたときの DB 上のステータス（「保存して閉じる」まで確定しない） */
     const [detailStatusBaseline, setDetailStatusBaseline] = useState<string | null>(null)
 
@@ -321,6 +323,20 @@ export default function RepairRequestsPage() {
 
     useEffect(() => { fetchStaffs() }, [fetchStaffs])
     useEffect(() => { fetchRequests() }, [fetchRequests])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const host = window.location.hostname
+        const ok =
+            host === 'estimate-system-ten.vercel.app' ||
+            host === 'localhost' ||
+            host === '127.0.0.1'
+        if (!ok) {
+            setDeployHostWarning(
+                `現在のURL（${host}）は古いデプロイの可能性があります。完了報告は https://estimate-system-ten.vercel.app/repair-requests で操作してください。`,
+            )
+        }
+    }, [])
 
     /** LINE WORKS 確認後のステータス変更を一覧に反映（20秒ごと） */
     useEffect(() => {
@@ -640,6 +656,20 @@ export default function RepairRequestsPage() {
         setSubmittingCompletion(true)
         setDetailNotifyMessage(null)
         try {
+            const res = await fetch('/api/repair-requests/complete-report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(buildCompletionReportBody(rid, oldStatus)),
+            })
+            const parsed = await parseRepairApiJsonResponse(res, '完了報告の送信に失敗しました')
+            if (!parsed.ok) throw new Error(parsed.message)
+            const data = parsed.data
+            if (data.status_applied === false || data.status !== 'completed') {
+                throw new Error(
+                    `ステータスが反映されませんでした（DB: ${String(data.status ?? '不明')}）`,
+                )
+            }
+
             if (newPart.part_name.trim()) {
                 const payload = {
                     repair_request_id: rid,
@@ -650,27 +680,13 @@ export default function RepairRequestsPage() {
                     notes: toNullable(newPart.notes),
                 }
                 const { error: partErr } = await supabase.from('repair_parts').insert(payload)
-                if (partErr) throw partErr
-                setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
-            }
-
-            const res = await fetch('/api/repair-requests/complete-report', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildCompletionReportBody(rid, oldStatus)),
-            })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok) {
-                const hint =
-                    data.code === 'missing_service_role'
-                        ? '（Vercelに SUPABASE_SERVICE_ROLE_KEY を設定してください）'
-                        : ''
-                throw new Error(`${data.error || '完了報告の送信に失敗しました'}${hint}`)
-            }
-            if (data.status_applied === false || data.status !== 'completed') {
-                throw new Error(
-                    `ステータスが反映されませんでした（DB: ${data.status ?? '不明'}）`,
-                )
+                if (partErr) {
+                    setNotifyFeedback(
+                        `完了報告済みですが部品の保存に失敗: ${partErr.message}（ステータスは更新済み）`,
+                    )
+                } else {
+                    setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
+                }
             }
 
             const lineNotify = data.line_customer_notify as
@@ -678,6 +694,7 @@ export default function RepairRequestsPage() {
                 | null
                 | undefined
             const fieldWarnings = data.field_warnings as string[] | undefined
+            const lineTokenSet = data.line_channel_token_set === true
             let feedback = '完了報告を送信しました。ステータスを「完了報告済」に更新しました。'
             if (lineNotify?.ok) {
                 feedback += '（顧客へLINEで届けました）'
@@ -685,6 +702,8 @@ export default function RepairRequestsPage() {
                 feedback += `（顧客LINE未送信: ${lineNotify.skipped}）`
             } else if (lineNotify?.error) {
                 feedback += `（顧客LINE失敗: ${lineNotify.error}）`
+            } else if (!lineTokenSet) {
+                feedback += '（Vercelに LINE_CHANNEL_ACCESS_TOKEN 未設定のため顧客LINEなし）'
             }
             if (fieldWarnings?.length) {
                 feedback += ` ※${fieldWarnings.join(' ')}`
@@ -1172,6 +1191,22 @@ export default function RepairRequestsPage() {
 
     return (
         <div style={pageStyle}>
+            {deployHostWarning && (
+                <div
+                    style={{
+                        marginBottom: 16,
+                        padding: '12px 14px',
+                        borderRadius: 8,
+                        background: '#451a1a',
+                        border: '1px solid #f87171',
+                        color: '#fecaca',
+                        fontSize: 13,
+                        lineHeight: 1.55,
+                    }}
+                >
+                    {deployHostWarning}
+                </div>
+            )}
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
                 <div>

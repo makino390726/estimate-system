@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getLineConfig } from '@/lib/lineClient'
 import { applyRepairMarkCompleted } from '@/lib/repairMarkCompleted'
 import { hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
@@ -59,8 +60,12 @@ export async function POST(request: Request) {
                 ? body.status_baseline.trim()
                 : String(existing.status || 'received')
 
-        if (baseline === 'completed' || baseline === 'closed') {
-            return NextResponse.json({ error: 'すでに完了報告済み、または案件完了です' }, { status: 400 })
+        const currentStatus = String(existing.status || '')
+        if (currentStatus === 'completed' || currentStatus === 'closed') {
+            return NextResponse.json(
+                { error: `すでに完了報告済み、または案件完了です（現在: ${currentStatus}）` },
+                { status: 400 },
+            )
         }
 
         const customerName =
@@ -107,6 +112,8 @@ export async function POST(request: Request) {
             .eq('id', repairId)
             .single()
 
+        const lineCfg = getLineConfig()
+
         return NextResponse.json({
             ok: true,
             status: updated?.status ?? 'completed',
@@ -114,6 +121,7 @@ export async function POST(request: Request) {
             previous_status: markResult.previousStatus,
             line_customer_notify: markResult.lineCustomerNotify,
             line_works_notify: markResult.lineWorksNotify,
+            line_channel_token_set: Boolean(lineCfg.channelAccessToken),
             field_warnings: fieldWarnings.length > 0 ? fieldWarnings : undefined,
         })
     } catch (e: unknown) {

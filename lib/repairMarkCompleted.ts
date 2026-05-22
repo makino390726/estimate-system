@@ -41,21 +41,30 @@ export async function applyRepairMarkCompleted(
 
     const { data: updated, error: upErr } = await sb
         .from('repair_requests')
-        .update({ status: 'completed', visit_completed_date: visitDate })
+        .update({ status: 'completed' })
         .eq('id', repairId)
         .select('status')
         .single()
 
     if (upErr) {
-        throw new Error(
-            `ステータスを完了報告済にできません: ${upErr.message}（Supabaseで apply_repair_prerequisites.sql の実行を確認してください）`,
-        )
+        const hint = /check|constraint|violates/i.test(upErr.message)
+            ? '（Supabase SQL Editor で apply_repair_prerequisites.sql を実行）'
+            : ''
+        throw new Error(`ステータスを完了報告済にできません: ${upErr.message}${hint}`)
     }
 
     if (updated?.status !== 'completed') {
         throw new Error(
             `ステータス更新が反映されませんでした（DB上: ${updated?.status ?? '不明'}）。SUPABASE_SERVICE_ROLE_KEY の設定を確認してください`,
         )
+    }
+
+    const { error: dateErr } = await sb
+        .from('repair_requests')
+        .update({ visit_completed_date: visitDate })
+        .eq('id', repairId)
+    if (dateErr) {
+        console.warn('visit_completed_date update:', repairId, dateErr.message)
     }
 
     if (previousStatus !== 'completed') {

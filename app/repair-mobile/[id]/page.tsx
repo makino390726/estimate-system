@@ -23,6 +23,7 @@ import {
     type RepairProductSuggestion,
 } from '@/lib/repairProductSearch'
 import type { CustomerRegisterCandidate } from '@/lib/repairCustomerRegisterSync'
+import { parseRepairApiJsonResponse } from '@/lib/repairApiResponse'
 import { RepairPhoneCallLinks } from '@/components/RepairPhoneCallLink'
 
 type CustomerSyncDialogState =
@@ -282,14 +283,9 @@ export default function RepairMobileDetailPage() {
                     mark_completed: opts?.markCompleted === true,
                 }),
             })
-            const json = await res.json()
-            if (!res.ok) {
-                const hint =
-                    json.code === 'missing_service_role'
-                        ? '（Vercelに SUPABASE_SERVICE_ROLE_KEY を設定してください）'
-                        : ''
-                throw new Error(`${json.error || '保存に失敗しました'}${hint}`)
-            }
+            const parsed = await parseRepairApiJsonResponse(res, '保存に失敗しました')
+            if (!parsed.ok) throw new Error(parsed.message)
+            const json = parsed.data
 
             if (opts?.markCompleted && json.status_applied === false) {
                 throw new Error(
