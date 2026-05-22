@@ -13,6 +13,7 @@ import {
     REPAIR_PRIORITY_CONFIG,
     REPAIR_STATUS_CONFIG,
     getMobileSuggestedStatuses,
+    isAwaitingCustomerAck,
 } from '@/lib/repairConstants'
 import { normalizeRepairMediaUrls } from '@/lib/repairPhotoStorage'
 import {
@@ -282,7 +283,30 @@ export default function RepairMobileDetailPage() {
             const json = await res.json()
             if (!res.ok) throw new Error(json.error || '保存に失敗しました')
 
-            setMessage({ type: 'ok', text: opts?.markCompleted ? '現場完了として保存しました' : '保存しました' })
+            const lineNotify = json.line_customer_notify as
+                | { ok?: boolean; skipped?: string; error?: string }
+                | null
+                | undefined
+
+            let okText = opts?.markCompleted
+                ? '完了報告を送信しました（顧客の承諾後に案件が完了します）'
+                : '保存しました'
+            if (opts?.markCompleted && lineNotify) {
+                if (lineNotify.ok) {
+                    okText += '（顧客へLINEで届けました）'
+                } else if (lineNotify.skipped) {
+                    okText += `（顧客LINE未送信: ${lineNotify.skipped}）`
+                } else if (lineNotify.error) {
+                    setMessage({
+                        type: 'err',
+                        text: `${okText}が、顧客へのLINE通知に失敗しました: ${lineNotify.error}`,
+                    })
+                    await load()
+                    return
+                }
+            }
+
+            setMessage({ type: 'ok', text: okText })
             await load()
             if (opts?.markCompleted) {
                 setTimeout(() => router.push('/repair-mobile'), 800)
@@ -534,11 +558,18 @@ export default function RepairMobileDetailPage() {
                     <div className={`repair-mobile-msg ${message.type}`}>{message.text}</div>
                 )}
 
-                {request.customer_acknowledged_at && (
+                {request.status === 'closed' && (
                     <div className="repair-mobile-msg ok">
-                        顧客承諾済み（
-                        {new Date(request.customer_acknowledged_at).toLocaleString('ja-JP')}
-                        ）— ステータスはクローズです
+                        案件は完了です（顧客承諾済み
+                        {request.customer_acknowledged_at
+                            ? ` ${new Date(request.customer_acknowledged_at).toLocaleString('ja-JP')}`
+                            : ''}
+                        ）
+                    </div>
+                )}
+                {isAwaitingCustomerAck(request.status) && !request.customer_acknowledged_at && (
+                    <div className="repair-mobile-msg ok">
+                        完了報告済みです。顧客がLINEで「承諾する」を押すと案件が完了になります。
                     </div>
                 )}
 
@@ -684,7 +715,7 @@ export default function RepairMobileDetailPage() {
                 <section className="repair-mobile-section">
                     <h2>ステータス</h2>
                     <p style={{ margin: '0 0 8px', fontSize: 12, color: '#64748b' }}>
-                        変更後は下の「保存する」で確定します
+                        完了は「完了報告送信」→ 顧客承諾 → 案件完了の順です。下の「保存する」で途中保存できます。
                     </p>
                     {suggested.map((code) => {
                         const cfg = REPAIR_STATUS_CONFIG[code]
@@ -978,17 +1009,19 @@ export default function RepairMobileDetailPage() {
             )}
 
             <div className="repair-mobile-bar" style={{ maxWidth: '100%' }}>
+                {!isAwaitingCustomerAck(request.status) && request.status !== 'closed' && (
+                    <button
+                        type="button"
+                        className="repair-mobile-btn-primary"
+                        disabled={saving}
+                        onClick={() => save({ markCompleted: true })}
+                    >
+                        {saving ? '送信中…' : '完了報告送信'}
+                    </button>
+                )}
                 <button
                     type="button"
                     className="repair-mobile-btn-secondary"
-                    disabled={saving}
-                    onClick={() => save({ markCompleted: true })}
-                >
-                    完了
-                </button>
-                <button
-                    type="button"
-                    className="repair-mobile-btn-primary"
                     disabled={saving}
                     onClick={() => save()}
                 >

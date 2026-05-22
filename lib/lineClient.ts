@@ -113,8 +113,18 @@ export async function pushMessage(userId: string, text: string) {
     }
 }
 
+export type LinePushResult = { ok: true } | { ok: false; status: number; error: string }
+
 /** 複数メッセージをプッシュ送信（Flex Message等対応） */
-export async function pushMessages(userId: string, messages: Record<string, unknown>[]) {
+export async function pushMessages(
+    userId: string,
+    messages: Record<string, unknown>[],
+): Promise<LinePushResult> {
+    const { channelAccessToken } = getLineConfig()
+    if (!channelAccessToken) {
+        return { ok: false, status: 0, error: 'LINE_CHANNEL_ACCESS_TOKEN is not set' }
+    }
+
     const res = await fetch(`${LINE_API_BASE}/message/push`, {
         method: 'POST',
         headers: authHeaders(),
@@ -123,7 +133,9 @@ export async function pushMessages(userId: string, messages: Record<string, unkn
     if (!res.ok) {
         const errBody = await res.text()
         console.error('LINE pushMessages failed:', res.status, errBody)
+        return { ok: false, status: res.status, error: errBody }
     }
+    return { ok: true }
 }
 
 /** ユーザープロフィール取得 */

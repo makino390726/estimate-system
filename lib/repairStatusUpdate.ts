@@ -15,6 +15,7 @@ export async function persistRepairStatusTransition(
     oldStatus: string,
     newStatus: string,
     receivedVia: string,
+    options?: { skipCustomerLineNotify?: boolean },
 ): Promise<void> {
     if (oldStatus === newStatus) return
 
@@ -28,7 +29,7 @@ export async function persistRepairStatusTransition(
     })
     if (histErr) throw histErr
 
-    if (trim(receivedVia) === 'line') {
+    if (!options?.skipCustomerLineNotify && trim(receivedVia) === 'line' && newStatus !== 'completed') {
         await notifyRepairCustomerLineStatus(sb, repairId).catch((e) =>
             console.warn('line customer notify:', e),
         )

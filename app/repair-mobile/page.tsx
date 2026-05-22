@@ -123,7 +123,7 @@ function RepairMobileListInner() {
                         className={`repair-mobile-tab${tab === 'done' ? ' active' : ''}`}
                         onClick={() => setTab('done')}
                     >
-                        完了済
+                        完了報告済・完了
                     </button>
                 </div>
 

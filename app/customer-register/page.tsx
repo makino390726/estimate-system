@@ -203,7 +203,7 @@ const REPAIR_STATUS_LABEL: Record<string, string> = {
     visit_scheduled: '出張予定',
     parts_waiting: '部品待ち',
     repairing: '修理中',
-    completed: '修理完了',
+    completed: '完了報告済',
     billed: '請求済',
     closed: 'クローズ',
 }

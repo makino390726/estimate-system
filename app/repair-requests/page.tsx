@@ -96,9 +96,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
     visit_scheduled: { label: '出張予定',   color: '#fb923c', bg: '#4a3020' },
     parts_waiting:   { label: '部品待ち',   color: '#f87171', bg: '#4a2020' },
     repairing:       { label: '修理中',     color: '#38bdf8', bg: '#1e3a5f' },
-    completed:       { label: '修理完了',   color: '#4ade80', bg: '#1a3a2a' },
+    completed:       { label: '完了報告済', color: '#4ade80', bg: '#1a3a2a' },
     billed:          { label: '請求済',     color: '#818cf8', bg: '#2e2e5a' },
-    closed:          { label: 'クローズ',   color: '#94a3b8', bg: '#334155' },
+    closed:          { label: '完了',       color: '#94a3b8', bg: '#334155' },
 }
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -596,7 +596,7 @@ export default function RepairRequestsPage() {
         })
         if (histErr) throw histErr
 
-        if (receivedVia === 'line') {
+        if (newStatus === 'completed' || receivedVia === 'line') {
             fetch('/api/line/notify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1610,7 +1610,7 @@ export default function RepairRequestsPage() {
                                                     color: cfg.color,
                                                 }}
                                             >
-                                                → {cfg.label}
+                                                → {ns === 'completed' ? '完了報告送信' : cfg.label}
                                             </button>
                                         )
                                     })}

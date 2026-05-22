@@ -109,7 +109,7 @@ export function buildRepairCompletionFlexMessage(input: RepairCompletionNotifyIn
               contents: [
                   {
                       type: 'text' as const,
-                      text: 'ご確認済みです。ありがとうございました。',
+                      text: '承諾済みです。ありがとうございました。',
                       size: 'xs' as const,
                       color: '#8c8c8c',
                       wrap: true,
@@ -125,9 +125,9 @@ export function buildRepairCompletionFlexMessage(input: RepairCompletionNotifyIn
                       type: 'button' as const,
                       action: {
                           type: 'postback' as const,
-                          label: '内容を確認しました',
+                          label: '承諾する',
                           data: buildRepairAckPostbackData(input.repairRequestId),
-                          displayText: '修理完了内容を確認しました',
+                          displayText: '完了報告を承諾しました',
                       },
                       style: 'primary' as const,
                       color: '#166534',
@@ -174,5 +174,8 @@ export async function pushRepairCompletionToCustomer(
     input: RepairCompletionNotifyInput,
 ): Promise<void> {
     const flex = buildRepairCompletionFlexMessage(input)
-    await pushMessages(lineUserId, [flex])
+    const result = await pushMessages(lineUserId, [flex])
+    if (!result.ok) {
+        throw new Error(`LINE完了報告の送信に失敗しました (${result.status}): ${result.error}`)
+    }
 }

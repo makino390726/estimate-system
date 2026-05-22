@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { repairCategoryToSheetType } from '@/lib/customerRegisterSheetTypes'
-import { notifyRepairCustomerLineStatus } from '@/lib/repairCustomerLineNotify'
+import { notifyRepairCustomerOnCompleted } from '@/lib/repairCustomerLineNotify'
 import { persistRepairStatusTransition, getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
 
 export const runtime = 'nodejs'
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         const sb = getRepairAdminSupabase()
         const { data: existing, error: fetchErr } = await sb
             .from('repair_requests')
-            .select('status, received_via')
+            .select('status, received_via, line_user_id')
             .eq('id', repairId)
             .single()
 
@@ -134,23 +134,22 @@ export async function POST(request: Request) {
             if (upErr) throw upErr
         }
 
-        if (newStatus !== baseline) {
+        const statusChanged = newStatus !== baseline
+        if (statusChanged) {
             await persistRepairStatusTransition(
                 sb,
                 repairId,
                 baseline,
                 newStatus,
                 String(existing.received_via || ''),
+                { skipCustomerLineNotify: newStatus === 'completed' },
             )
-        } else if (
-            body.mark_completed &&
-            existing.received_via === 'line' &&
-            newStatus === 'completed' &&
-            newStatus === baseline
-        ) {
-            await notifyRepairCustomerLineStatus(sb, repairId).catch((e) =>
-                console.warn('line customer notify mark_completed:', e),
-            )
+        } else if (newStatus === 'completed' && body.mark_completed) {
+            const { error: stErr } = await sb
+                .from('repair_requests')
+                .update({ status: 'completed' })
+                .eq('id', repairId)
+            if (stErr) throw stErr
         }
 
         const partName = body.new_part?.part_name?.trim()
@@ -165,9 +164,21 @@ export async function POST(request: Request) {
             if (partErr) throw partErr
         }
 
+        let lineCustomerNotify: Awaited<ReturnType<typeof notifyRepairCustomerOnCompleted>> | null = null
+        const shouldNotifyCompletion =
+            newStatus === 'completed' && (statusChanged || Boolean(body.mark_completed))
+
+        if (shouldNotifyCompletion) {
+            lineCustomerNotify = await notifyRepairCustomerOnCompleted(sb, repairId)
+        }
+
         const { data: updated } = await sb.from('repair_requests').select('*').eq('id', repairId).single()
 
-        return NextResponse.json({ ok: true, status: updated?.status ?? newStatus })
+        return NextResponse.json({
+            ok: true,
+            status: updated?.status ?? newStatus,
+            line_customer_notify: lineCustomerNotify,
+        })
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e)
         console.error('repair-mobile save:', e)

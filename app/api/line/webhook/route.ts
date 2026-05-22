@@ -191,7 +191,7 @@ async function handlePostback(event: LineEvent, userId: string) {
         }
         await replyMessage(
             event.replyToken,
-            `受付番号 #${result.requestNo} の修理完了内容を承諾いただきました。ありがとうございます。`,
+            `受付番号 #${result.requestNo} の完了報告を承諾いただきました。案件は完了となりました。ありがとうございます。`,
         )
     } catch (e) {
         console.error('handlePostback repair_ack:', e)
