@@ -192,6 +192,7 @@ export async function POST(request: Request) {
             status_applied: markCompleted ? finalStatus === 'completed' : statusChanged,
             previous_status: markResult?.previousStatus ?? baseline,
             line_customer_notify: markResult?.lineCustomerNotify ?? null,
+            line_works_notify: markResult?.lineWorksNotify ?? null,
             field_warnings: fieldWarnings.length > 0 ? fieldWarnings : undefined,
         })
     } catch (e: unknown) {

@@ -60,6 +60,7 @@ export async function POST(request: Request) {
                 status_applied: true,
                 previous_status: markResult.previousStatus,
                 line_customer_notify: markResult.lineCustomerNotify,
+                line_works_notify: markResult.lineWorksNotify,
             })
         }
 

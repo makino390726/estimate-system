@@ -65,6 +65,30 @@ export function getRepairCaseDetailUrl(repairRequestId: string): string {
     return `${getBaseUrl()}/repair-mobile/${encodeURIComponent(id)}`
 }
 
+/** 完了報告送信時（担当者向け） */
+function buildCompletionReportLineWorksMessage(params: {
+    requestNo: number
+    customerName: string
+    caseUrl: string
+}) {
+    return {
+        type: 'button_template',
+        contentText: [
+            `修理依頼案件 #${params.requestNo} の完了報告書を送信しました。`,
+            `顧客: ${params.customerName}`,
+            '',
+            '下の「案件を開く」から内容を確認できます。',
+        ].join('\n'),
+        actions: [
+            {
+                type: 'uri',
+                label: '案件を開く',
+                uri: params.caseUrl,
+            },
+        ],
+    }
+}
+
 /** 案件画面へのリンクのみ（LINE WORKS 上で「確認しました」ボタンは使わない） */
 function buildCaseLinkMessage(params: {
     requestNo: number
@@ -252,6 +276,107 @@ export async function sendRepairRequestLineWorksToStaff(
             error: lastError || 'all LINE WORKS sends failed',
             reason: lastError ? `${summary} — ${lastError}` : summary,
         }
+    }
+    return { ok: true, sent, recipients }
+}
+
+/** 完了報告送信時: 管轄担当者へ LINE WORKS（新規受付通知とは別文面） */
+export async function sendRepairCompletionReportLineWorksToStaff(
+    repairRequestId: string,
+    options?: LineWorksStaffNotifyOptions,
+): Promise<RepairLineWorksNotifyResult> {
+    if (!isLineWorksConfigured()) {
+        return { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
+    }
+
+    const sb = getSupabaseAdmin()
+    const { data: repair, error: repairErr } = await sb
+        .from('repair_requests')
+        .select('request_no, customer_name, assigned_branch, assigned_staff, status')
+        .eq('id', repairRequestId)
+        .single()
+
+    if (repairErr || !repair) {
+        return { ok: false, error: repairErr?.message || 'Repair request not found' }
+    }
+
+    if (repair.status !== 'completed') {
+        return { ok: true, skipped: true, reason: `ステータスが completed ではありません（${repair.status}）` }
+    }
+
+    const { branchId, departmentNames } = resolveRepairNotifyScope(repair)
+    const { data: staffRows, error: staffErr } = await sb
+        .from('staffs')
+        .select('name, email, department, branch_id')
+
+    if (staffErr) return { ok: false, error: staffErr.message }
+
+    const staffNameOnly = trim(options?.staffNameOnly)
+    let staffNames = resolveRepairNotifyStaffNames(
+        repair,
+        (staffRows || []) as RepairNotifyStaffRow[],
+        branchId,
+        departmentNames,
+    )
+
+    if (staffNameOnly) {
+        const allStaffNames = (staffRows || []).map((s) => trim(s.name)).filter(Boolean)
+        const resolved = resolveStaffName(staffNameOnly, allStaffNames) || staffNameOnly
+        staffNames = [resolved]
+    }
+
+    if (staffNames.length === 0) {
+        return {
+            ok: true,
+            skipped: true,
+            reason: `no staff for (${departmentNames.join(' / ')})`,
+        }
+    }
+
+    let targets: Array<{ staffName: string; lineWorksUserId: string }>
+    try {
+        targets = await findLineWorksStaffMappingsForNames(sb, staffNames)
+    } catch (mapErr) {
+        const msg = mapErr instanceof Error ? mapErr.message : String(mapErr)
+        return { ok: false, error: msg }
+    }
+
+    if (targets.length === 0) {
+        await logNotify(sb, repairRequestId, '(none)', 'skipped', 'LINE WORKS mapping missing (completion)')
+        return {
+            ok: true,
+            skipped: true,
+            reason: `担当者の LINE WORKS 連携が未登録です（対象: ${staffNames.join(' / ')}）`,
+        }
+    }
+
+    const caseUrl = getRepairCaseDetailUrl(repairRequestId)
+    const content = buildCompletionReportLineWorksMessage({
+        requestNo: repair.request_no,
+        customerName: repair.customer_name,
+        caseUrl,
+    })
+
+    let sent = 0
+    const recipients: string[] = []
+    let lastError: string | null = null
+
+    for (const target of targets) {
+        try {
+            await sendLineWorksUserMessage(target.lineWorksUserId, content)
+            sent++
+            recipients.push(target.staffName)
+            await logNotify(sb, repairRequestId, `${target.staffName} (completion)`, 'sent')
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            lastError = `${target.staffName}: ${msg}`
+            await logNotify(sb, repairRequestId, `${target.staffName} (completion)`, 'failed', msg)
+            console.error('LINE WORKS completion notify failed:', target.staffName, e)
+        }
+    }
+
+    if (sent === 0) {
+        return { ok: false, error: lastError || 'all LINE WORKS completion sends failed' }
     }
     return { ok: true, sent, recipients }
 }

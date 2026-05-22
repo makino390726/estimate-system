@@ -3,12 +3,17 @@ import {
     notifyRepairCustomerOnCompleted,
     type RepairCustomerLineNotifyResult,
 } from '@/lib/repairCustomerLineNotify'
+import {
+    sendRepairCompletionReportLineWorksToStaff,
+    type RepairLineWorksNotifyResult,
+} from '@/lib/repairLineWorksNotify'
 
 export type ApplyMarkCompletedResult = {
     statusApplied: boolean
     previousStatus: string
     newStatus: 'completed'
     lineCustomerNotify: RepairCustomerLineNotifyResult
+    lineWorksNotify: RepairLineWorksNotifyResult
 }
 
 /** 完了報告: ステータスを completed にし、履歴・顧客LINE通知まで行う（他フィールドより先に実行） */
@@ -65,10 +70,12 @@ export async function applyRepairMarkCompleted(
     }
 
     const lineCustomerNotify = await notifyRepairCustomerOnCompleted(sb, repairId)
+    const lineWorksNotify = await sendRepairCompletionReportLineWorksToStaff(repairId)
     return {
         statusApplied: true,
         previousStatus,
         newStatus: 'completed',
         lineCustomerNotify,
+        lineWorksNotify,
     }
 }
