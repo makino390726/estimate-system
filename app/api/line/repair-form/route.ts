@@ -8,6 +8,7 @@ import {
     type RepairPhotoUploadItem,
     uploadRepairRequestPhotos,
 } from '@/lib/repairPhotoStorage'
+import { isValidLineUserId } from '@/lib/lineUserId'
 
 export const runtime = 'nodejs'
 /** 写真アップロード・LINE通知はバックグラウンドで行うため、受付レスポンスは先に返す */
@@ -101,6 +102,13 @@ function parseMultipartFields(fd: FormData): RepairFormFields | null {
         line_user_id: strField(fd, 'line_user_id') || null,
         line_display_name: strField(fd, 'line_display_name') || null,
     }
+}
+
+function validateLineUserIdForLiff(fields: RepairFormFields): string | null {
+    if (!isValidLineUserId(fields.line_user_id)) {
+        return 'LINEユーザーIDを取得できませんでした。LINEアプリのトークから「修理依頼」→フォームで開き直してください。'
+    }
+    return null
 }
 
 function buildInsertPayload(fields: RepairFormFields) {
@@ -242,6 +250,10 @@ export async function POST(request: Request) {
                     { status: 400 },
                 )
             }
+            const lineErr = validateLineUserIdForLiff(fields)
+            if (lineErr) {
+                return NextResponse.json({ error: lineErr }, { status: 400 })
+            }
 
             const photoEntries = parseRepairFormPhotoEntries(fd)
             const { error, data } = await insertRepairRequest(sb, fields)
@@ -260,6 +272,10 @@ export async function POST(request: Request) {
                 { error: 'お名前と症状のカテゴリは必須です' },
                 { status: 400 },
             )
+        }
+        const lineErr = validateLineUserIdForLiff(fields)
+        if (lineErr) {
+            return NextResponse.json({ error: lineErr }, { status: 400 })
         }
 
         const { error, data } = await insertRepairRequest(sb, fields)

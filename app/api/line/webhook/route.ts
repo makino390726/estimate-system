@@ -22,6 +22,9 @@ import {
 } from '@/lib/lineStaffRegisterWebhook'
 import { resolveStaffName } from '@/lib/staffNameMatch'
 import { searchDifyRepairKnowledge } from '@/lib/difyClient'
+import { acknowledgeRepairByCustomer } from '@/lib/repairCustomerAck'
+import { parseRepairAckPostbackData } from '@/lib/repairLineCustomerNotify'
+import { buildRepairFormLiffUrl } from '@/lib/repairLiffUrls'
 
 export const runtime = 'nodejs'
 
@@ -62,6 +65,9 @@ type LineEvent = {
         id: string
         text?: string
         contentProvider?: { type: string }
+    }
+    postback?: {
+        data: string
     }
     timestamp: number
 }
@@ -143,6 +149,11 @@ export async function POST(request: Request) {
                 continue
             }
 
+            if (event.type === 'postback') {
+                await handlePostback(event, userId)
+                continue
+            }
+
             if (event.type !== 'message') continue
             await handleMessage(event)
         }
@@ -157,6 +168,35 @@ export async function POST(request: Request) {
 // GET は LINE Developers の Webhook URL 検証用
 export async function GET() {
     return NextResponse.json({ status: 'ok' })
+}
+
+async function handlePostback(event: LineEvent, userId: string) {
+    const data = event.postback?.data || ''
+    const repairId = parseRepairAckPostbackData(data)
+    if (!repairId) return
+
+    try {
+        const sb = getSupabase()
+        const result = await acknowledgeRepairByCustomer(sb, userId, repairId)
+        if (!result.ok) {
+            await replyMessage(event.replyToken, result.message)
+            return
+        }
+        if (result.alreadyDone) {
+            await replyMessage(
+                event.replyToken,
+                `受付番号 #${result.requestNo} は既にご確認済みです。ありがとうございます。`,
+            )
+            return
+        }
+        await replyMessage(
+            event.replyToken,
+            `受付番号 #${result.requestNo} の修理完了内容を承諾いただきました。ありがとうございます。`,
+        )
+    } catch (e) {
+        console.error('handlePostback repair_ack:', e)
+        await replyMessage(event.replyToken, '承諾の処理に失敗しました。お手数ですが再度お試しください。')
+    }
 }
 
 async function handleStaffFollow(event: LineEvent, userId: string) {
@@ -475,15 +515,10 @@ async function searchDify(category: string, symptom: string, userId: string): Pr
 }
 
 async function showMethodChoiceAfterAi(userId: string, state: ConversationState) {
-    const liffId = process.env.NEXT_PUBLIC_LIFF_ID || ''
-    let liffUrl = process.env.NEXT_PUBLIC_LIFF_URL || (liffId ? `https://liff.line.me/${liffId}` : '')
-
-    if (liffUrl && (state.category || state.symptom)) {
-        const params = new URLSearchParams()
-        if (state.category) params.set('category', state.category)
-        if (state.symptom) params.set('symptom', state.symptom)
-        liffUrl = `${liffUrl}?${params.toString()}`
-    }
+    const liffUrl = buildRepairFormLiffUrl({
+        category: state.category,
+        symptom: state.symptom,
+    })
 
     if (liffUrl) {
         try {
@@ -501,16 +536,10 @@ async function showMethodChoiceAfterAi(userId: string, state: ConversationState)
 
 
 async function showMethodChoice(replyToken: string, state: ConversationState) {
-    const liffId = process.env.NEXT_PUBLIC_LIFF_ID || ''
-    let liffUrl = process.env.NEXT_PUBLIC_LIFF_URL || (liffId ? `https://liff.line.me/${liffId}` : '')
-
-    // カテゴリ・症状をLIFFフォームに引き継ぐ
-    if (liffUrl && (state.category || state.symptom)) {
-        const params = new URLSearchParams()
-        if (state.category) params.set('category', state.category)
-        if (state.symptom) params.set('symptom', state.symptom)
-        liffUrl = `${liffUrl}?${params.toString()}`
-    }
+    const liffUrl = buildRepairFormLiffUrl({
+        category: state.category,
+        symptom: state.symptom,
+    })
 
     if (liffUrl) {
         try {

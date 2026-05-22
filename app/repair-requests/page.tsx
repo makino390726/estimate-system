@@ -13,6 +13,8 @@ import {
 } from '@/lib/customerRegisterSheetTypes'
 import { normalizeRepairMediaUrls } from '@/lib/repairPhotoStorage'
 import { buildRepairSymptomQuery } from '@/lib/repairSymptomText'
+import { isValidLineUserId } from '@/lib/lineUserId'
+import { buildRepairLineLinkLiffUrl } from '@/lib/repairLiffUrls'
 
 // ── Types ──
 
@@ -49,6 +51,7 @@ type RepairRequest = {
     root_cause: string | null
     repair_duration_minutes: number | null
     repair_cost: number | null
+    line_user_id: string | null
     notes: string | null
     customer_register_id: string | null
     created_at: string
@@ -57,6 +60,10 @@ type RepairRequest = {
 
 /** 商品マスタ検索の最大件数（以前は10件のみで全マスタを参照できなかった） */
 const PART_SUGGESTION_LIMIT = 500
+
+function hasCustomerLineUserId(lineUserId: string | null | undefined): boolean {
+    return isValidLineUserId(lineUserId)
+}
 
 function escapeForIlikeFragment(raw: string): string {
     return raw
@@ -210,6 +217,7 @@ export default function RepairRequestsPage() {
 
     // Detail modal
     const [detailRequest, setDetailRequest] = useState<RepairRequest | null>(null)
+    const [lineLinkCopied, setLineLinkCopied] = useState(false)
     const [detailParts, setDetailParts] = useState<RepairPart[]>([])
     const [pastRepairs, setPastRepairs] = useState<RepairRequest[]>([])
 
@@ -1431,6 +1439,9 @@ export default function RepairRequestsPage() {
                                     <th style={thStyle}>ステータス</th>
                                     <th style={thStyle}>受付日時</th>
                                     <th style={thStyle}>経路</th>
+                                    <th style={{ ...thStyle, textAlign: 'center', width: 56 }} title="顧客LINE ID取得（LIFF等）">
+                                        LINE ID
+                                    </th>
                                     <th style={thStyle}>顧客名</th>
                                     <th style={thStyle}>カテゴリ</th>
                                     <th style={thStyle}>型式</th>
@@ -1442,9 +1453,9 @@ export default function RepairRequestsPage() {
                             </thead>
                             <tbody>
                                 {loading ? (
-                                    <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>読み込み中...</td></tr>
+                                    <tr><td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>読み込み中...</td></tr>
                                 ) : filteredRows.length === 0 ? (
-                                    <tr><td colSpan={12} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>該当データがありません</td></tr>
+                                    <tr><td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 24 }}>該当データがありません</td></tr>
                                 ) : filteredRows.map(row => {
                                     const sc = STATUS_CONFIG[row.status] || STATUS_CONFIG.received
                                     const pc = PRIORITY_CONFIG[row.priority] || PRIORITY_CONFIG.normal
@@ -1464,6 +1475,27 @@ export default function RepairRequestsPage() {
                                                 {new Date(row.received_at).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                             </td>
                                             <td style={tdStyle}>{via}</td>
+                                            <td
+                                                style={{ ...tdStyle, textAlign: 'center' }}
+                                                title={
+                                                    hasCustomerLineUserId(row.line_user_id)
+                                                        ? row.line_user_id || ''
+                                                        : 'LINE ID 未取得（通知・承諾不可）'
+                                                }
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={hasCustomerLineUserId(row.line_user_id)}
+                                                    readOnly
+                                                    disabled
+                                                    aria-label={
+                                                        hasCustomerLineUserId(row.line_user_id)
+                                                            ? 'LINE ID 取得済み'
+                                                            : 'LINE ID 未取得'
+                                                    }
+                                                    style={{ width: 18, height: 18, cursor: 'default' }}
+                                                />
+                                            </td>
                                             <td style={tdStyle}>{row.customer_name}</td>
                                             <td style={tdStyle}>{formatRepairCategoryDisplay(row.category)}</td>
                                             <td style={tdStyle}>{row.model || '-'}</td>
@@ -1593,6 +1625,65 @@ export default function RepairRequestsPage() {
                                     編集内容とステータスは「保存して閉じる」で保存されます。
                                 </p>
                                 <div style={{ display: 'grid', gap: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={hasCustomerLineUserId(detailRequest.line_user_id)}
+                                            readOnly
+                                            disabled
+                                            style={{ width: 18, height: 18 }}
+                                        />
+                                        <div style={{ flex: 1 }}>
+                                            <label style={{ ...labelStyle, marginBottom: 4 }}>LINE ID 取得</label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                value={
+                                                    hasCustomerLineUserId(detailRequest.line_user_id)
+                                                        ? detailRequest.line_user_id || ''
+                                                        : ''
+                                                }
+                                                placeholder="未取得"
+                                                style={{ ...inputStyle, color: '#94a3b8' }}
+                                            />
+                                        </div>
+                                    </div>
+                                    {!hasCustomerLineUserId(detailRequest.line_user_id) && (() => {
+                                        const linkUrl = buildRepairLineLinkLiffUrl(detailRequest.id)
+                                        if (!linkUrl) {
+                                            return (
+                                                <p style={{ margin: 0, fontSize: 11, color: '#fbbf24' }}>
+                                                    LINE連携URLを出すには Vercel に NEXT_PUBLIC_LIFF_URL を設定してください。
+                                                </p>
+                                            )
+                                        }
+                                        return (
+                                            <div style={{ padding: 10, background: '#0f172a', borderRadius: 8, border: '1px solid #334155' }}>
+                                                <p style={{ margin: '0 0 8px', fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
+                                                    電話受付などで LINE ID がない場合、顧客に下のURLをLINEで送って開いてもらうと連携できます（受付経路も line になります）。
+                                                </p>
+                                                <input
+                                                    type="text"
+                                                    readOnly
+                                                    value={linkUrl}
+                                                    style={{ ...inputStyle, fontSize: 11, marginBottom: 8 }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="btn-3d"
+                                                    style={{ padding: '6px 12px', fontSize: 12 }}
+                                                    onClick={() => {
+                                                        void navigator.clipboard.writeText(linkUrl).then(() => {
+                                                            setLineLinkCopied(true)
+                                                            setTimeout(() => setLineLinkCopied(false), 2500)
+                                                        })
+                                                    }}
+                                                >
+                                                    {lineLinkCopied ? 'コピーしました' : '連携URLをコピー'}
+                                                </button>
+                                            </div>
+                                        )
+                                    })()}
                                     <div>
                                         <label style={{ ...labelStyle, marginBottom: 4 }}>顧客名</label>
                                         <input

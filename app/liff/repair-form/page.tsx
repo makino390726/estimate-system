@@ -21,6 +21,8 @@ import {
     LIFF_REPAIR_BRANCH_OPTIONS,
 } from '@/lib/branches'
 import { toEndUserRepairAiError } from '@/lib/difyClient'
+import { isValidLineUserId } from '@/lib/lineUserId'
+import { buildRepairFormLiffUrl } from '@/lib/repairLiffUrls'
 
 type StaffOption = { name: string; branch_id: string | null; department: string | null }
 
@@ -70,13 +72,18 @@ function formatLiffInitError(e: unknown): string {
 function RepairFormInner() {
     const searchParams = useSearchParams()
     const mode = searchParams.get('mode') === 'ai' || isAiEntryPath() ? 'ai' : 'repair'
+    const linkRepairId = (searchParams.get('link_repair_id') || '').trim()
 
     const [liff, setLiff] = useState<LiffModule | null>(null)
     const [profile, setProfile] = useState<{ userId: string; displayName: string } | null>(null)
+    const [inLineClient, setInLineClient] = useState(true)
     const [loading, setLoading] = useState(true)
     const [submitting, setSubmitting] = useState(false)
     const [submitted, setSubmitted] = useState(false)
     const [requestNo, setRequestNo] = useState<number | null>(null)
+    const [linkSubmitting, setLinkSubmitting] = useState(false)
+    const [linkDone, setLinkDone] = useState(false)
+    const [linkRequestNo, setLinkRequestNo] = useState<number | null>(null)
     const [error, setError] = useState('')
     /** AIモード: LIFF失敗時も検索は続行（赤い致命エラーにしない） */
     const [liffNotice, setLiffNotice] = useState('')
@@ -183,6 +190,9 @@ function RepairFormInner() {
             const liffMod = mod.default as unknown as LiffModule
             liffMod.init({ liffId }).then(() => {
                 setLiff(liffMod)
+                if (typeof liffMod.isInClient === 'function') {
+                    setInLineClient(liffMod.isInClient())
+                }
                 if (!liffMod.isLoggedIn()) {
                     liffMod.login()
                     return
@@ -284,8 +294,55 @@ function RepairFormInner() {
         window.location.assign(new URL('/liff/repair-form', window.location.origin).toString())
     }
 
+    const openInLineApp = () => {
+        const url = buildRepairFormLiffUrl({
+            category: searchParams.get('category') || undefined,
+            symptom: searchParams.get('symptom') || undefined,
+            linkRepairId: linkRepairId || undefined,
+        })
+        if (url) window.location.href = url
+        else setError('LIFF URLが未設定です（NEXT_PUBLIC_LIFF_URL）')
+    }
+
+    const handleLineLink = async () => {
+        if (!linkRepairId) return
+        if (!isValidLineUserId(profile?.userId)) {
+            setError('LINEユーザーIDを取得できませんでした。LINEアプリからこの画面を開き直してください。')
+            return
+        }
+        setLinkSubmitting(true)
+        setError('')
+        try {
+            const res = await fetch('/api/line/repair-line-link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    repair_request_id: linkRepairId,
+                    line_user_id: profile!.userId,
+                    line_display_name: profile!.displayName,
+                }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || '連携に失敗しました')
+            setLinkRequestNo(data.request_no ?? null)
+            setLinkDone(true)
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : '連携に失敗しました')
+        } finally {
+            setLinkSubmitting(false)
+        }
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (!isValidLineUserId(profile?.userId)) {
+            setError(
+                inLineClient
+                    ? 'LINEユーザーIDを取得できませんでした。一度閉じて、LINEのトークから再度お開きください。'
+                    : 'LINEアプリから開いて送信してください（下の「LINEアプリで開く」をタップ）。',
+            )
+            return
+        }
         if (!form.customer_name.trim()) {
             setError('お名前を入力してください')
             return
@@ -448,6 +505,75 @@ function RepairFormInner() {
         )
     }
 
+    if (linkRepairId && linkDone) {
+        return (
+            <div style={styles.container}>
+                <div style={styles.card}>
+                    <div style={styles.successIcon}>&#10004;</div>
+                    <h2 style={styles.successTitle}>LINE連携完了</h2>
+                    {linkRequestNo != null && (
+                        <p style={styles.requestNo}>受付番号: #{linkRequestNo}</p>
+                    )}
+                    <p style={styles.successText}>
+                        このLINEアカウントと修理案件を連携しました。<br />
+                        修理完了時のご報告も、このトークに届きます。
+                    </p>
+                    <button type="button" onClick={handleClose} style={styles.closeButton}>
+                        閉じる
+                    </button>
+                </div>
+            </div>
+        )
+    }
+
+    if (linkRepairId && mode === 'repair' && !submitted) {
+        const lineAppUrl = buildRepairFormLiffUrl({ linkRepairId })
+        return (
+            <div style={styles.container}>
+                <div style={styles.card}>
+                    <div style={styles.header}>
+                        <h1 style={styles.headerTitle}>修理案件とLINE連携</h1>
+                        <p style={styles.headerSub}>
+                            担当者から案内された画面です。連携すると修理完了のお知らせがLINEに届きます。
+                        </p>
+                    </div>
+                    {!inLineClient && lineAppUrl && (
+                        <div style={{ ...styles.noticeBox, margin: '0 16px 12px' }}>
+                            <p style={{ margin: '0 0 10px', lineHeight: 1.5 }}>
+                                ブラウザで開いています。LINEアプリから開くと確実に連携できます。
+                            </p>
+                            <button type="button" onClick={openInLineApp} style={styles.submitButton}>
+                                LINEアプリで開く
+                            </button>
+                        </div>
+                    )}
+                    {error && <div style={styles.errorBox}>{error}</div>}
+                    <div style={{ padding: '0 16px 20px' }}>
+                        <button
+                            type="button"
+                            onClick={() => void handleLineLink()}
+                            disabled={linkSubmitting || loading || !isValidLineUserId(profile?.userId)}
+                            style={{
+                                ...styles.submitButton,
+                                opacity: linkSubmitting || loading || !isValidLineUserId(profile?.userId) ? 0.55 : 1,
+                            }}
+                        >
+                            {linkSubmitting ? '連携中...' : 'このLINEで連携する'}
+                        </button>
+                        {!loading && !isValidLineUserId(profile?.userId) && (
+                            <p style={{ marginTop: 12, fontSize: 13, color: '#fde68a', lineHeight: 1.5 }}>
+                                LINEにログインできていません。上の「LINEアプリで開く」からお試しください。
+                            </p>
+                        )}
+                        <button type="button" onClick={handleClose} style={{ ...styles.ghostButton, marginTop: 12 }}>
+                            閉じる
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     if (submitted) {
         return (
             <div style={styles.container}>
@@ -489,6 +615,26 @@ function RepairFormInner() {
                 </div>
 
                 {error && <div style={styles.errorBox}>{error}</div>}
+
+                {!inLineClient && buildRepairFormLiffUrl({
+                    category: searchParams.get('category') || undefined,
+                    symptom: searchParams.get('symptom') || undefined,
+                }) && (
+                    <div style={{ ...styles.noticeBox, margin: '0 16px 12px' }}>
+                        <p style={{ margin: '0 0 10px', lineHeight: 1.5 }}>
+                            通常のブラウザで開いています。LINE ID を取得するには LINE アプリから開いてください。
+                        </p>
+                        <button type="button" onClick={openInLineApp} style={styles.submitButton}>
+                            LINEアプリで開く
+                        </button>
+                    </div>
+                )}
+
+                {!loading && !isValidLineUserId(profile?.userId) && (
+                    <div style={{ ...styles.errorBox, margin: '0 16px 12px' }}>
+                        LINEユーザーIDを取得できていません。送信前に「LINEアプリで開く」から開き直してください。
+                    </div>
+                )}
 
                 <style>{`
                     .repair-liff-form input::placeholder,
@@ -738,10 +884,10 @@ function RepairFormInner() {
 
                     <button
                         type="submit"
-                        disabled={submitting}
+                        disabled={submitting || loading || !isValidLineUserId(profile?.userId)}
                         style={{
                             ...styles.submitButton,
-                            opacity: submitting ? 0.6 : 1,
+                            opacity: submitting || loading || !isValidLineUserId(profile?.userId) ? 0.55 : 1,
                         }}
                     >
                         {submitting ? '送信中...' : '修理依頼を送信'}

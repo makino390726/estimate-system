@@ -1,0 +1,404 @@
+.repair-mobile-root {
+    min-height: 100dvh;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.repair-mobile-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+}
+
+.repair-mobile-header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #38bdf8;
+}
+
+.repair-mobile-main {
+    padding: 12px 16px 100px;
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+.repair-mobile-card {
+    display: block;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+    text-decoration: none;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.repair-mobile-card:active {
+    background: #334155;
+}
+
+.repair-mobile-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.repair-mobile-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.repair-mobile-tab {
+    flex: 1;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: #1e293b;
+    color: #94a3b8;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.repair-mobile-tab.active {
+    background: #1e3a5f;
+    color: #38bdf8;
+    border-color: #38bdf8;
+}
+
+.repair-mobile-input,
+.repair-mobile-textarea,
+.repair-mobile-select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    font-size: 16px;
+    border-radius: 10px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: #f1f5f9;
+    margin-top: 6px;
+}
+
+.repair-mobile-textarea {
+    min-height: 88px;
+    resize: vertical;
+}
+
+.repair-mobile-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-top: 12px;
+}
+
+.repair-mobile-section {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.repair-mobile-section h2 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    color: #38bdf8;
+}
+
+.repair-mobile-status-btn {
+    display: inline-block;
+    margin: 4px 6px 4px 0;
+    padding: 12px 16px;
+    min-height: 44px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: #e2e8f0;
+    cursor: pointer;
+}
+
+.repair-mobile-status-btn.selected {
+    border-color: #38bdf8;
+    background: #1e3a5f;
+    color: #38bdf8;
+}
+
+.repair-mobile-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: #1e293b;
+    border-top: 1px solid #334155;
+    display: flex;
+    gap: 10px;
+    max-width: 480px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.repair-mobile-btn-primary {
+    flex: 1;
+    min-height: 48px;
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #38bdf8, #0284c7);
+    color: #0f172a;
+    cursor: pointer;
+}
+
+.repair-mobile-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.repair-mobile-btn-secondary {
+    min-height: 48px;
+    padding: 0 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 12px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: #94a3b8;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.repair-mobile-tel {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 10px 16px;
+    background: #166534;
+    color: #fff;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.repair-mobile-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.repair-mobile-photo-grid img {
+    width: 100%;
+    border-radius: 8px;
+    aspect-ratio: 1;
+    object-fit: cover;
+}
+
+.repair-mobile-msg {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.repair-mobile-msg.ok {
+    background: #14532d;
+    color: #86efac;
+}
+
+.repair-mobile-msg.err {
+    background: #450a0a;
+    color: #fca5a5;
+}
+
+.repair-mobile-suggest-wrap {
+    position: relative;
+}
+
+.repair-mobile-suggest-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    margin-top: 4px;
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 10px;
+    max-height: 240px;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.repair-mobile-suggest-item {
+    padding: 12px 14px;
+    border-bottom: 1px solid #334155;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.repair-mobile-suggest-item:active {
+    background: #334155;
+}
+
+.repair-mobile-suggest-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.repair-mobile-suggest-code {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 4px;
+}
+
+.repair-mobile-btn-add-part {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid #38bdf8;
+    background: #0f172a;
+    color: #38bdf8;
+    cursor: pointer;
+}
+
+.repair-mobile-btn-add-part:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.repair-mobile-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.repair-mobile-sheet {
+    width: 100%;
+    max-width: 480px;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 16px 16px 12px 12px;
+    padding: 16px;
+}
+
+.repair-mobile-sheet h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    color: #38bdf8;
+}
+
+.repair-mobile-candidate {
+    display: block;
+    width: 100%;
+    text-align: left;
+    margin-bottom: 8px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #e2e8f0;
+    cursor: pointer;
+}
+
+.repair-mobile-candidate:active {
+    background: #334155;
+}
+
+.repair-mobile-btn-outline {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid #38bdf8;
+    background: transparent;
+    color: #38bdf8;
+    cursor: pointer;
+}
+
+.repair-mobile-btn-outline:disabled {
+    opacity: 0.5;
+}
+
+.repair-mobile-part-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) 52px;
+    gap: 8px;
+    align-items: end;
+}
+
+.repair-mobile-cost-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    align-items: end;
+}
+
+.repair-mobile-part-cell {
+    min-width: 0;
+}
+
+.repair-mobile-part-cell-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+.repair-mobile-part-row .repair-mobile-input {
+    margin-top: 0;
+    padding: 10px 8px;
+    font-size: 14px;
+}
+
+.repair-mobile-part-line {
+    font-size: 13px;
+    line-height: 1.4;
+    color: #e2e8f0;
+}
+
+.repair-mobile-part-line-muted {
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+.repair-mobile-part-qty {
+    margin-left: 14px;
+    font-weight: 700;
+    font-size: 15px;
+    color: #38bdf8;
+    white-space: nowrap;
+}

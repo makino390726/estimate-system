@@ -59,10 +59,10 @@ async function logNotify(
     }
 }
 
-/** 修理案件詳細モーダルを開く URL（LINE WORKS 通知のリンク先） */
+/** 現場スマホ向け修理対応画面 URL（LINE WORKS 通知のリンク先） */
 export function getRepairCaseDetailUrl(repairRequestId: string): string {
     const id = trim(repairRequestId)
-    return `${getBaseUrl()}/repair-requests?id=${encodeURIComponent(id)}`
+    return `${getBaseUrl()}/repair-mobile/${encodeURIComponent(id)}`
 }
 
 /** 案件画面へのリンクのみ（LINE WORKS 上で「確認しました」ボタンは使わない） */
