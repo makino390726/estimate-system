@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { repairCategoryToSheetType } from '@/lib/customerRegisterSheetTypes'
-import { notifyRepairCustomerOnCompleted } from '@/lib/repairCustomerLineNotify'
+import { applyRepairMarkCompleted } from '@/lib/repairMarkCompleted'
+import { hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
 
 export const runtime = 'nodejs'
@@ -49,8 +50,23 @@ function parseMoney(v: unknown): number | null {
     return Number.isFinite(n) && n >= 0 ? Math.round(n) : null
 }
 
+function isMarkCompletedFlag(v: unknown): boolean {
+    return v === true || v === 'true' || v === 1 || v === '1'
+}
+
 export async function POST(request: Request) {
     try {
+        if (!hasSupabaseServiceRole()) {
+            return NextResponse.json(
+                {
+                    error:
+                        'サーバーに SUPABASE_SERVICE_ROLE_KEY が未設定です。Vercel の環境変数に設定して再デプロイしてください。',
+                    code: 'missing_service_role',
+                },
+                { status: 503 },
+            )
+        }
+
         const body = (await request.json()) as SaveBody
         const repairId = typeof body.repair_request_id === 'string' ? body.repair_request_id.trim() : ''
         if (!repairId) {
@@ -71,16 +87,27 @@ export async function POST(request: Request) {
         const baseline =
             typeof body.status_baseline === 'string' && body.status_baseline.trim()
                 ? body.status_baseline.trim()
-                : existing.status
+                : String(existing.status || 'received')
+        const markCompleted = isMarkCompletedFlag(body.mark_completed)
+
         let newStatus =
             typeof body.status === 'string' && body.status.trim() ? body.status.trim() : baseline
-
-        if (body.mark_completed) {
+        if (markCompleted) {
             newStatus = 'completed'
         }
 
         if (body.customer_name !== undefined && !toNullable(body.customer_name)) {
             return NextResponse.json({ error: '顧客名は必須です' }, { status: 400 })
+        }
+
+        let markResult: Awaited<ReturnType<typeof applyRepairMarkCompleted>> | null = null
+        if (markCompleted) {
+            markResult = await applyRepairMarkCompleted(
+                sb,
+                repairId,
+                baseline,
+                body.visit_completed_date,
+            )
         }
 
         const updatePayload: Record<string, unknown> = {
@@ -108,24 +135,22 @@ export async function POST(request: Request) {
                 body.repair_duration_minutes !== undefined ? body.repair_duration_minutes : undefined,
         }
 
-        if (body.visit_fee !== undefined || body.labor_cost !== undefined) {
-            const visitFee = body.visit_fee !== undefined ? parseMoney(body.visit_fee) : null
-            const laborCost = body.labor_cost !== undefined ? parseMoney(body.labor_cost) : null
-            updatePayload.visit_fee = visitFee
-            updatePayload.labor_cost = laborCost
-            updatePayload.repair_cost =
-                visitFee == null && laborCost == null ? null : (visitFee ?? 0) + (laborCost ?? 0)
+        const visitFee = body.visit_fee !== undefined ? parseMoney(body.visit_fee) : undefined
+        const laborCost = body.labor_cost !== undefined ? parseMoney(body.labor_cost) : undefined
+        if (visitFee != null) updatePayload.visit_fee = visitFee
+        if (laborCost != null) updatePayload.labor_cost = laborCost
+        if (visitFee != null || laborCost != null) {
+            updatePayload.repair_cost = (visitFee ?? 0) + (laborCost ?? 0)
         } else if (body.repair_cost !== undefined) {
-            updatePayload.repair_cost = parseMoney(body.repair_cost)
+            const rc = parseMoney(body.repair_cost)
+            if (rc != null) updatePayload.repair_cost = rc
         }
 
-        if (body.mark_completed || body.visit_completed_date) {
-            updatePayload.visit_completed_date =
-                toNullable(body.visit_completed_date) ||
-                new Date().toISOString().split('T')[0]
+        if (!markCompleted && body.visit_completed_date) {
+            updatePayload.visit_completed_date = toNullable(body.visit_completed_date)
         }
 
-        const statusChanged = newStatus !== String(existing.status || baseline)
+        const statusChanged = !markCompleted && newStatus !== String(existing.status || baseline)
         if (statusChanged) {
             updatePayload.status = newStatus
         }
@@ -134,9 +159,19 @@ export async function POST(request: Request) {
             Object.entries(updatePayload).filter(([, v]) => v !== undefined),
         )
 
+        const fieldWarnings: string[] = []
         if (Object.keys(cleaned).length > 0) {
             const { error: upErr } = await sb.from('repair_requests').update(cleaned).eq('id', repairId)
-            if (upErr) throw upErr
+            if (upErr) {
+                const msg = upErr.message || ''
+                const optionalColumn =
+                    /visit_fee|labor_cost|customer_acknowledged/i.test(msg) && markCompleted
+                if (optionalColumn) {
+                    fieldWarnings.push(`付帯情報の一部は保存できませんでした: ${msg}`)
+                } else {
+                    throw upErr
+                }
+            }
         }
 
         if (statusChanged) {
@@ -145,46 +180,19 @@ export async function POST(request: Request) {
                 old_status: baseline,
                 new_status: newStatus,
             })
-            if (histErr) throw histErr
-
-            if (newStatus === 'staff_confirmed') {
-                const base =
-                    String(process.env.PROD_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || '').trim() ||
-                    'https://estimate-system-ten.vercel.app'
-                await fetch(`${base}/api/lineworks/confirm-from-web`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ repair_request_id: repairId }),
-                }).catch((e) => console.warn('lineworks confirm-from-web:', e))
-            }
+            if (histErr) console.warn('repair_status_history:', histErr.message)
         }
 
-        const partName = body.new_part?.part_name?.trim()
-        if (partName) {
-            const { error: partErr } = await sb.from('repair_parts').insert({
-                repair_request_id: repairId,
-                part_name: partName,
-                part_code: toNullable(body.new_part?.part_code),
-                quantity: Number(body.new_part?.quantity) || 1,
-                unit_price: body.new_part?.unit_price ?? null,
-            })
-            if (partErr) throw partErr
-        }
-
-        let lineCustomerNotify: Awaited<ReturnType<typeof notifyRepairCustomerOnCompleted>> | null = null
-        const shouldNotifyCompletion =
-            newStatus === 'completed' && (statusChanged || Boolean(body.mark_completed))
-
-        if (shouldNotifyCompletion) {
-            lineCustomerNotify = await notifyRepairCustomerOnCompleted(sb, repairId)
-        }
-
-        const { data: updated } = await sb.from('repair_requests').select('*').eq('id', repairId).single()
+        const { data: updated } = await sb.from('repair_requests').select('status, line_user_id').eq('id', repairId).single()
+        const finalStatus = updated?.status ?? (markCompleted ? 'completed' : newStatus)
 
         return NextResponse.json({
             ok: true,
-            status: updated?.status ?? newStatus,
-            line_customer_notify: lineCustomerNotify,
+            status: finalStatus,
+            status_applied: markCompleted ? finalStatus === 'completed' : statusChanged,
+            previous_status: markResult?.previousStatus ?? baseline,
+            line_customer_notify: markResult?.lineCustomerNotify ?? null,
+            field_warnings: fieldWarnings.length > 0 ? fieldWarnings : undefined,
         })
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e)

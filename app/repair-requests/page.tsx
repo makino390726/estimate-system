@@ -655,7 +655,18 @@ export default function RepairRequestsPage() {
                 }),
             })
             const data = await res.json().catch(() => ({}))
-            if (!res.ok) throw new Error(data.error || '完了報告の送信に失敗しました')
+            if (!res.ok) {
+                const hint =
+                    data.code === 'missing_service_role'
+                        ? '（Vercelに SUPABASE_SERVICE_ROLE_KEY を設定してください）'
+                        : ''
+                throw new Error(`${data.error || '完了報告の送信に失敗しました'}${hint}`)
+            }
+            if (data.status_applied === false || data.status !== 'completed') {
+                throw new Error(
+                    `ステータスが反映されませんでした（DB: ${data.status ?? '不明'}）`,
+                )
+            }
 
             const lineNotify = data.line_customer_notify as
                 | { ok?: boolean; skipped?: string; error?: string }

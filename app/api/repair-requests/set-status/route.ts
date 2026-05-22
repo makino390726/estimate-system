@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { notifyRepairCustomerOnCompleted } from '@/lib/repairCustomerLineNotify'
+import { applyRepairMarkCompleted } from '@/lib/repairMarkCompleted'
+import { hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { persistRepairStatusTransition, getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
 
 export const runtime = 'nodejs'
@@ -13,6 +14,17 @@ type Body = {
 /** 修理案件ステータス変更（service role・履歴・LINE通知） */
 export async function POST(request: Request) {
     try {
+        if (!hasSupabaseServiceRole()) {
+            return NextResponse.json(
+                {
+                    error:
+                        'サーバーに SUPABASE_SERVICE_ROLE_KEY が未設定です。Vercel の環境変数に設定して再デプロイしてください。',
+                    code: 'missing_service_role',
+                },
+                { status: 503 },
+            )
+        }
+
         const body = (await request.json().catch(() => ({}))) as Body
         const repairId = String(body.repair_request_id || '').trim()
         const newStatus = String(body.new_status || '').trim()
@@ -40,6 +52,17 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true, status: newStatus, unchanged: true })
         }
 
+        if (newStatus === 'completed') {
+            const markResult = await applyRepairMarkCompleted(sb, repairId, oldStatus, null)
+            return NextResponse.json({
+                ok: true,
+                status: 'completed',
+                status_applied: true,
+                previous_status: markResult.previousStatus,
+                line_customer_notify: markResult.lineCustomerNotify,
+            })
+        }
+
         await persistRepairStatusTransition(
             sb,
             repairId,
@@ -49,15 +72,11 @@ export async function POST(request: Request) {
             { skipCustomerLineNotify: newStatus === 'completed' },
         )
 
-        let lineCustomerNotify: Awaited<ReturnType<typeof notifyRepairCustomerOnCompleted>> | null = null
-        if (newStatus === 'completed') {
-            lineCustomerNotify = await notifyRepairCustomerOnCompleted(sb, repairId)
-        }
-
         return NextResponse.json({
             ok: true,
             status: newStatus,
-            line_customer_notify: lineCustomerNotify,
+            status_applied: true,
+            previous_status: oldStatus,
         })
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e)

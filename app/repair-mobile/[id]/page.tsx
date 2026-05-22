@@ -255,6 +255,8 @@ export default function RepairMobileDetailPage() {
         setSaving(true)
         setMessage(null)
         try {
+            const visitFeeNum = parseOptionalFloat(visitFee)
+            const laborCostNum = parseOptionalFloat(laborCost)
             const res = await fetch('/api/repair-mobile/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -275,34 +277,52 @@ export default function RepairMobileDetailPage() {
                     treatment_details: treatment,
                     root_cause: rootCause,
                     repair_duration_minutes: parseOptionalInt(durationMin),
-                    visit_fee: parseOptionalFloat(visitFee),
-                    labor_cost: parseOptionalFloat(laborCost),
-                    mark_completed: opts?.markCompleted,
+                    ...(visitFeeNum != null ? { visit_fee: visitFeeNum } : {}),
+                    ...(laborCostNum != null ? { labor_cost: laborCostNum } : {}),
+                    mark_completed: opts?.markCompleted === true,
                 }),
             })
             const json = await res.json()
-            if (!res.ok) throw new Error(json.error || '保存に失敗しました')
+            if (!res.ok) {
+                const hint =
+                    json.code === 'missing_service_role'
+                        ? '（Vercelに SUPABASE_SERVICE_ROLE_KEY を設定してください）'
+                        : ''
+                throw new Error(`${json.error || '保存に失敗しました'}${hint}`)
+            }
+
+            if (opts?.markCompleted && json.status_applied === false) {
+                throw new Error(
+                    `ステータスが「完了報告済」になりませんでした（現在: ${json.status ?? '不明'}）`,
+                )
+            }
 
             const lineNotify = json.line_customer_notify as
                 | { ok?: boolean; skipped?: string; error?: string }
                 | null
                 | undefined
+            const fieldWarnings = json.field_warnings as string[] | undefined
 
             let okText = opts?.markCompleted
                 ? '完了報告を送信しました（顧客の承諾後に案件が完了します）'
                 : '保存しました'
-            if (opts?.markCompleted && lineNotify) {
-                if (lineNotify.ok) {
+            if (opts?.markCompleted) {
+                if (lineNotify?.ok) {
                     okText += '（顧客へLINEで届けました）'
-                } else if (lineNotify.skipped) {
+                } else if (lineNotify?.skipped) {
                     okText += `（顧客LINE未送信: ${lineNotify.skipped}）`
-                } else if (lineNotify.error) {
+                } else if (lineNotify?.error) {
                     setMessage({
                         type: 'err',
-                        text: `${okText}が、顧客へのLINE通知に失敗しました: ${lineNotify.error}`,
+                        text: `${okText}。顧客へのLINE通知に失敗: ${lineNotify.error}`,
                     })
                     await load()
                     return
+                } else if (!lineNotify) {
+                    okText += '（顧客LINE通知なし）'
+                }
+                if (fieldWarnings?.length) {
+                    okText += ` ※${fieldWarnings.join(' ')}`
                 }
             }
 
