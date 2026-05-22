@@ -579,33 +579,103 @@ export default function RepairRequestsPage() {
             .catch((e) => console.warn('LINE WORKS confirm-from-web:', e))
     }
 
-    /** 案件詳細を閉じる保存の一部としてステータスを確定（履歴・LINE 通知含む） */
+    /** ステータス確定（service role API・履歴・完了時は顧客LINE） */
     const persistRepairStatusTransition = async (
         repairId: string,
         oldStatus: string,
         newStatus: string,
-        receivedVia: string,
     ) => {
-        const { error } = await supabase.from('repair_requests').update({ status: newStatus }).eq('id', repairId)
-        if (error) throw error
-
-        const { error: histErr } = await supabase.from('repair_status_history').insert({
-            repair_request_id: repairId,
-            old_status: oldStatus,
-            new_status: newStatus,
+        const res = await fetch('/api/repair-requests/set-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                repair_request_id: repairId,
+                old_status: oldStatus,
+                new_status: newStatus,
+            }),
         })
-        if (histErr) throw histErr
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || 'ステータスの保存に失敗しました')
 
-        if (newStatus === 'completed' || receivedVia === 'line') {
-            fetch('/api/line/notify', {
+        const lineNotify = data.line_customer_notify as
+            | { ok?: boolean; skipped?: string; error?: string }
+            | null
+            | undefined
+        if (newStatus === 'completed' && lineNotify) {
+            if (lineNotify.ok) {
+                setNotifyFeedback('完了報告を送信しました（顧客へLINEで届けました）')
+            } else if (lineNotify.skipped) {
+                setNotifyFeedback(`ステータスを完了報告済にしました（顧客LINE未送信: ${lineNotify.skipped}）`)
+            } else if (lineNotify.error) {
+                setNotifyFeedback(`完了報告済にしましたが顧客LINE通知に失敗: ${lineNotify.error}`)
+            }
+        }
+    }
+
+    /** 完了報告送信（ステータス completed + 顧客LINE。処置内容は別途保存可） */
+    const submitCompletionReport = async () => {
+        if (!detailRequest) return
+        const rid = detailRequest.id
+        const oldStatus = detailStatusBaseline ?? detailRequest.status
+        if (oldStatus === 'completed' || oldStatus === 'closed') {
+            setNotifyFeedback('すでに完了報告済み、または案件完了です')
+            return
+        }
+        try {
+            if (newPart.part_name.trim()) {
+                const payload = {
+                    repair_request_id: rid,
+                    part_name: newPart.part_name.trim(),
+                    part_code: toNullable(newPart.part_code),
+                    quantity: Number(newPart.quantity) || 1,
+                    unit_price: newPart.unit_price ? Number(newPart.unit_price) : null,
+                    notes: toNullable(newPart.notes),
+                }
+                const { error: partErr } = await supabase.from('repair_parts').insert(payload)
+                if (partErr) throw partErr
+                setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
+            }
+
+            const res = await fetch('/api/repair-mobile/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: 'status_change', repair_request_id: repairId }),
-            }).catch(() => {})
-        }
+                body: JSON.stringify({
+                    repair_request_id: rid,
+                    mark_completed: true,
+                    status_baseline: oldStatus,
+                    customer_name: detailRequest.customer_name,
+                    treatment_details: completionData.treatment_details ?? detailRequest.treatment_details,
+                    root_cause: completionData.root_cause ?? detailRequest.root_cause,
+                    repair_duration_minutes: completionData.repair_duration_minutes
+                        ? Number(completionData.repair_duration_minutes)
+                        : detailRequest.repair_duration_minutes,
+                    serial_no: completionData.body_serial_no ?? detailRequest.serial_no,
+                    manufacturing_no: completionData.manufacturing_no ?? detailRequest.manufacturing_no,
+                    visit_completed_date: new Date().toISOString().split('T')[0],
+                }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || '完了報告の送信に失敗しました')
 
-        if (newStatus === 'staff_confirmed') {
-            notifyLineWorksStaffConfirmed(repairId)
+            const lineNotify = data.line_customer_notify as
+                | { ok?: boolean; skipped?: string; error?: string }
+                | null
+                | undefined
+            if (lineNotify?.ok) {
+                setNotifyFeedback('完了報告を送信しました（顧客へLINEで届けました）')
+            } else if (lineNotify?.skipped) {
+                setNotifyFeedback(`完了報告済にしました（顧客LINE未送信: ${lineNotify.skipped}）`)
+            } else if (lineNotify?.error) {
+                setNotifyFeedback(`完了報告済にしましたが顧客LINE通知に失敗: ${lineNotify.error}`)
+            } else {
+                setNotifyFeedback('完了報告を送信しました')
+            }
+
+            setDetailRequest((prev) => (prev ? { ...prev, status: 'completed' } : null))
+            setDetailStatusBaseline('completed')
+            await fetchRequests({ silent: true })
+        } catch (e: unknown) {
+            setNotifyFeedback(e instanceof Error ? e.message : '完了報告の送信に失敗しました')
         }
     }
 
@@ -886,12 +956,34 @@ export default function RepairRequestsPage() {
 
                 const statusChanged = snapshot.statusDraft !== snapshot.statusBaseline
                 if (statusChanged) {
-                    await persistRepairStatusTransition(
-                        rid,
-                        snapshot.statusBaseline,
-                        snapshot.statusDraft,
-                        snapshot.receivedVia,
-                    )
+                    if (snapshot.statusDraft === 'completed') {
+                        const res = await fetch('/api/repair-mobile/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                repair_request_id: rid,
+                                mark_completed: true,
+                                status_baseline: snapshot.statusBaseline,
+                                customer_name: snapshot.customer_name || snapshot.customerNameFallback,
+                                treatment_details: snapshot.treatment_details,
+                                root_cause: snapshot.root_cause,
+                                repair_duration_minutes: snapshot.repair_duration_minutes
+                                    ? Number(snapshot.repair_duration_minutes)
+                                    : null,
+                                serial_no: snapshot.body_serial_no,
+                                manufacturing_no: snapshot.manufacturing_no,
+                                visit_completed_date: new Date().toISOString().split('T')[0],
+                            }),
+                        })
+                        const data = await res.json().catch(() => ({}))
+                        if (!res.ok) throw new Error(data.error || '完了報告の保存に失敗しました')
+                    } else {
+                        await persistRepairStatusTransition(
+                            rid,
+                            snapshot.statusBaseline,
+                            snapshot.statusDraft,
+                        )
+                    }
                 }
 
                 setMessage(
@@ -1587,7 +1679,7 @@ export default function RepairRequestsPage() {
                         {getNextStatuses(detailRequest.status).length > 0 && (
                             <div style={{ marginBottom: 20, padding: '12px 14px', background: '#1e293b', borderRadius: 10, border: '1px solid #334155' }}>
                                 <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
-                                    次のステータスを選び、右上の「保存して閉じる」で確定します（通知ボタンはありません）。
+                                    「完了報告送信」は即時に確定・顧客LINE通知します。その他のステータスは選んでから「保存して閉じる」で確定します。
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     {getNextStatuses(detailRequest.status).map(ns => {
@@ -1596,11 +1688,15 @@ export default function RepairRequestsPage() {
                                             <button
                                                 key={ns}
                                                 type="button"
-                                                onClick={() =>
+                                                onClick={() => {
+                                                    if (ns === 'completed') {
+                                                        void submitCompletionReport()
+                                                        return
+                                                    }
                                                     setDetailRequest((prev) =>
                                                         prev ? { ...prev, status: ns } : null,
                                                     )
-                                                }
+                                                }}
                                                 className="btn-3d"
                                                 style={{
                                                     padding: '6px 14px',

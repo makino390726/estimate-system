@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { repairCategoryToSheetType } from '@/lib/customerRegisterSheetTypes'
 import { notifyRepairCustomerOnCompleted } from '@/lib/repairCustomerLineNotify'
-import { persistRepairStatusTransition, getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
+import { getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
 
 export const runtime = 'nodejs'
 
@@ -125,6 +125,11 @@ export async function POST(request: Request) {
                 new Date().toISOString().split('T')[0]
         }
 
+        const statusChanged = newStatus !== String(existing.status || baseline)
+        if (statusChanged) {
+            updatePayload.status = newStatus
+        }
+
         const cleaned = Object.fromEntries(
             Object.entries(updatePayload).filter(([, v]) => v !== undefined),
         )
@@ -134,22 +139,24 @@ export async function POST(request: Request) {
             if (upErr) throw upErr
         }
 
-        const statusChanged = newStatus !== baseline
         if (statusChanged) {
-            await persistRepairStatusTransition(
-                sb,
-                repairId,
-                baseline,
-                newStatus,
-                String(existing.received_via || ''),
-                { skipCustomerLineNotify: newStatus === 'completed' },
-            )
-        } else if (newStatus === 'completed' && body.mark_completed) {
-            const { error: stErr } = await sb
-                .from('repair_requests')
-                .update({ status: 'completed' })
-                .eq('id', repairId)
-            if (stErr) throw stErr
+            const { error: histErr } = await sb.from('repair_status_history').insert({
+                repair_request_id: repairId,
+                old_status: baseline,
+                new_status: newStatus,
+            })
+            if (histErr) throw histErr
+
+            if (newStatus === 'staff_confirmed') {
+                const base =
+                    String(process.env.PROD_BASE_URL || process.env.NEXT_PUBLIC_APP_BASE_URL || '').trim() ||
+                    'https://estimate-system-ten.vercel.app'
+                await fetch(`${base}/api/lineworks/confirm-from-web`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repair_request_id: repairId }),
+                }).catch((e) => console.warn('lineworks confirm-from-web:', e))
+            }
         }
 
         const partName = body.new_part?.part_name?.trim()

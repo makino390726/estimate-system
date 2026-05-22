@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { notifyStaffNewRepair, pushMessage } from '@/lib/lineClient'
+import { isValidLineUserId } from '@/lib/lineUserId'
 import { findStaffLineMapping } from '@/lib/lineStaffMappingDb'
 import {
     notifyRepairCustomerLineStatus,
@@ -105,13 +106,15 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: 'Repair request not found' }, { status: 404 })
             }
 
-            if (repair.status === 'completed' && repair.line_user_id) {
-                await notifyRepairCustomerOnCompleted(sb, repair.id)
-            } else if (repair.line_user_id && repair.received_via === 'line') {
+            if (repair.status === 'completed' && isValidLineUserId(repair.line_user_id)) {
+                const result = await notifyRepairCustomerOnCompleted(sb, repair.id)
+                return NextResponse.json({ status: 'ok', line_customer_notify: result })
+            }
+            if (isValidLineUserId(repair.line_user_id) && repair.received_via === 'line') {
                 await notifyRepairCustomerLineStatus(sb, repair.id)
-            } else if (repair.line_user_id) {
+            } else if (isValidLineUserId(repair.line_user_id)) {
                 await pushMessage(
-                    repair.line_user_id,
+                    repair.line_user_id!,
                     `【修理進捗】受付番号 #${repair.request_no} / ステータス: ${repair.status}`,
                 )
             }
