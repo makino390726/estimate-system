@@ -23,16 +23,21 @@ export const REPAIR_PRIORITY_CONFIG: Record<string, { label: string; color: stri
 }
 
 const STATUS_FLOW: Record<string, string[]> = {
-    received: ['staff_confirmed', 'confirming', 'phone_done', 'visit_scheduled'],
-    staff_confirmed: ['confirming', 'phone_done', 'visit_scheduled'],
-    confirming: ['phone_done', 'visit_scheduled', 'parts_waiting'],
-    phone_done: ['visit_scheduled', 'parts_waiting', 'completed'],
-    visit_scheduled: ['repairing', 'parts_waiting'],
-    parts_waiting: ['visit_scheduled', 'repairing'],
+    received: ['staff_confirmed', 'confirming', 'phone_done', 'visit_scheduled', 'completed'],
+    staff_confirmed: ['confirming', 'phone_done', 'visit_scheduled', 'repairing', 'completed'],
+    confirming: ['phone_done', 'visit_scheduled', 'parts_waiting', 'completed'],
+    phone_done: ['visit_scheduled', 'parts_waiting', 'repairing', 'completed'],
+    visit_scheduled: ['repairing', 'parts_waiting', 'completed'],
+    parts_waiting: ['visit_scheduled', 'repairing', 'completed'],
     repairing: ['completed', 'parts_waiting'],
     completed: ['billed'],
     billed: ['closed'],
     closed: [],
+}
+
+/** 完了報告送信可能（顧客承諾前） */
+export function canSubmitRepairCompletionReport(status: string): boolean {
+    return status !== 'completed' && status !== 'billed' && status !== 'closed'
 }
 
 /** PC 修理案件管理用 */

@@ -15,6 +15,7 @@ import { normalizeRepairMediaUrls } from '@/lib/repairPhotoStorage'
 import { buildRepairSymptomQuery } from '@/lib/repairSymptomText'
 import { isValidLineUserId } from '@/lib/lineUserId'
 import { buildRepairLineLinkLiffUrl } from '@/lib/repairLiffUrls'
+import { canSubmitRepairCompletionReport, getRepairNextStatuses } from '@/lib/repairConstants'
 import { RepairPhoneCallLinks } from '@/components/RepairPhoneCallLink'
 
 // ── Types ──
@@ -251,6 +252,7 @@ export default function RepairRequestsPage() {
     }
     const [lineWorksAcks, setLineWorksAcks] = useState<LwAckRow[]>([])
     const [detailNotifyMessage, setDetailNotifyMessage] = useState<string | null>(null)
+    const [submittingCompletion, setSubmittingCompletion] = useState(false)
     /** 案件詳細を開いたときの DB 上のステータス（「保存して閉じる」まで確定しない） */
     const [detailStatusBaseline, setDetailStatusBaseline] = useState<string | null>(null)
 
@@ -612,15 +614,31 @@ export default function RepairRequestsPage() {
         }
     }
 
-    /** 完了報告送信（ステータス completed + 顧客LINE。処置内容は別途保存可） */
+    const buildCompletionReportBody = (rid: string, oldStatus: string) => ({
+        repair_request_id: rid,
+        status_baseline: oldStatus,
+        customer_name: detailRequest!.customer_name,
+        treatment_details: completionData.treatment_details ?? detailRequest!.treatment_details,
+        root_cause: completionData.root_cause ?? detailRequest!.root_cause,
+        repair_duration_minutes: completionData.repair_duration_minutes
+            ? Number(completionData.repair_duration_minutes)
+            : detailRequest!.repair_duration_minutes,
+        serial_no: completionData.body_serial_no ?? detailRequest!.serial_no,
+        manufacturing_no: completionData.manufacturing_no ?? detailRequest!.manufacturing_no,
+        visit_completed_date: new Date().toISOString().split('T')[0],
+    })
+
+    /** 完了報告送信: DB保存・ステータス completed・顧客LINE */
     const submitCompletionReport = async () => {
-        if (!detailRequest) return
+        if (!detailRequest || submittingCompletion) return
         const rid = detailRequest.id
         const oldStatus = detailStatusBaseline ?? detailRequest.status
-        if (oldStatus === 'completed' || oldStatus === 'closed') {
+        if (!canSubmitRepairCompletionReport(oldStatus)) {
             setNotifyFeedback('すでに完了報告済み、または案件完了です')
             return
         }
+        setSubmittingCompletion(true)
+        setDetailNotifyMessage(null)
         try {
             if (newPart.part_name.trim()) {
                 const payload = {
@@ -636,23 +654,10 @@ export default function RepairRequestsPage() {
                 setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
             }
 
-            const res = await fetch('/api/repair-mobile/save', {
+            const res = await fetch('/api/repair-requests/complete-report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    repair_request_id: rid,
-                    mark_completed: true,
-                    status_baseline: oldStatus,
-                    customer_name: detailRequest.customer_name,
-                    treatment_details: completionData.treatment_details ?? detailRequest.treatment_details,
-                    root_cause: completionData.root_cause ?? detailRequest.root_cause,
-                    repair_duration_minutes: completionData.repair_duration_minutes
-                        ? Number(completionData.repair_duration_minutes)
-                        : detailRequest.repair_duration_minutes,
-                    serial_no: completionData.body_serial_no ?? detailRequest.serial_no,
-                    manufacturing_no: completionData.manufacturing_no ?? detailRequest.manufacturing_no,
-                    visit_completed_date: new Date().toISOString().split('T')[0],
-                }),
+                body: JSON.stringify(buildCompletionReportBody(rid, oldStatus)),
             })
             const data = await res.json().catch(() => ({}))
             if (!res.ok) {
@@ -672,21 +677,39 @@ export default function RepairRequestsPage() {
                 | { ok?: boolean; skipped?: string; error?: string }
                 | null
                 | undefined
+            const fieldWarnings = data.field_warnings as string[] | undefined
+            let feedback = '完了報告を送信しました。ステータスを「完了報告済」に更新しました。'
             if (lineNotify?.ok) {
-                setNotifyFeedback('完了報告を送信しました（顧客へLINEで届けました）')
+                feedback += '（顧客へLINEで届けました）'
             } else if (lineNotify?.skipped) {
-                setNotifyFeedback(`完了報告済にしました（顧客LINE未送信: ${lineNotify.skipped}）`)
+                feedback += `（顧客LINE未送信: ${lineNotify.skipped}）`
             } else if (lineNotify?.error) {
-                setNotifyFeedback(`完了報告済にしましたが顧客LINE通知に失敗: ${lineNotify.error}`)
-            } else {
-                setNotifyFeedback('完了報告を送信しました')
+                feedback += `（顧客LINE失敗: ${lineNotify.error}）`
             }
+            if (fieldWarnings?.length) {
+                feedback += ` ※${fieldWarnings.join(' ')}`
+            }
+            setNotifyFeedback(feedback)
 
-            setDetailRequest((prev) => (prev ? { ...prev, status: 'completed' } : null))
+            setDetailRequest((prev) =>
+                prev
+                    ? {
+                          ...prev,
+                          status: 'completed',
+                          treatment_details:
+                              completionData.treatment_details || prev.treatment_details,
+                          root_cause: completionData.root_cause || prev.root_cause,
+                          visit_completed_date: new Date().toISOString().split('T')[0],
+                      }
+                    : null,
+            )
             setDetailStatusBaseline('completed')
+            setFilterStatus('completed')
             await fetchRequests({ silent: true })
         } catch (e: unknown) {
             setNotifyFeedback(e instanceof Error ? e.message : '完了報告の送信に失敗しました')
+        } finally {
+            setSubmittingCompletion(false)
         }
     }
 
@@ -968,12 +991,11 @@ export default function RepairRequestsPage() {
                 const statusChanged = snapshot.statusDraft !== snapshot.statusBaseline
                 if (statusChanged) {
                     if (snapshot.statusDraft === 'completed') {
-                        const res = await fetch('/api/repair-mobile/save', {
+                        const res = await fetch('/api/repair-requests/complete-report', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 repair_request_id: rid,
-                                mark_completed: true,
                                 status_baseline: snapshot.statusBaseline,
                                 customer_name: snapshot.customer_name || snapshot.customerNameFallback,
                                 treatment_details: snapshot.treatment_details,
@@ -988,6 +1010,9 @@ export default function RepairRequestsPage() {
                         })
                         const data = await res.json().catch(() => ({}))
                         if (!res.ok) throw new Error(data.error || '完了報告の保存に失敗しました')
+                        if (data.status !== 'completed') {
+                            throw new Error(`ステータスが反映されませんでした（${data.status ?? '不明'}）`)
+                        }
                     } else {
                         await persistRepairStatusTransition(
                             rid,
@@ -1133,22 +1158,6 @@ export default function RepairRequestsPage() {
         } catch (e: any) {
             setMessage(`部品削除に失敗しました: ${e.message}`)
         }
-    }
-
-    const getNextStatuses = (current: string): string[] => {
-        const flow: Record<string, string[]> = {
-            received: ['staff_confirmed', 'confirming', 'phone_done', 'visit_scheduled'],
-            staff_confirmed: ['confirming', 'phone_done', 'visit_scheduled'],
-            confirming: ['phone_done', 'visit_scheduled', 'parts_waiting'],
-            phone_done: ['visit_scheduled', 'parts_waiting', 'completed'],
-            visit_scheduled: ['repairing', 'parts_waiting'],
-            parts_waiting: ['visit_scheduled', 'repairing'],
-            repairing: ['completed', 'parts_waiting'],
-            completed: ['billed'],
-            billed: ['closed'],
-            closed: [],
-        }
-        return flow[current] || []
     }
 
     const Badge = ({ config }: { config: { label: string; color: string; bg: string } }) => (
@@ -1652,8 +1661,29 @@ export default function RepairRequestsPage() {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                {canSubmitRepairCompletionReport(detailRequest.status) && (
+                                    <button
+                                        type="button"
+                                        disabled={submittingCompletion}
+                                        onClick={e => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            void submitCompletionReport()
+                                        }}
+                                        className="btn-3d btn-primary"
+                                        style={{
+                                            padding: '8px 16px',
+                                            fontWeight: 700,
+                                            background: '#166534',
+                                            border: '1px solid #4ade80',
+                                        }}
+                                    >
+                                        {submittingCompletion ? '送信中…' : '完了報告送信'}
+                                    </button>
+                                )}
                                 <button
                                     type="button"
+                                    disabled={submittingCompletion}
                                     onClick={e => {
                                         e.preventDefault()
                                         e.stopPropagation()
@@ -1686,28 +1716,51 @@ export default function RepairRequestsPage() {
                             </div>
                         )}
 
+                        {canSubmitRepairCompletionReport(detailRequest.status) && (
+                            <div style={{ marginBottom: 16 }}>
+                                <button
+                                    type="button"
+                                    className="btn-3d btn-primary"
+                                    disabled={submittingCompletion}
+                                    onClick={() => void submitCompletionReport()}
+                                    style={{
+                                        padding: '10px 20px',
+                                        fontSize: 14,
+                                        fontWeight: 700,
+                                        background: '#166534',
+                                        border: '1px solid #4ade80',
+                                    }}
+                                >
+                                    {submittingCompletion ? '完了報告を送信中…' : '完了報告送信'}
+                                </button>
+                                <p style={{ margin: '8px 0 0', fontSize: 11, color: '#94a3b8' }}>
+                                    受付・担当者確認の段階からでも送信できます。送信後は一覧フィルタ「完了報告済」で確認してください。
+                                    {!hasCustomerLineUserId(detailRequest.line_user_id) &&
+                                        ' ※LINE ID未取得のため顧客へLINEは届きません。'}
+                                </p>
+                            </div>
+                        )}
+
                         {/* Status transition */}
-                        {getNextStatuses(detailRequest.status).length > 0 && (
+                        {getRepairNextStatuses(detailRequest.status).filter((ns) => ns !== 'completed').length > 0 && (
                             <div style={{ marginBottom: 20, padding: '12px 14px', background: '#1e293b', borderRadius: 10, border: '1px solid #334155' }}>
                                 <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
-                                    「完了報告送信」は即時に確定・顧客LINE通知します。その他のステータスは選んでから「保存して閉じる」で確定します。
+                                    中間ステータスは選んでから「保存して閉じる」で確定します（完了報告は上のボタン）。
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                    {getNextStatuses(detailRequest.status).map(ns => {
+                                    {getRepairNextStatuses(detailRequest.status)
+                                        .filter((ns) => ns !== 'completed')
+                                        .map(ns => {
                                         const cfg = STATUS_CONFIG[ns]
                                         return (
                                             <button
                                                 key={ns}
                                                 type="button"
-                                                onClick={() => {
-                                                    if (ns === 'completed') {
-                                                        void submitCompletionReport()
-                                                        return
-                                                    }
+                                                onClick={() =>
                                                     setDetailRequest((prev) =>
                                                         prev ? { ...prev, status: ns } : null,
                                                     )
-                                                }}
+                                                }
                                                 className="btn-3d"
                                                 style={{
                                                     padding: '6px 14px',
@@ -1717,7 +1770,7 @@ export default function RepairRequestsPage() {
                                                     color: cfg.color,
                                                 }}
                                             >
-                                                → {ns === 'completed' ? '完了報告送信' : cfg.label}
+                                                → {cfg.label}
                                             </button>
                                         )
                                     })}
@@ -2038,12 +2091,37 @@ export default function RepairRequestsPage() {
                                         <input type="number" value={completionData.repair_cost} onChange={e => setCompletionData(p => ({ ...p, repair_cost: e.target.value }))} style={inputStyle} />
                                     </div>
                                 </div>
-                                <button onClick={handleSaveCompletion} className="btn-3d btn-primary" style={{ padding: '8px 14px', width: 'fit-content' }}>
-                                    修理内容を保存
-                                </button>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                    {canSubmitRepairCompletionReport(detailRequest.status) && (
+                                        <button
+                                            type="button"
+                                            disabled={submittingCompletion}
+                                            onClick={() => void submitCompletionReport()}
+                                            className="btn-3d btn-primary"
+                                            style={{
+                                                padding: '10px 18px',
+                                                fontWeight: 700,
+                                                background: '#166534',
+                                                border: '1px solid #4ade80',
+                                            }}
+                                        >
+                                            {submittingCompletion ? '送信中…' : '完了報告送信'}
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveCompletion}
+                                        disabled={submittingCompletion}
+                                        className="btn-3d"
+                                        style={{ padding: '8px 14px' }}
+                                    >
+                                        修理内容のみ保存
+                                    </button>
+                                </div>
                                 <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0 0', lineHeight: 1.55 }}>
-                                    「保存して閉じる」・画面外クリック・Esc でも処置内容・原因・時間・費用は保存されます（完了日は付きません）。
-                                    現場完了として本日の完了日を記録する場合は上のボタンを押してください。
+                                    <strong style={{ color: '#86efac' }}>完了報告送信</strong>
+                                    でステータスが「完了報告済」になり、顧客へLINE通知します（LINE ID がある場合）。
+                                    「修理内容のみ保存」はステータスを変えません。
                                 </p>
                             </div>
                         </div>
