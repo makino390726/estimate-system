@@ -22,6 +22,7 @@ import {
     type RepairProductSuggestion,
 } from '@/lib/repairProductSearch'
 import type { CustomerRegisterCandidate } from '@/lib/repairCustomerRegisterSync'
+import { RepairPhoneCallLinks } from '@/components/RepairPhoneCallLink'
 
 type CustomerSyncDialogState =
     | { mode: 'new'; preview: Record<string, unknown> }
@@ -103,6 +104,7 @@ export default function RepairMobileDetailPage() {
     const [photos, setPhotos] = useState<string[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [confirmingStaff, setConfirmingStaff] = useState(false)
     const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
     const [statusBaseline, setStatusBaseline] = useState('')
@@ -211,6 +213,37 @@ export default function RepairMobileDetailPage() {
     useEffect(() => {
         load()
     }, [load])
+
+    const handleStaffConfirm = async () => {
+        if (!request) return
+        setConfirmingStaff(true)
+        setMessage(null)
+        try {
+            const res = await fetch('/api/repair-mobile/staff-confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repair_request_id: request.id }),
+            })
+            const json = await res.json()
+            if (!res.ok) throw new Error(json.error || '担当者確認に失敗しました')
+
+            if (json.status_updated) {
+                setMessage({ type: 'ok', text: '担当者確認を記録しました（ステータスを更新しました）' })
+            } else if (json.already_confirmed) {
+                setMessage({ type: 'ok', text: '確認済みとして記録しました' })
+            } else {
+                setMessage({ type: 'ok', text: '担当者確認を記録しました' })
+            }
+            await load()
+        } catch (e: unknown) {
+            setMessage({
+                type: 'err',
+                text: e instanceof Error ? e.message : '担当者確認に失敗しました',
+            })
+        } finally {
+            setConfirmingStaff(false)
+        }
+    }
 
     const save = async (opts?: { markCompleted?: boolean }) => {
         if (!request) return
@@ -456,7 +489,6 @@ export default function RepairMobileDetailPage() {
     }
     const pr = REPAIR_PRIORITY_CONFIG[request.priority]
     const suggested = getMobileSuggestedStatuses(statusBaseline)
-    const tel = customerMobile.trim() || customerPhone.trim()
 
     return (
         <>
@@ -467,15 +499,34 @@ export default function RepairMobileDetailPage() {
                 >
                     ← 一覧
                 </Link>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                    <h1 style={{ margin: 0 }}>No.{request.request_no}</h1>
+                <div className="repair-mobile-header-row" style={{ marginTop: 6 }}>
+                    <div className="repair-mobile-header-title">
+                        <h1 style={{ margin: 0 }}>No.{request.request_no}</h1>
+                        {request.status === 'received' ? (
+                            <button
+                                type="button"
+                                className="repair-mobile-staff-confirm-btn"
+                                disabled={confirmingStaff}
+                                onClick={() => void handleStaffConfirm()}
+                            >
+                                {confirmingStaff ? '記録中…' : '担当者確認'}
+                            </button>
+                        ) : request.status === 'staff_confirmed' ||
+                          statusBaseline === 'staff_confirmed' ? (
+                            <span className="repair-mobile-staff-confirmed-done">確認済</span>
+                        ) : null}
+                    </div>
                     <span
                         className="repair-mobile-badge"
-                        style={{ color: st.color, background: st.bg, fontSize: 12 }}
+                        style={{ color: st.color, background: st.bg, fontSize: 12, flexShrink: 0 }}
                     >
                         {st.label}
                     </span>
                 </div>
+                <RepairPhoneCallLinks
+                    customerPhone={customerPhone}
+                    customerMobile={customerMobile}
+                />
             </header>
 
             <main className="repair-mobile-main">
@@ -494,7 +545,7 @@ export default function RepairMobileDetailPage() {
                 <section className="repair-mobile-section">
                     <h2>顧客・機器情報</h2>
                     <p style={{ margin: '0 0 10px', fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
-                        顧客情報登録に必要な項目です。保存すると修理案件に記録されます。
+                        緑の番号をタップで発信できます。保存すると修理案件に記録されます。
                     </p>
                     {(customerRegisterId || request.customer_register_id) && (
                         <p style={{ fontSize: 12, color: '#4ade80', marginBottom: 10 }}>
@@ -524,15 +575,16 @@ export default function RepairMobileDetailPage() {
                         onChange={(e) => setCustomerRegion(e.target.value)}
                         placeholder="例: 宮崎県"
                     />
-                    <label className="repair-mobile-label">電話</label>
+                    <label className="repair-mobile-label">緊急時連絡先（電話番号）</label>
                     <input
                         className="repair-mobile-input"
                         type="tel"
                         inputMode="tel"
                         value={customerPhone}
                         onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="固定・携帯どちらでも"
                     />
-                    <label className="repair-mobile-label">携帯</label>
+                    <label className="repair-mobile-label">追加の連絡先（任意）</label>
                     <input
                         className="repair-mobile-input"
                         type="tel"
@@ -540,11 +592,6 @@ export default function RepairMobileDetailPage() {
                         value={customerMobile}
                         onChange={(e) => setCustomerMobile(e.target.value)}
                     />
-                    {tel && (
-                        <a href={`tel:${tel.replace(/[^\d+]/g, '')}`} className="repair-mobile-tel">
-                            📞 {tel}
-                        </a>
-                    )}
                     <label className="repair-mobile-label">分野（顧客登録のシート種別）</label>
                     <select
                         className="repair-mobile-select"

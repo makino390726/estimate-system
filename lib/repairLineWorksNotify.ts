@@ -75,18 +75,22 @@ function buildCaseLinkMessage(params: {
     category?: string | null
     priority: string
     caseUrl: string
+    customerPhone?: string | null
+    customerMobile?: string | null
 }) {
+    const phone = trim(params.customerPhone) || trim(params.customerMobile)
     const lines = [
         `【新規修理受付 #${params.requestNo}】`,
         `管轄: ${params.branchLabel}`,
         `優先度: ${PRIORITY_LABELS[params.priority] || params.priority}`,
         `顧客: ${params.customerName}`,
+        phone ? `緊急連絡先: ${phone}` : null,
         params.model ? `型式: ${params.model}` : null,
         params.category ? `分野: ${formatRepairCategoryDisplay(params.category)}` : null,
         `症状: ${params.symptom}`,
         '',
         '下の「案件を開く」から案件画面を表示し、',
-        '「→ 担当者確認」を押して保存してください。',
+        '案件番号横の「担当者確認」を押してください。',
     ].filter(Boolean)
 
     return {
@@ -214,6 +218,8 @@ export async function sendRepairRequestLineWorksToStaff(
                 category: repair.category,
                 priority: repair.priority,
                 caseUrl,
+                customerPhone: repair.customer_phone,
+                customerMobile: repair.customer_mobile,
             })
             await sendLineWorksUserMessage(target.lineWorksUserId, content)
             if (row?.id) {

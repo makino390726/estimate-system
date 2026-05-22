@@ -15,6 +15,7 @@ import { normalizeRepairMediaUrls } from '@/lib/repairPhotoStorage'
 import { buildRepairSymptomQuery } from '@/lib/repairSymptomText'
 import { isValidLineUserId } from '@/lib/lineUserId'
 import { buildRepairLineLinkLiffUrl } from '@/lib/repairLiffUrls'
+import { RepairPhoneCallLinks } from '@/components/RepairPhoneCallLink'
 
 // ── Types ──
 
@@ -1261,12 +1262,12 @@ export default function RepairRequestsPage() {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                                     <div>
-                                        <label style={labelStyle}>固定電話</label>
-                                        <input type="text" value={formData.customer_phone} onChange={e => handleChange('customer_phone', e.target.value)} style={inputStyle} />
+                                        <label style={labelStyle}>緊急時連絡先（電話）</label>
+                                        <input type="tel" value={formData.customer_phone} onChange={e => handleChange('customer_phone', e.target.value)} style={inputStyle} placeholder="固定・携帯" />
                                     </div>
                                     <div>
                                         <label style={labelStyle}>携帯電話</label>
-                                        <input type="text" value={formData.customer_mobile} onChange={e => handleChange('customer_mobile', e.target.value)} style={inputStyle} />
+                                        <input type="tel" value={formData.customer_mobile} onChange={e => handleChange('customer_mobile', e.target.value)} style={inputStyle} placeholder="任意" />
                                     </div>
                                 </div>
                                 <div>
@@ -1702,20 +1703,25 @@ export default function RepairRequestsPage() {
                                             style={inputStyle}
                                         />
                                     </div>
+                                    <RepairPhoneCallLinks
+                                        customerPhone={detailRequest.customer_phone}
+                                        customerMobile={detailRequest.customer_mobile}
+                                    />
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                         <div>
-                                            <label style={{ ...labelStyle, marginBottom: 4 }}>固定電話</label>
+                                            <label style={{ ...labelStyle, marginBottom: 4 }}>緊急時連絡先（電話）</label>
                                             <input
-                                                type="text"
+                                                type="tel"
                                                 value={detailRequest.customer_phone || ''}
                                                 onChange={e => setDetailRequest(prev => prev ? { ...prev, customer_phone: e.target.value || null } : null)}
                                                 style={inputStyle}
+                                                placeholder="固定・携帯"
                                             />
                                         </div>
                                         <div>
-                                            <label style={{ ...labelStyle, marginBottom: 4 }}>携帯</label>
+                                            <label style={{ ...labelStyle, marginBottom: 4 }}>追加の連絡先（任意）</label>
                                             <input
-                                                type="text"
+                                                type="tel"
                                                 value={detailRequest.customer_mobile || ''}
                                                 onChange={e => setDetailRequest(prev => prev ? { ...prev, customer_mobile: e.target.value || null } : null)}
                                                 style={inputStyle}

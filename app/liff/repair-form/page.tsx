@@ -23,6 +23,7 @@ import {
 import { toEndUserRepairAiError } from '@/lib/difyClient'
 import { isValidLineUserId } from '@/lib/lineUserId'
 import { buildRepairFormLiffUrl } from '@/lib/repairLiffUrls'
+import { normalizeRepairEmergencyPhones } from '@/lib/repairEmergencyPhone'
 
 type StaffOption = { name: string; branch_id: string | null; department: string | null }
 
@@ -351,8 +352,8 @@ function RepairFormInner() {
             setError('機械の種別を選択してください')
             return
         }
-        if (!form.customer_phone.trim()) {
-            setError('電話番号を入力してください')
+        if (!form.customer_phone.trim() && !form.customer_mobile.trim()) {
+            setError('緊急時連絡先の電話番号を入力してください')
             return
         }
         if (!form.assigned_branch) {
@@ -375,12 +376,12 @@ function RepairFormInner() {
                 ? form.custom_category.trim()
                 : form.category
             const { custom_category, ...formData } = form
-            const body = {
+            const body = normalizeRepairEmergencyPhones({
                 ...formData,
                 category: resolvedCategory,
                 line_user_id: profile?.userId || '',
                 line_display_name: profile?.displayName || '',
-            }
+            })
             const res = await fetch('/api/line/repair-form', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -702,26 +703,31 @@ function RepairFormInner() {
 
                     <div style={styles.field}>
                         <label style={styles.label}>
-                            電話番号<span style={styles.required}>*</span>
+                            緊急時連絡先（電話番号）<span style={styles.required}>*</span>
                         </label>
+                        <p style={{ margin: '0 0 8px', fontSize: 12, color: '#94a3b8', lineHeight: 1.45 }}>
+                            固定・携帯どちらでも構いません。下のいずれか一方にご入力ください。
+                        </p>
                         <input
                             type="tel"
                             value={form.customer_phone}
                             onChange={e => setForm(prev => ({ ...prev, customer_phone: e.target.value }))}
-                            placeholder="例: 0985-00-0000"
+                            placeholder="例: 0985-00-0000 / 090-1234-5678"
                             style={styles.input}
-                            required
+                            inputMode="tel"
+                            autoComplete="tel"
                         />
                     </div>
 
                     <div style={styles.field}>
-                        <label style={styles.label}>携帯電話</label>
+                        <label style={styles.label}>追加の連絡先（任意）</label>
                         <input
                             type="tel"
                             value={form.customer_mobile}
                             onChange={e => setForm(prev => ({ ...prev, customer_mobile: e.target.value }))}
-                            placeholder="例: 090-1234-5678"
+                            placeholder="例: 090-1234-5678（別番号がある場合）"
                             style={styles.input}
+                            inputMode="tel"
                         />
                     </div>
 

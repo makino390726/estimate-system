@@ -9,6 +9,7 @@ import {
     uploadRepairRequestPhotos,
 } from '@/lib/repairPhotoStorage'
 import { isValidLineUserId } from '@/lib/lineUserId'
+import { normalizeRepairEmergencyPhones, validateRepairEmergencyPhone } from '@/lib/repairEmergencyPhone'
 
 export const runtime = 'nodejs'
 /** 写真アップロード・LINE通知はバックグラウンドで行うため、受付レスポンスは先に返す */
@@ -250,19 +251,24 @@ export async function POST(request: Request) {
                     { status: 400 },
                 )
             }
-            const lineErr = validateLineUserIdForLiff(fields)
+            const normalized = normalizeRepairEmergencyPhones(fields)
+            const phoneErr = validateRepairEmergencyPhone(normalized)
+            if (phoneErr) {
+                return NextResponse.json({ error: phoneErr }, { status: 400 })
+            }
+            const lineErr = validateLineUserIdForLiff(normalized)
             if (lineErr) {
                 return NextResponse.json({ error: lineErr }, { status: 400 })
             }
 
             const photoEntries = parseRepairFormPhotoEntries(fd)
-            const { error, data } = await insertRepairRequest(sb, fields)
+            const { error, data } = await insertRepairRequest(sb, normalized)
             if (error || !data) {
                 console.error('LIFF repair-form INSERT error:', error)
                 return NextResponse.json({ error: '登録に失敗しました' }, { status: 500 })
             }
 
-            return acceptAndRespond(sb, fields, data, photoEntries)
+            return acceptAndRespond(sb, normalized, data, photoEntries)
         }
 
         const body = await request.json()
@@ -273,12 +279,17 @@ export async function POST(request: Request) {
                 { status: 400 },
             )
         }
-        const lineErr = validateLineUserIdForLiff(fields)
+        const normalized = normalizeRepairEmergencyPhones(fields)
+        const phoneErr = validateRepairEmergencyPhone(normalized)
+        if (phoneErr) {
+            return NextResponse.json({ error: phoneErr }, { status: 400 })
+        }
+        const lineErr = validateLineUserIdForLiff(normalized)
         if (lineErr) {
             return NextResponse.json({ error: lineErr }, { status: 400 })
         }
 
-        const { error, data } = await insertRepairRequest(sb, fields)
+        const { error, data } = await insertRepairRequest(sb, normalized)
         if (error || !data) {
             console.error('LIFF repair-form INSERT error:', JSON.stringify({
                 code: (error as { code?: string })?.code,
@@ -287,7 +298,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '登録に失敗しました' }, { status: 500 })
         }
 
-        return acceptAndRespond(sb, fields, data, [])
+        return acceptAndRespond(sb, normalized, data, [])
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : 'Unknown error'
         console.error('LIFF repair-form error:', e)

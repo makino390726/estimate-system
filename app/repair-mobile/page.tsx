@@ -10,6 +10,7 @@ import {
     REPAIR_PRIORITY_CONFIG,
     REPAIR_STATUS_CONFIG,
 } from '@/lib/repairConstants'
+import { RepairPhoneCallLinks } from '@/components/RepairPhoneCallLink'
 
 const STAFF_STORAGE_KEY = 'repair_mobile_staff_filter'
 
@@ -151,6 +152,10 @@ function RepairMobileListInner() {
                                 </span>
                             </div>
                             <div style={{ marginTop: 8, fontSize: 16, fontWeight: 600 }}>{r.customer_name}</div>
+                            <RepairPhoneCallLinks
+                                customerPhone={r.customer_phone}
+                                stopPropagation
+                            />
                             {r.model && (
                                 <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>{r.model}</div>
                             )}
