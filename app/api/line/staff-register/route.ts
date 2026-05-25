@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server'
 import { upsertStaffLineMapping } from '@/lib/lineStaffMappingDb'
+import {
+    isRepairStaffNotifyLineOaMode,
+    REPAIR_STAFF_NOTIFY_POLICY_NOTE,
+    repairStaffNotifyChannelLabel,
+    getRepairStaffNotifyChannel,
+} from '@/lib/repairStaffNotifyChannel'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
 export const runtime = 'nodejs'
@@ -13,6 +19,16 @@ type Body = {
 /** 担当者本人の LIFF から LINE User ID を登録 */
 export async function POST(request: Request) {
     try {
+        if (!isRepairStaffNotifyLineOaMode()) {
+            const ch = getRepairStaffNotifyChannel()
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: `担当者の LINE 公式連携は現在利用できません（${repairStaffNotifyChannelLabel(ch)} モード）。${REPAIR_STAFF_NOTIFY_POLICY_NOTE}`,
+                },
+                { status: 403 },
+            )
+        }
         const body = (await request.json().catch(() => ({}))) as Body
         const result = await upsertStaffLineMapping(getSupabaseAdmin(), {
             staff_name: body.staff_name,

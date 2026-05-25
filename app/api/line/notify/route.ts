@@ -3,6 +3,12 @@ import { notifyStaffNewRepair, pushMessage } from '@/lib/lineClient'
 import { isValidLineUserId } from '@/lib/lineUserId'
 import { findStaffLineMapping } from '@/lib/lineStaffMappingDb'
 import {
+    isRepairStaffNotifyLineOaMode,
+    REPAIR_STAFF_NOTIFY_POLICY_NOTE,
+    repairStaffNotifyChannelLabel,
+    getRepairStaffNotifyChannel,
+} from '@/lib/repairStaffNotifyChannel'
+import {
     notifyRepairCustomerLineStatus,
     notifyRepairCustomerOnCompleted,
 } from '@/lib/repairCustomerLineNotify'
@@ -43,6 +49,16 @@ export async function POST(request: Request) {
         }
 
         if (body.type === 'new_repair' && body.repair_request_id) {
+            if (!isRepairStaffNotifyLineOaMode()) {
+                const ch = getRepairStaffNotifyChannel()
+                return NextResponse.json(
+                    {
+                        error:
+                            `担当者向けの新規受付LINE通知は利用できません（現在: ${repairStaffNotifyChannelLabel(ch)}）。${REPAIR_STAFF_NOTIFY_POLICY_NOTE}`,
+                    },
+                    { status: 403 },
+                )
+            }
             const { data: repair } = await sb
                 .from('repair_requests')
                 .select('*')

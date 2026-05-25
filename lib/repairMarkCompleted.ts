@@ -4,6 +4,7 @@ import {
     type RepairCustomerLineNotifyResult,
 } from '@/lib/repairCustomerLineNotify'
 import {
+    sendRepairCompletionReportLineWorksToOffice,
     sendRepairCompletionReportLineWorksToStaff,
     type RepairLineWorksNotifyResult,
 } from '@/lib/repairLineWorksNotify'
@@ -12,16 +13,40 @@ export type ApplyMarkCompletedResult = {
     statusApplied: boolean
     previousStatus: string
     newStatus: 'completed'
-    lineCustomerNotify: RepairCustomerLineNotifyResult
-    lineWorksNotify: RepairLineWorksNotifyResult
+    lineCustomerNotify?: RepairCustomerLineNotifyResult
+    lineWorksNotify?: RepairLineWorksNotifyResult
+    lineWorksOfficeNotify?: RepairLineWorksNotifyResult
 }
 
-/** 完了報告: ステータスを completed にし、履歴・顧客LINE通知まで行う（他フィールドより先に実行） */
+export type RepairMarkCompletedNotifyResult = {
+    lineCustomerNotify: RepairCustomerLineNotifyResult
+    lineWorksNotify: RepairLineWorksNotifyResult
+    lineWorksOfficeNotify: RepairLineWorksNotifyResult
+}
+
+/** 完了報告後の各種通知（出張費・部品など DB 保存後に呼ぶ） */
+export async function sendRepairMarkCompletedNotifications(
+    sb: SupabaseClient,
+    repairId: string,
+): Promise<RepairMarkCompletedNotifyResult> {
+    const lineCustomerNotify = await notifyRepairCustomerOnCompleted(sb, repairId)
+    const lineWorksNotify = await sendRepairCompletionReportLineWorksToStaff(repairId)
+    const lineWorksOfficeNotify = await sendRepairCompletionReportLineWorksToOffice(repairId)
+    return { lineCustomerNotify, lineWorksNotify, lineWorksOfficeNotify }
+}
+
+export type ApplyMarkCompletedOptions = {
+    /** true のときはステータス更新のみ（通知は sendRepairMarkCompletedNotifications で後から） */
+    deferNotifications?: boolean
+}
+
+/** 完了報告: ステータスを completed にし、履歴を記録（通知は defer 可能） */
 export async function applyRepairMarkCompleted(
     sb: SupabaseClient,
     repairId: string,
     baseline: string,
     visitCompletedDate?: string | null,
+    options?: ApplyMarkCompletedOptions,
 ): Promise<ApplyMarkCompletedResult> {
     const { data: existing, error: fetchErr } = await sb
         .from('repair_requests')
@@ -78,13 +103,19 @@ export async function applyRepairMarkCompleted(
         }
     }
 
-    const lineCustomerNotify = await notifyRepairCustomerOnCompleted(sb, repairId)
-    const lineWorksNotify = await sendRepairCompletionReportLineWorksToStaff(repairId)
+    if (options?.deferNotifications) {
+        return {
+            statusApplied: true,
+            previousStatus,
+            newStatus: 'completed',
+        }
+    }
+
+    const notifications = await sendRepairMarkCompletedNotifications(sb, repairId)
     return {
         statusApplied: true,
         previousStatus,
         newStatus: 'completed',
-        lineCustomerNotify,
-        lineWorksNotify,
+        ...notifications,
     }
 }

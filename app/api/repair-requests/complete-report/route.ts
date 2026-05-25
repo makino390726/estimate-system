@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getLineConfig } from '@/lib/lineClient'
-import { applyRepairMarkCompleted } from '@/lib/repairMarkCompleted'
+import {
+    applyRepairMarkCompleted,
+    sendRepairMarkCompletedNotifications,
+} from '@/lib/repairMarkCompleted'
 import { hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
 
@@ -16,6 +19,14 @@ type Body = {
     serial_no?: string | null
     manufacturing_no?: string | null
     visit_completed_date?: string | null
+    visit_fee?: number | null
+    labor_cost?: number | null
+}
+
+function parseMoney(v: unknown): number | null {
+    if (v == null || v === '') return null
+    const n = Number(String(v).replace(/,/g, '').trim())
+    return Number.isFinite(n) && n >= 0 ? Math.round(n) : null
 }
 
 function toNullable(v: unknown): string | null {
@@ -74,13 +85,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '顧客名は必須です' }, { status: 400 })
         }
 
-        const markResult = await applyRepairMarkCompleted(
-            sb,
-            repairId,
-            baseline,
-            body.visit_completed_date,
-        )
-
         const updatePayload: Record<string, unknown> = { customer_name: customerName }
         if (body.treatment_details !== undefined) {
             updatePayload.treatment_details = toNullable(body.treatment_details)
@@ -98,6 +102,14 @@ export async function POST(request: Request) {
             updatePayload.manufacturing_no = toNullable(body.manufacturing_no)
         }
 
+        const visitFee = body.visit_fee !== undefined ? parseMoney(body.visit_fee) : undefined
+        const laborCost = body.labor_cost !== undefined ? parseMoney(body.labor_cost) : undefined
+        if (visitFee != null) updatePayload.visit_fee = visitFee
+        if (laborCost != null) updatePayload.labor_cost = laborCost
+        if (visitFee != null || laborCost != null) {
+            updatePayload.repair_cost = (visitFee ?? 0) + (laborCost ?? 0)
+        }
+
         const fieldWarnings: string[] = []
         if (Object.keys(updatePayload).length > 0) {
             const { error: upErr } = await sb.from('repair_requests').update(updatePayload).eq('id', repairId)
@@ -105,6 +117,16 @@ export async function POST(request: Request) {
                 fieldWarnings.push(`付帯情報の保存: ${upErr.message}`)
             }
         }
+
+        const markResult = await applyRepairMarkCompleted(
+            sb,
+            repairId,
+            baseline,
+            body.visit_completed_date,
+            { deferNotifications: true },
+        )
+        const notifications = await sendRepairMarkCompletedNotifications(sb, repairId)
+        const fullMarkResult = { ...markResult, ...notifications }
 
         const { data: updated } = await sb
             .from('repair_requests')
@@ -119,8 +141,9 @@ export async function POST(request: Request) {
             status: updated?.status ?? 'completed',
             status_applied: updated?.status === 'completed',
             previous_status: markResult.previousStatus,
-            line_customer_notify: markResult.lineCustomerNotify,
-            line_works_notify: markResult.lineWorksNotify,
+            line_customer_notify: fullMarkResult.lineCustomerNotify,
+            line_works_notify: fullMarkResult.lineWorksNotify,
+            line_works_office_notify: fullMarkResult.lineWorksOfficeNotify,
             line_channel_token_set: Boolean(lineCfg.channelAccessToken),
             field_warnings: fieldWarnings.length > 0 ? fieldWarnings : undefined,
         })

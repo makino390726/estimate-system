@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { repairCategoryToSheetType } from '@/lib/customerRegisterSheetTypes'
-import { applyRepairMarkCompleted } from '@/lib/repairMarkCompleted'
+import {
+    applyRepairMarkCompleted,
+    sendRepairMarkCompletedNotifications,
+} from '@/lib/repairMarkCompleted'
 import { hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
 
@@ -100,16 +103,6 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '顧客名は必須です' }, { status: 400 })
         }
 
-        let markResult: Awaited<ReturnType<typeof applyRepairMarkCompleted>> | null = null
-        if (markCompleted) {
-            markResult = await applyRepairMarkCompleted(
-                sb,
-                repairId,
-                baseline,
-                body.visit_completed_date,
-            )
-        }
-
         const updatePayload: Record<string, unknown> = {
             customer_name: body.customer_name !== undefined ? toNullable(body.customer_name) : undefined,
             customer_address:
@@ -174,6 +167,15 @@ export async function POST(request: Request) {
             }
         }
 
+        let markResult: Awaited<ReturnType<typeof applyRepairMarkCompleted>> | null = null
+        if (markCompleted) {
+            markResult = await applyRepairMarkCompleted(sb, repairId, baseline, body.visit_completed_date, {
+                deferNotifications: true,
+            })
+            const notifications = await sendRepairMarkCompletedNotifications(sb, repairId)
+            markResult = { ...markResult, ...notifications }
+        }
+
         if (statusChanged) {
             const { error: histErr } = await sb.from('repair_status_history').insert({
                 repair_request_id: repairId,
@@ -193,6 +195,7 @@ export async function POST(request: Request) {
             previous_status: markResult?.previousStatus ?? baseline,
             line_customer_notify: markResult?.lineCustomerNotify ?? null,
             line_works_notify: markResult?.lineWorksNotify ?? null,
+            line_works_office_notify: markResult?.lineWorksOfficeNotify ?? null,
             field_warnings: fieldWarnings.length > 0 ? fieldWarnings : undefined,
         })
     } catch (e: unknown) {

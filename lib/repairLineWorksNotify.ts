@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
 import { findLineWorksStaffMappingsForNames } from '@/lib/lineworksStaffMappingDb'
 import { isLineWorksConfigured, sendLineWorksUserMessage } from '@/lib/lineWorksClient'
+import { isRepairStaffNotifyLineWorksMode } from '@/lib/repairStaffNotifyChannel'
 import { notifyRepairCustomerLineStatus } from '@/lib/repairCustomerLineNotify'
 import { persistRepairStatusTransition } from '@/lib/repairStatusUpdate'
 import {
@@ -10,6 +11,8 @@ import {
     resolveRepairNotifyStaffNames,
     type RepairNotifyStaffRow,
 } from '@/lib/repairNotifyRecipients'
+import { getBranchName } from '@/lib/branches'
+import { findRepairOfficeNotifyStaff } from '@/lib/repairOfficeNotifyRecipients'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { resolveStaffName } from '@/lib/staffNameMatch'
 
@@ -67,7 +70,63 @@ export function getRepairCaseDetailUrl(repairRequestId: string): string {
     return `${getBaseUrl()}/repair-mobile/${encodeURIComponent(id)}`
 }
 
-/** 完了報告送信時（担当者向け） */
+function formatYen(n: number | null | undefined): string {
+    if (n == null || !Number.isFinite(Number(n))) return '—'
+    return `${Math.round(Number(n)).toLocaleString('ja-JP')}円`
+}
+
+type RepairPartLine = { part_name?: string | null; part_code?: string | null; quantity?: number | null }
+
+function formatPartsLines(parts: RepairPartLine[]): string {
+    if (!parts.length) return '（なし）'
+    return parts
+        .map((p) => {
+            const name = trim(p.part_name) || '（部品名なし）'
+            const code = trim(p.part_code)
+            const qty = p.quantity != null && Number.isFinite(Number(p.quantity)) ? Number(p.quantity) : 1
+            return code ? `・${name}（${code}）×${qty}` : `・${name} ×${qty}`
+        })
+        .join('\n')
+}
+
+/** 完了報告送信時（事務処理担当向け・売上処理用） */
+function buildOfficeCompletionReportLineWorksMessage(params: {
+    requestNo: number
+    customerName: string
+    branchLabel: string
+    assignedStaff: string
+    visitFee: number | null
+    laborCost: number | null
+    partsLines: string
+    caseUrl: string
+}) {
+    const lines = [
+        `【修理完了・事務処理】`,
+        `案件 #${params.requestNo}`,
+        `管轄: ${params.branchLabel}`,
+        `顧客: ${params.customerName}`,
+        `担当: ${params.assignedStaff || '—'}`,
+        `出張費: ${formatYen(params.visitFee)}`,
+        `工賃: ${formatYen(params.laborCost)}`,
+        `部品:`,
+        params.partsLines,
+        '',
+        '下の「案件を開く」から内容を確認できます。',
+    ]
+    return {
+        type: 'button_template',
+        contentText: lines.join('\n'),
+        actions: [
+            {
+                type: 'uri',
+                label: '案件を開く',
+                uri: params.caseUrl,
+            },
+        ],
+    }
+}
+
+/** 完了報告送信時（営業担当者向け） */
 function buildCompletionReportLineWorksMessage(params: {
     requestNo: number
     customerName: string
@@ -145,6 +204,13 @@ export async function sendRepairRequestLineWorksToStaff(
 ): Promise<RepairLineWorksNotifyResult> {
     if (!isLineWorksConfigured()) {
         return { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
+    }
+    if (!isRepairStaffNotifyLineWorksMode()) {
+        return {
+            ok: true,
+            skipped: true,
+            reason: '担当者通知チャネルが LINE 公式モードのため LINE WORKS は使用しません',
+        }
     }
 
     const sb = getSupabaseAdmin()
@@ -291,6 +357,13 @@ export async function sendRepairCompletionReportLineWorksToStaff(
     if (!isLineWorksConfigured()) {
         return { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
     }
+    if (!isRepairStaffNotifyLineWorksMode()) {
+        return {
+            ok: true,
+            skipped: true,
+            reason: '担当者通知チャネルが LINE 公式モードのため LINE WORKS は使用しません',
+        }
+    }
 
     const sb = getSupabaseAdmin()
     const { data: repair, error: repairErr } = await sb
@@ -380,6 +453,142 @@ export async function sendRepairCompletionReportLineWorksToStaff(
 
     if (sent === 0) {
         return { ok: false, error: lastError || 'all LINE WORKS completion sends failed' }
+    }
+    return { ok: true, sent, recipients }
+}
+
+/** 完了報告送信時: 事務処理担当へ LINE WORKS（担当事業所マスタで解決） */
+export async function sendRepairCompletionReportLineWorksToOffice(
+    repairRequestId: string,
+): Promise<RepairLineWorksNotifyResult> {
+    if (!isLineWorksConfigured()) {
+        return { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
+    }
+    if (!isRepairStaffNotifyLineWorksMode()) {
+        return {
+            ok: true,
+            skipped: true,
+            reason: '担当者通知チャネルが LINE 公式モードのため LINE WORKS は使用しません',
+        }
+    }
+
+    const sb = getSupabaseAdmin()
+    const { data: repair, error: repairErr } = await sb
+        .from('repair_requests')
+        .select(
+            'request_no, customer_name, assigned_branch, assigned_staff, status, visit_fee, labor_cost',
+        )
+        .eq('id', repairRequestId)
+        .single()
+
+    if (repairErr || !repair) {
+        return { ok: false, error: repairErr?.message || 'Repair request not found' }
+    }
+
+    if (repair.status !== 'completed') {
+        return { ok: true, skipped: true, reason: `ステータスが completed ではありません（${repair.status}）` }
+    }
+
+    let officeStaff: Awaited<ReturnType<typeof findRepairOfficeNotifyStaff>>
+    try {
+        officeStaff = await findRepairOfficeNotifyStaff(sb, repair.assigned_branch)
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return { ok: false, error: msg }
+    }
+
+    if (officeStaff.length === 0) {
+        const branchLabel = getBranchName(
+            repair.assigned_branch ? String(repair.assigned_branch) : null,
+        )
+        await logNotify(
+            sb,
+            repairRequestId,
+            '(office none)',
+            'skipped',
+            `no office staff for ${branchLabel}`,
+        )
+        return {
+            ok: true,
+            skipped: true,
+            reason: `事務処理担当が未設定です（管轄: ${branchLabel}）`,
+        }
+    }
+
+    const staffNames = officeStaff.map((s) => s.staff_name)
+    let targets: Array<{ staffName: string; lineWorksUserId: string }>
+    try {
+        targets = await findLineWorksStaffMappingsForNames(sb, staffNames)
+    } catch (mapErr) {
+        const msg = mapErr instanceof Error ? mapErr.message : String(mapErr)
+        return { ok: false, error: msg }
+    }
+
+    if (targets.length === 0) {
+        await logNotify(
+            sb,
+            repairRequestId,
+            '(office none)',
+            'skipped',
+            'LINE WORKS mapping missing (office)',
+        )
+        return {
+            ok: true,
+            skipped: true,
+            reason: `事務担当の LINE WORKS 連携が未登録です（対象: ${staffNames.join(' / ')}）`,
+        }
+    }
+
+    const { data: parts } = await sb
+        .from('repair_parts')
+        .select('part_name, part_code, quantity')
+        .eq('repair_request_id', repairRequestId)
+        .order('created_at')
+
+    const branchLabel = officeStaff[0]?.branch_label || getBranchName(repair.assigned_branch)
+    const caseUrl = getRepairCaseDetailUrl(repairRequestId)
+    const content = buildOfficeCompletionReportLineWorksMessage({
+        requestNo: repair.request_no,
+        customerName: repair.customer_name,
+        branchLabel,
+        assignedStaff: trim(repair.assigned_staff),
+        visitFee: repair.visit_fee,
+        laborCost: repair.labor_cost,
+        partsLines: formatPartsLines(parts || []),
+        caseUrl,
+    })
+
+    let sent = 0
+    const recipients: string[] = []
+    let lastError: string | null = null
+
+    for (const target of targets) {
+        try {
+            await sendLineWorksUserMessage(target.lineWorksUserId, content)
+            sent++
+            recipients.push(target.staffName)
+            await logNotify(
+                sb,
+                repairRequestId,
+                `${target.staffName} (office completion)`,
+                'sent',
+            )
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            lastError = `${target.staffName}: ${msg}`
+            await logNotify(
+                sb,
+                repairRequestId,
+                `${target.staffName} (office completion)`,
+                'failed',
+                msg,
+            )
+            console.error('LINE WORKS office completion notify failed:', target.staffName, e)
+        }
+    }
+
+    if (sent === 0) {
+        return { ok: false, error: lastError || 'all LINE WORKS office completion sends failed' }
     }
     return { ok: true, sent, recipients }
 }
@@ -669,6 +878,13 @@ export async function confirmRepairLineWorksFromWeb(
 ): Promise<RepairLineWorksNotifyResult> {
     if (!isLineWorksConfigured()) {
         return { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
+    }
+    if (!isRepairStaffNotifyLineWorksMode()) {
+        return {
+            ok: true,
+            skipped: true,
+            reason: '担当者通知チャネルが LINE 公式モードのため LINE WORKS は使用しません',
+        }
     }
 
     const sb = getSupabaseAdmin()

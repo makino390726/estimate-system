@@ -46,6 +46,11 @@ export default function LineStaffNotifyPage() {
     const [msg, setMsg] = useState<string | null>(null)
     const [qrStaffName, setQrStaffName] = useState('')
     const [showAdvanced, setShowAdvanced] = useState(false)
+    const [channelStatus, setChannelStatus] = useState<{
+        staffNotifyChannel?: string
+        staffNotifyChannelLabel?: string
+        staffNotifyPolicy?: string
+    } | null>(null)
     const [form, setForm] = useState({
         staff_name: '',
         line_user_id: '',
@@ -79,6 +84,20 @@ export default function LineStaffNotifyPage() {
     useEffect(() => {
         void fetchAll()
     }, [fetchAll])
+
+    useEffect(() => {
+        void (async () => {
+            const res = await fetch('/api/lineworks/status', { cache: 'no-store' })
+            const data = await res.json().catch(() => ({}))
+            if (res.ok) {
+                setChannelStatus({
+                    staffNotifyChannel: data.staffNotifyChannel,
+                    staffNotifyChannelLabel: data.staffNotifyChannelLabel,
+                    staffNotifyPolicy: data.staffNotifyPolicy,
+                })
+            }
+        })()
+    }, [])
 
     const handleSave = async () => {
         const staff_name = form.staff_name.trim()
@@ -177,10 +196,25 @@ export default function LineStaffNotifyPage() {
                 <Link href="/selectors" style={{ color: '#94a3b8', fontSize: 14 }}>← メニュー</Link>
                 <h1 style={{ margin: '12px 0 8px', fontSize: 24 }}>修理通知 LINE 連携</h1>
                 <p style={{ margin: 0, color: '#94a3b8', fontSize: 14, lineHeight: 1.6 }}>
-                    修理依頼受付時、担当者へメールと LINE で通知します。
-                    公式アカウントを友だち追加したうえで、QR による自己登録または手動登録を行ってください。
+                    代理店・販売店など <strong>LINE アカウントのみ</strong> の担当者向けです（LINE WORKS とは併用しません）。
+                    修理依頼受付時、担当者へ公式 LINE で通知します。友だち追加のうえ QR 登録または手動登録を行ってください。
+                    社内担当者向けは <Link href="/lineworks-staff-notify" style={{ color: '#38bdf8' }}>修理通知 LINE WORKS 連携</Link>（本番は通常こちら）。
                 </p>
             </div>
+
+            {channelStatus?.staffNotifyChannel === 'lineworks' && (
+                <div style={{
+                    ...panelStyle,
+                    marginBottom: 16,
+                    borderColor: '#b45309',
+                    color: '#fcd34d',
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                }}>
+                    現在の担当者通知チャネルは <strong>{channelStatus.staffNotifyChannelLabel || 'LINE WORKS'}</strong> です。
+                    この画面での登録・通知は無効です。{channelStatus.staffNotifyPolicy}
+                </div>
+            )}
 
             {msg && (
                 <div style={{ ...panelStyle, marginBottom: 16, borderColor: '#475569', color: '#fbbf24' }}>

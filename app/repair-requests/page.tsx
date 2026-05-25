@@ -661,6 +661,22 @@ export default function RepairRequestsPage() {
         setSubmittingCompletion(true)
         setDetailNotifyMessage(null)
         try {
+            if (newPart.part_name.trim()) {
+                const payload = {
+                    repair_request_id: rid,
+                    part_name: newPart.part_name.trim(),
+                    part_code: toNullable(newPart.part_code),
+                    quantity: Number(newPart.quantity) || 1,
+                    unit_price: newPart.unit_price ? Number(newPart.unit_price) : null,
+                    notes: toNullable(newPart.notes),
+                }
+                const { error: partErr } = await supabase.from('repair_parts').insert(payload)
+                if (partErr) {
+                    throw new Error(`部品の保存に失敗: ${partErr.message}`)
+                }
+                setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
+            }
+
             const res = await fetch('/api/repair-requests/complete-report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -673,25 +689,6 @@ export default function RepairRequestsPage() {
                 throw new Error(
                     `ステータスが反映されませんでした（DB: ${String(data.status ?? '不明')}）`,
                 )
-            }
-
-            if (newPart.part_name.trim()) {
-                const payload = {
-                    repair_request_id: rid,
-                    part_name: newPart.part_name.trim(),
-                    part_code: toNullable(newPart.part_code),
-                    quantity: Number(newPart.quantity) || 1,
-                    unit_price: newPart.unit_price ? Number(newPart.unit_price) : null,
-                    notes: toNullable(newPart.notes),
-                }
-                const { error: partErr } = await supabase.from('repair_parts').insert(payload)
-                if (partErr) {
-                    setNotifyFeedback(
-                        `完了報告済みですが部品の保存に失敗: ${partErr.message}（ステータスは更新済み）`,
-                    )
-                } else {
-                    setNewPart({ part_name: '', part_code: '', quantity: '1', unit_price: '', notes: '' })
-                }
             }
 
             const lineNotify = data.line_customer_notify as

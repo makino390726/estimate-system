@@ -69,6 +69,9 @@ export default function LineWorksStaffNotifyPage() {
         missingEnv?: string[]
         hints?: string[]
         deployNote?: string
+        staffNotifyChannel?: string
+        staffNotifyChannelLabel?: string
+        staffNotifyPolicy?: string
     } | null>(null)
     const [testSending, setTestSending] = useState(false)
 
@@ -223,16 +226,31 @@ export default function LineWorksStaffNotifyPage() {
                 <Link href="/selectors" style={{ color: '#94a3b8', fontSize: 14 }}>← メニュー</Link>
                 <h1 style={{ margin: '12px 0 8px', fontSize: 24 }}>修理通知 LINE WORKS 連携</h1>
                 <p style={{ margin: 0, color: '#94a3b8', fontSize: 14, lineHeight: 1.6 }}>
-                    修理依頼受付時、管轄営業所の担当者へ LINE WORKS Bot から通知します。
+                    修理依頼受付時、管轄営業所の担当者へ LINE WORKS Bot から通知します（担当者通知は LINE WORKS と LINE 公式の<strong>併用不可</strong>）。
                     新規受付通知の「案件を開く」から案件画面を開き、案件情報欄の「担当者確認」「修理中」で進捗を記録してください（LINE受付のお客様へステータスが通知されます）。
                     <br />
                     <strong>lineworks_user_id</strong> にはログインメール（推奨）または WORKS ユーザー ID を入力してください。
+                    代理店・販売店（LINE のみ）向けは <Link href="/line-staff-notify" style={{ color: '#38bdf8' }}>修理通知 LINE 連携</Link> を使い、環境変数 <code>REPAIR_STAFF_NOTIFY_CHANNEL=line</code> に切り替えます。
                 </p>
             </div>
 
             {msg && (
                 <div style={{ ...panelStyle, marginBottom: 16, borderColor: '#475569', color: '#fbbf24' }}>
                     {msg}
+                </div>
+            )}
+
+            {lwStatus?.staffNotifyChannel === 'line' && (
+                <div style={{
+                    ...panelStyle,
+                    marginBottom: 16,
+                    borderColor: '#b45309',
+                    color: '#fcd34d',
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                }}>
+                    担当者通知は <strong>LINE 公式</strong> モードです。この LINE WORKS 連携画面は利用しません。
+                    <Link href="/line-staff-notify" style={{ color: '#38bdf8', marginLeft: 6 }}>修理通知 LINE 連携へ</Link>
                 </div>
             )}
 
@@ -258,6 +276,7 @@ export default function LineWorksStaffNotifyPage() {
                         </button>
                     </div>
                     <ul style={{ margin: '10px 0 0', paddingLeft: 18, fontSize: 13, color: '#cbd5e1', lineHeight: 1.7 }}>
+                        <li>担当者通知チャネル: {lwStatus.staffNotifyChannelLabel || lwStatus.staffNotifyChannel || '—'}</li>
                         <li>環境変数: {lwStatus.configured ? '設定済み' : '未設定'}</li>
                         <li>APIトークン: {lwStatus.tokenOk ? '取得成功' : `失敗 ${lwStatus.tokenError || ''}`}</li>
                         <li>担当者登録: {lwStatus.mappingCount ?? 0} 名</li>

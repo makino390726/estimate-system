@@ -146,6 +146,13 @@ export default function MasterSelectorPage() {
               <Link href="/repair-requests" className="selector-button primary">
                 修理案件管理
               </Link>
+              <Link
+                href="/repair-sales-processing"
+                className="selector-button primary"
+                title="修理対応・部品等売上処理"
+              >
+                部品等売上処理
+              </Link>
               <Link href="/machine-cards" className="selector-button primary">
                 機械カルテ
               </Link>

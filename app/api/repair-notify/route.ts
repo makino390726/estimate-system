@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { isLineWorksConfigured } from '@/lib/lineWorksClient'
+import { getRepairStaffNotifyChannel } from '@/lib/repairStaffNotifyChannel'
 import { notifyRepairRequestStaff } from '@/lib/repairStaffNotify'
 
 export const runtime = 'nodejs'
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
         const payload = {
             ...result,
             debug: {
-                lineWorksConfigured: isLineWorksConfigured(),
+                staffNotifyChannel: getRepairStaffNotifyChannel(),
                 lineworksSkipped: result.lineworks.skipped,
                 lineworksReason: result.lineworks.reason,
                 lineworksError: result.lineworks.error,

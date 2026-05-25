@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '../../lib/supabaseClient'
 import { DEPARTMENTS } from '@/lib/departments'
+import { BRANCH_OTHER_ID, LIFF_REPAIR_BRANCH_OPTIONS } from '@/lib/branches'
 
 type Staff = {
   id: string
@@ -17,6 +18,7 @@ type Staff = {
   approver_section_head_id: string | null
   approver_senmu_id: string | null
   approver_shacho_id: string | null
+  is_repair_office_notify?: boolean
   created_at?: string
   updated_at?: string
 }
@@ -28,6 +30,11 @@ export default function StaffsPage() {
   const [keyword, setKeyword] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [stampFile, setStampFile] = useState<File | null>(null)
+  const [isRepairOfficeNotify, setIsRepairOfficeNotify] = useState(false)
+  const [officeBranchIds, setOfficeBranchIds] = useState<string[]>([])
+  const [branchOtherHolder, setBranchOtherHolder] = useState<{ staffId: string; staffName: string } | null>(
+    null,
+  )
 
   // フォーム用ステート
   const [formData, setFormData] = useState<Partial<Staff>>({
@@ -47,6 +54,76 @@ export default function StaffsPage() {
     fetchStaffs()
   }, [])
 
+  const loadBranchOtherHolder = async (staffList: Staff[]) => {
+    const { data, error } = await supabase
+      .from('staff_office_notify_branches')
+      .select('staff_id')
+      .eq('branch_id', BRANCH_OTHER_ID)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('branch_other 担当取得:', error.message)
+      setBranchOtherHolder(null)
+      return
+    }
+    if (!data?.staff_id) {
+      setBranchOtherHolder(null)
+      return
+    }
+    const sid = String(data.staff_id)
+    const match = staffList.find((s) => s.id === sid)
+    setBranchOtherHolder({
+      staffId: sid,
+      staffName: match?.name || sid,
+    })
+  }
+
+  const loadOfficeBranchesForStaff = async (staffId: string) => {
+    const { data, error } = await supabase
+      .from('staff_office_notify_branches')
+      .select('branch_id')
+      .eq('staff_id', staffId)
+
+    if (error) {
+      console.warn('担当事業所取得:', error.message)
+      setOfficeBranchIds([])
+      return
+    }
+    setOfficeBranchIds((data || []).map((r) => String(r.branch_id)))
+  }
+
+  const resetOfficeNotifyForm = () => {
+    setIsRepairOfficeNotify(false)
+    setOfficeBranchIds([])
+  }
+
+  const syncOfficeNotifyBranches = async (
+    staffId: string,
+    enabled: boolean,
+    branchIds: string[],
+  ): Promise<string | null> => {
+    const { error: delErr } = await supabase
+      .from('staff_office_notify_branches')
+      .delete()
+      .eq('staff_id', staffId)
+    if (delErr) return `担当事業所の更新に失敗: ${delErr.message}`
+
+    if (!enabled || branchIds.length === 0) return null
+
+    if (branchIds.includes(BRANCH_OTHER_ID)) {
+      const { error: otherDelErr } = await supabase
+        .from('staff_office_notify_branches')
+        .delete()
+        .eq('branch_id', BRANCH_OTHER_ID)
+      if (otherDelErr) return `「その他」担当の入れ替えに失敗: ${otherDelErr.message}`
+    }
+
+    const rows = branchIds.map((branch_id) => ({ staff_id: staffId, branch_id }))
+    const { error: insErr } = await supabase.from('staff_office_notify_branches').insert(rows)
+    if (insErr) return `担当事業所の登録に失敗: ${insErr.message}`
+    return null
+  }
+
   const fetchStaffs = async () => {
     const { data, error } = await supabase
       .from('staffs')
@@ -64,10 +141,11 @@ export default function StaffsPage() {
         approver_shacho_id: s.approver_shacho_id ? String(s.approver_shacho_id) : null,
       }))
       setStaffs(normalized as Staff[])
+      await loadBranchOtherHolder(normalized as Staff[])
     }
   }
 
-  const handleSelectStaff = (staff: Staff) => {
+  const handleSelectStaff = async (staff: Staff) => {
     setSelectedStaff(staff)
     setFormData({
       name: staff.name,
@@ -82,11 +160,14 @@ export default function StaffsPage() {
       approver_shacho_id: staff.approver_shacho_id,
     })
     setStampFile(null)
+    setIsRepairOfficeNotify(Boolean(staff.is_repair_office_notify))
+    await loadOfficeBranchesForStaff(staff.id)
     setIsEditing(true)
   }
 
   const handleNewStaff = () => {
     setSelectedStaff(null)
+    resetOfficeNotifyForm()
     setFormData({
       name: '',
       furigana: '',
@@ -106,6 +187,7 @@ export default function StaffsPage() {
   const handleCancel = () => {
     setIsEditing(false)
     setSelectedStaff(null)
+    resetOfficeNotifyForm()
     setFormData({
       name: '',
       furigana: '',
@@ -162,10 +244,35 @@ export default function StaffsPage() {
 
   const normalizeId = (v?: string | null) => (v && v.trim() !== '' ? v.trim() : null)
 
+  const toggleOfficeBranch = (branchId: string) => {
+    setOfficeBranchIds((prev) =>
+      prev.includes(branchId) ? prev.filter((id) => id !== branchId) : [...prev, branchId],
+    )
+  }
+
   const handleSave = async () => {
     if (!formData.name) {
       setMsg('氏名は必須です')
       return
+    }
+
+    if (isRepairOfficeNotify && officeBranchIds.length === 0) {
+      setMsg('事務処理担当を ON にする場合は、担当事業所を1つ以上選択してください')
+      return
+    }
+
+    const staffIdForOtherCheck = selectedStaff?.id
+    if (
+      isRepairOfficeNotify &&
+      officeBranchIds.includes(BRANCH_OTHER_ID) &&
+      branchOtherHolder &&
+      staffIdForOtherCheck &&
+      branchOtherHolder.staffId !== staffIdForOtherCheck
+    ) {
+      const ok = confirm(
+        `「その他」は現在 ${branchOtherHolder.staffName} が担当です。\n${formData.name} に変更しますか？`,
+      )
+      if (!ok) return
     }
 
     if (selectedStaff) {
@@ -193,6 +300,7 @@ export default function StaffsPage() {
         approver_section_head_id: normalizeId(formData.approver_section_head_id),
         approver_senmu_id: normalizeId(formData.approver_senmu_id),
         approver_shacho_id: normalizeId(formData.approver_shacho_id),
+        is_repair_office_notify: isRepairOfficeNotify,
       }
 
       const { data, error } = await supabase
@@ -205,6 +313,16 @@ export default function StaffsPage() {
         setMsg(`更新に失敗しました: ${error.message || '詳細はコンソールを確認'}`)
         console.error('更新エラー:', error)
       } else {
+        const branchErr = await syncOfficeNotifyBranches(
+          selectedStaff.id,
+          isRepairOfficeNotify,
+          officeBranchIds,
+        )
+        if (branchErr) {
+          setMsg(`担当者は更新しましたが、${branchErr}`)
+          fetchStaffs()
+          return
+        }
         setMsg('更新しました')
         fetchStaffs()
         handleCancel()
@@ -222,6 +340,7 @@ export default function StaffsPage() {
         approver_section_head_id: normalizeId(formData.approver_section_head_id),
         approver_senmu_id: normalizeId(formData.approver_senmu_id),
         approver_shacho_id: normalizeId(formData.approver_shacho_id),
+        is_repair_office_notify: isRepairOfficeNotify,
       }
 
       const { data, error } = await supabase
@@ -237,15 +356,26 @@ export default function StaffsPage() {
 
       // 登録成功後、IDを取得してスタンプをアップロード
       const createdStaff = Array.isArray(data) && data.length > 0 ? data[0] : null
-      if (createdStaff && stampFile) {
+      if (createdStaff) {
         const createdId = String(createdStaff.id)
-        const uploadedPath = await uploadStampImage(createdId, stampFile)
-        if (uploadedPath) {
-          // stamp_pathを更新
-          await supabase
-            .from('staffs')
-            .update({ stamp_path: uploadedPath })
-            .eq('id', createdId)
+        const branchErr = await syncOfficeNotifyBranches(
+          createdId,
+          isRepairOfficeNotify,
+          officeBranchIds,
+        )
+        if (branchErr) {
+          setMsg(`登録しましたが、${branchErr}`)
+          fetchStaffs()
+          return
+        }
+        if (stampFile) {
+          const uploadedPath = await uploadStampImage(createdId, stampFile)
+          if (uploadedPath) {
+            await supabase
+              .from('staffs')
+              .update({ stamp_path: uploadedPath })
+              .eq('id', createdId)
+          }
         }
       }
 
@@ -400,6 +530,9 @@ export default function StaffsPage() {
                   <div style={{ fontSize: 12, color: '#cbd5e1' }}>{staff.furigana}</div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>
                     {staff.department || '部署未設定'}
+                    {staff.is_repair_office_notify ? (
+                      <span style={{ marginLeft: 6, color: '#fbbf24' }}>事務</span>
+                    ) : null}
                   </div>
                   <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {staff.email}
@@ -504,6 +637,94 @@ export default function StaffsPage() {
                   <p style={{ fontSize: 11, color: '#94a3b8', margin: '8px 0 0 0' }}>
                     メールと部署（営業所・出張所など）を設定すると、修理案件の管轄営業所と一致する担当者に通知メールが届きます。
                   </p>
+                </div>
+
+                <div
+                  style={{
+                    borderTop: '1px solid #334155',
+                    paddingTop: 16,
+                    marginTop: 4,
+                  }}
+                >
+                  <h3 style={{ marginTop: 0, fontSize: 16, color: '#cbd5e1' }}>
+                    修理完了・事務処理（LINE WORKS）
+                  </h3>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: 'pointer',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isRepairOfficeNotify}
+                      onChange={(e) => {
+                        const on = e.target.checked
+                        setIsRepairOfficeNotify(on)
+                        if (!on) setOfficeBranchIds([])
+                      }}
+                    />
+                    <span style={{ fontWeight: 'bold', color: '#e2e8f0' }}>事務処理担当</span>
+                  </label>
+                  <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 12px 0' }}>
+                    ON にすると、完了報告時に担当事業所の案件について LINE WORKS で通知します（
+                    <code style={{ color: '#cbd5e1' }}>/lineworks-staff-notify</code>{' '}
+                    で LINE WORKS 連携が必要）。未割当の案件は「その他」担当へ送られます。
+                  </p>
+                  {isRepairOfficeNotify && (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                        gap: 8,
+                      }}
+                    >
+                      {LIFF_REPAIR_BRANCH_OPTIONS.map((b) => {
+                        const isOther = b.id === BRANCH_OTHER_ID
+                        const heldByOther =
+                          isOther &&
+                          branchOtherHolder &&
+                          selectedStaff?.id !== branchOtherHolder.staffId
+                        return (
+                          <label
+                            key={b.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: 8,
+                              padding: '8px 10px',
+                              border: '1px solid #475569',
+                              borderRadius: 6,
+                              backgroundColor: officeBranchIds.includes(b.id)
+                                ? '#1e3a5f'
+                                : '#0f172a',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={officeBranchIds.includes(b.id)}
+                              onChange={() => toggleOfficeBranch(b.id)}
+                            />
+                            <span style={{ fontSize: 13, color: '#e2e8f0' }}>
+                              {b.name}
+                              {isOther ? (
+                                <span style={{ display: 'block', fontSize: 10, color: '#94a3b8' }}>
+                                  全社1名・営業所以外
+                                  {heldByOther
+                                    ? `（現在: ${branchOtherHolder.staffName}）`
+                                    : null}
+                                </span>
+                              ) : null}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div>

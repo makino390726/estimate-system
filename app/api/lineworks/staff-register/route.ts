@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server'
 import { upsertLineWorksStaffMapping } from '@/lib/lineworksStaffMappingDb'
+import {
+    isRepairStaffNotifyLineWorksMode,
+    REPAIR_STAFF_NOTIFY_POLICY_NOTE,
+    repairStaffNotifyChannelLabel,
+    getRepairStaffNotifyChannel,
+} from '@/lib/repairStaffNotifyChannel'
 import { getSupabaseAdmin, hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 
 export const runtime = 'nodejs'
@@ -12,6 +18,16 @@ type Body = {
 
 export async function POST(request: Request) {
     try {
+        if (!isRepairStaffNotifyLineWorksMode()) {
+            const ch = getRepairStaffNotifyChannel()
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: `担当者の LINE WORKS 連携は現在利用できません（${repairStaffNotifyChannelLabel(ch)} モード）。${REPAIR_STAFF_NOTIFY_POLICY_NOTE}`,
+                },
+                { status: 403 },
+            )
+        }
         const body = (await request.json().catch(() => ({}))) as Body
         const result = await upsertLineWorksStaffMapping(getSupabaseAdmin(), {
             staff_name: body.staff_name,

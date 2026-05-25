@@ -7,6 +7,11 @@ import {
     isLineWorksConfigured,
 } from '@/lib/lineWorksClient'
 import { getSupabaseAdmin, hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
+import {
+    getRepairStaffNotifyChannel,
+    REPAIR_STAFF_NOTIFY_POLICY_NOTE,
+    repairStaffNotifyChannelLabel,
+} from '@/lib/repairStaffNotifyChannel'
 
 export const runtime = 'nodejs'
 
@@ -14,6 +19,7 @@ export const runtime = 'nodejs'
 export async function GET() {
     try {
         const env = getLineWorksEnvStatus()
+        const staffNotifyChannel = getRepairStaffNotifyChannel()
         const configured = isLineWorksConfigured()
         const missingEnv = Object.entries(env)
             .filter(([, ok]) => !ok)
@@ -43,7 +49,10 @@ export async function GET() {
         }
 
         return NextResponse.json({
-            ok: configured && tokenOk,
+            ok: staffNotifyChannel === 'lineworks' && configured && tokenOk,
+            staffNotifyChannel,
+            staffNotifyChannelLabel: repairStaffNotifyChannelLabel(staffNotifyChannel),
+            staffNotifyPolicy: REPAIR_STAFF_NOTIFY_POLICY_NOTE,
             configured,
             env,
             missingEnv,
@@ -60,6 +69,9 @@ export async function GET() {
             notificationsTableOk,
             notificationsTableError,
             hints: [
+                staffNotifyChannel !== 'lineworks'
+                    ? `担当者通知は ${repairStaffNotifyChannelLabel(staffNotifyChannel)} モードです。LINE WORKS 連携画面は ${staffNotifyChannel === 'line' ? '/line-staff-notify' : '—'} を利用してください。${REPAIR_STAFF_NOTIFY_POLICY_NOTE}`
+                    : null,
                 !hasSupabaseServiceRole()
                     ? 'SUPABASE_SERVICE_ROLE_KEY が未設定です（保存時 RLS エラーの原因）。Supabase の service_role を Vercel に追加するか enable_lineworks_staff_mappings_rls.sql を実行'
                     : null,

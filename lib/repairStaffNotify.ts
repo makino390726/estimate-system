@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendRepairRequestEmails, type RepairNotifyResult } from '@/lib/repairNotifyEmail'
-import { isLineWorksConfigured } from '@/lib/lineWorksClient'
+import {
+    getRepairStaffNotifyChannel,
+    isRepairStaffNotifyLineWorksMode,
+} from '@/lib/repairStaffNotifyChannel'
 import {
     sendRepairRequestLineWorksToStaff,
     type RepairLineWorksNotifyResult,
@@ -162,23 +165,30 @@ export type RepairStaffNotifyOptions = {
 /**
  * 修理依頼登録時の担当者通知
  * - メール: 常に試行
- * - LINE WORKS: 環境変数設定時（営業担当向け・推奨）
- * - LINE 公式アカウント: WORKS 未設定時のみ（line_staff_mappings）
+ * - 担当者チャネル: LINE WORKS または LINE 公式のどちらか一方のみ（併用禁止）
  */
 export async function notifyRepairRequestStaff(
     repairRequestId: string,
     options?: RepairStaffNotifyOptions,
 ): Promise<RepairStaffNotifyResult> {
     const email = await sendRepairRequestEmails(repairRequestId)
+    const channel = getRepairStaffNotifyChannel()
 
-    let lineworks: RepairLineWorksNotifyResult = { ok: true, skipped: true, reason: 'LINE WORKS 未設定' }
-    let line: RepairStaffNotifyResult['line'] = { ok: true, skipped: true, reason: 'not used' }
+    let lineworks: RepairLineWorksNotifyResult = {
+        ok: true,
+        skipped: true,
+        reason: '担当者通知チャネルが LINE 公式モードのため LINE WORKS は使用しません',
+    }
+    let line: RepairStaffNotifyResult['line'] = {
+        ok: true,
+        skipped: true,
+        reason: '担当者通知チャネルが LINE WORKS モードのため LINE 公式は使用しません',
+    }
 
-    if (isLineWorksConfigured()) {
+    if (channel === 'lineworks') {
         lineworks = await sendRepairRequestLineWorksToStaff(repairRequestId, {
             staffNameOnly: options?.staffNameOnly,
         })
-        line = { ok: true, skipped: true, reason: 'LINE WORKS を使用中（公式LINEは送信しません）' }
     } else {
         line = await sendRepairRequestLineOaToStaff(repairRequestId, {
             staffNameOnly: options?.staffNameOnly,
@@ -201,7 +211,7 @@ export async function notifyRepairRequestCreated(repairRequestId: string): Promi
     }
     if (!result.lineworks.ok && !result.lineworks.skipped) {
         console.error('repair LINE WORKS notify failed:', result.lineworks.error)
-    } else if (result.lineworks.skipped && isLineWorksConfigured()) {
+    } else if (result.lineworks.skipped && isRepairStaffNotifyLineWorksMode()) {
         console.warn('repair LINE WORKS skipped:', result.lineworks.reason)
     }
     if (!result.line.ok && !result.line.skipped) {
