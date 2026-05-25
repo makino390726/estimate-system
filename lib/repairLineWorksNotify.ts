@@ -70,6 +70,12 @@ export function getRepairCaseDetailUrl(repairRequestId: string): string {
     return `${getBaseUrl()}/repair-mobile/${encodeURIComponent(id)}`
 }
 
+/** 部品等売上処理画面（事務確認ボタン） */
+export function getRepairSalesProcessingUrl(repairRequestId: string): string {
+    const id = trim(repairRequestId)
+    return `${getBaseUrl()}/repair-sales-processing?focus=${encodeURIComponent(id)}`
+}
+
 function formatYen(n: number | null | undefined): string {
     if (n == null || !Number.isFinite(Number(n))) return '—'
     return `${Math.round(Number(n)).toLocaleString('ja-JP')}円`
@@ -98,25 +104,32 @@ function buildOfficeCompletionReportLineWorksMessage(params: {
     visitFee: number | null
     laborCost: number | null
     partsLines: string
+    salesProcessingUrl: string
     caseUrl: string
 }) {
     const lines = [
         `【修理完了・事務処理】`,
         `案件 #${params.requestNo}`,
+        `担当者より修理完了報告がなされました。`,
+        `システムを確認のうえ、確認ボタンをクリックしてから売上処理を行ってください。`,
+        '',
         `管轄: ${params.branchLabel}`,
         `顧客: ${params.customerName}`,
-        `担当: ${params.assignedStaff || '—'}`,
+        `修理担当: ${params.assignedStaff || '—'}`,
         `出張費: ${formatYen(params.visitFee)}`,
         `工賃: ${formatYen(params.laborCost)}`,
         `部品:`,
         params.partsLines,
-        '',
-        '下の「案件を開く」から内容を確認できます。',
     ]
     return {
         type: 'button_template',
         contentText: lines.join('\n'),
         actions: [
+            {
+                type: 'uri',
+                label: '確認・売上処理',
+                uri: params.salesProcessingUrl,
+            },
             {
                 type: 'uri',
                 label: '案件を開く',
@@ -547,6 +560,7 @@ export async function sendRepairCompletionReportLineWorksToOffice(
 
     const branchLabel = officeStaff[0]?.branch_label || getBranchName(repair.assigned_branch)
     const caseUrl = getRepairCaseDetailUrl(repairRequestId)
+    const salesProcessingUrl = getRepairSalesProcessingUrl(repairRequestId)
     const content = buildOfficeCompletionReportLineWorksMessage({
         requestNo: repair.request_no,
         customerName: repair.customer_name,
@@ -555,6 +569,7 @@ export async function sendRepairCompletionReportLineWorksToOffice(
         visitFee: repair.visit_fee,
         laborCost: repair.labor_cost,
         partsLines: formatPartsLines(parts || []),
+        salesProcessingUrl,
         caseUrl,
     })
 
