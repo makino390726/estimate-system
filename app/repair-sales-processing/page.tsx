@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { getBranchName } from '@/lib/branches'
@@ -41,7 +41,7 @@ function formatConfirmedAt(iso: string | null): string {
     return d.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function RepairSalesProcessingPage() {
+function RepairSalesProcessingInner() {
     const searchParams = useSearchParams()
     const focusId = (searchParams.get('focus') || '').trim()
     const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
@@ -454,5 +454,19 @@ export default function RepairSalesProcessingPage() {
                 </div>
             </div>
         </div>
+    )
+}
+
+export default function RepairSalesProcessingPage() {
+    return (
+        <Suspense
+            fallback={
+                <div style={{ minHeight: '100vh', padding: 24, background: '#0f172a', color: '#94a3b8' }}>
+                    読み込み中…
+                </div>
+            }
+        >
+            <RepairSalesProcessingInner />
+        </Suspense>
     )
 }
