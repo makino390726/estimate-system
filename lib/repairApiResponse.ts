@@ -12,14 +12,14 @@ export async function parseRepairApiJsonResponse(
             return {
                 ok: false,
                 message:
-                    'APIが認証で拒否されました（401）。URLが https://estimate-system-ten.vercel.app か確認し、Vercelの古いデプロイURLではなく本番URLを開いてください。',
+                    'APIが認証で拒否されました（401）。ページを再読み込みするか、しばらくしてから再度お試しください。',
             }
         }
         if (res.status === 404 && (text.includes('<!DOCTYPE') || text.includes('<html'))) {
             return {
                 ok: false,
                 message:
-                    'APIが見つかりません（404）。本番URL https://estimate-system-ten.vercel.app を使用しているか、最新デプロイ後にスーパーリロード（Ctrl+Shift+R）してください。',
+                    'APIが見つかりません（404）。最新のデプロイ反映後にスーパーリロード（Ctrl+Shift+R）してください。',
             }
         }
         return {

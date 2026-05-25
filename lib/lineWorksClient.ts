@@ -163,13 +163,34 @@ export async function sendLineWorksUserMessage(
     }
 }
 
+export type RepairLineWorksPostbackAction = 'staff_confirm' | 'repairing'
+
 export function buildRepairAckPostbackData(notificationId: string): string {
     return `repair_ack:${notificationId}`
 }
 
+export function buildRepairRepairingPostbackData(notificationId: string): string {
+    return `repair_repairing:${notificationId}`
+}
+
+/** 担当者確認 / 修理中 ボタンの postback を解析 */
+export function parseRepairLineWorksPostback(
+    data: string,
+): { action: RepairLineWorksPostbackAction; notificationId: string } | null {
+    const trimmed = String(data || '').trim()
+    const rules: Array<{ prefix: string; action: RepairLineWorksPostbackAction }> = [
+        { prefix: 'repair_ack:', action: 'staff_confirm' },
+        { prefix: 'repair_repairing:', action: 'repairing' },
+    ]
+    for (const { prefix, action } of rules) {
+        if (!trimmed.startsWith(prefix)) continue
+        const notificationId = trimmed.slice(prefix.length).trim()
+        if (notificationId) return { action, notificationId }
+    }
+    return null
+}
+
 export function parseRepairAckPostbackData(data: string): string | null {
-    const prefix = 'repair_ack:'
-    if (!data.startsWith(prefix)) return null
-    const id = data.slice(prefix.length).trim()
-    return id || null
+    const parsed = parseRepairLineWorksPostback(data)
+    return parsed?.action === 'staff_confirm' ? parsed.notificationId : null
 }

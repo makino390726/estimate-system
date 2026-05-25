@@ -2,7 +2,14 @@ import { randomUUID } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
 import { findLineWorksStaffMappingsForNames } from '@/lib/lineworksStaffMappingDb'
-import { isLineWorksConfigured, sendLineWorksUserMessage } from '@/lib/lineWorksClient'
+import {
+    buildRepairAckPostbackData,
+    buildRepairRepairingPostbackData,
+    isLineWorksConfigured,
+    sendLineWorksUserMessage,
+} from '@/lib/lineWorksClient'
+import { notifyRepairCustomerLineStatus } from '@/lib/repairCustomerLineNotify'
+import { persistRepairStatusTransition } from '@/lib/repairStatusUpdate'
 import {
     resolveRepairNotifyScope,
     resolveRepairNotifyStaffNames,
@@ -89,8 +96,9 @@ function buildCompletionReportLineWorksMessage(params: {
     }
 }
 
-/** 案件画面へのリンクのみ（LINE WORKS 上で「確認しました」ボタンは使わない） */
+/** 新規受付通知（担当者確認・修理中ボタン + 案件リンク） */
 function buildCaseLinkMessage(params: {
+    notificationId: string
     requestNo: number
     customerName: string
     branchLabel: string
@@ -113,14 +121,24 @@ function buildCaseLinkMessage(params: {
         params.category ? `分野: ${formatRepairCategoryDisplay(params.category)}` : null,
         `症状: ${params.symptom}`,
         '',
-        '下の「案件を開く」から案件画面を表示し、',
-        '案件番号横の「担当者確認」を押してください。',
+        '「担当者確認」または「修理中」をタップすると進捗が記録され、',
+        'LINE受付のお客様へステータスが通知されます。',
     ].filter(Boolean)
 
     return {
         type: 'button_template',
         contentText: lines.join('\n'),
         actions: [
+            {
+                type: 'message',
+                label: '担当者確認',
+                postback: buildRepairAckPostbackData(params.notificationId),
+            },
+            {
+                type: 'message',
+                label: '修理中',
+                postback: buildRepairRepairingPostbackData(params.notificationId),
+            },
             {
                 type: 'uri',
                 label: '案件を開く',
@@ -234,6 +252,7 @@ export async function sendRepairRequestLineWorksToStaff(
 
         try {
             const content = buildCaseLinkMessage({
+                notificationId,
                 requestNo: repair.request_no,
                 customerName: repair.customer_name,
                 branchLabel,
@@ -506,6 +525,19 @@ export async function acknowledgeRepairLineWorksNotification(
         console.error('repair_requests status -> staff_confirmed:', statusResult.error)
     }
 
+    if (statusResult.updated) {
+        const { data: repairRow } = await sb
+            .from('repair_requests')
+            .select('received_via')
+            .eq('id', row.repair_request_id)
+            .single()
+        if (trim(repairRow?.received_via) === 'line') {
+            await notifyRepairCustomerLineStatus(sb, row.repair_request_id).catch((e) =>
+                console.warn('line customer notify (staff_confirmed):', e),
+            )
+        }
+    }
+
     const { data: repair } = await sb
         .from('repair_requests')
         .select('request_no')
@@ -517,6 +549,76 @@ export async function acknowledgeRepairLineWorksNotification(
         requestNo: repair?.request_no,
         statusUpdated: statusResult.updated,
         error: statusResult.error,
+    }
+}
+
+const LINEWORKS_REPAIRING_TEXTS = new Set(['修理中', '修理開始', '作業開始'])
+
+export function isLineWorksRepairingText(text: unknown): boolean {
+    const t = trim(text)
+    return t.length > 0 && LINEWORKS_REPAIRING_TEXTS.has(t)
+}
+
+/** postback「修理中」: ステータス repairing + 依頼者へLINE通知 */
+export async function markRepairRepairingFromLineWorksNotification(
+    notificationId: string,
+    lineWorksUserId: string,
+): Promise<{ ok: boolean; requestNo?: number; statusUpdated?: boolean; error?: string }> {
+    const sb = getSupabaseAdmin()
+    const { data: row, error } = await sb
+        .from('repair_lineworks_notifications')
+        .select('id, repair_request_id, staff_name, status, lineworks_user_id')
+        .eq('id', notificationId)
+        .single()
+
+    if (error || !row) {
+        return { ok: false, error: '通知が見つかりません' }
+    }
+
+    const { data: repair, error: repairErr } = await sb
+        .from('repair_requests')
+        .select('request_no, status, received_via')
+        .eq('id', row.repair_request_id)
+        .single()
+
+    if (repairErr || !repair) {
+        return { ok: false, error: '案件が見つかりません' }
+    }
+
+    const oldStatus = String(repair.status || 'received')
+    if (oldStatus === 'repairing') {
+        return { ok: true, requestNo: repair.request_no, statusUpdated: false }
+    }
+    if (oldStatus === 'completed' || oldStatus === 'billed' || oldStatus === 'closed') {
+        return { ok: false, error: `すでに終了した案件です（${oldStatus}）` }
+    }
+
+    try {
+        await persistRepairStatusTransition(
+            sb,
+            row.repair_request_id,
+            oldStatus,
+            'repairing',
+            String(repair.received_via || ''),
+        )
+    } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return { ok: false, error: msg }
+    }
+
+    await sb
+        .from('repair_lineworks_notifications')
+        .update({
+            status: 'acknowledged',
+            acknowledged_at: new Date().toISOString(),
+            lineworks_user_id: lineWorksUserId || row.lineworks_user_id,
+        })
+        .eq('id', notificationId)
+
+    return {
+        ok: true,
+        requestNo: repair.request_no,
+        statusUpdated: true,
     }
 }
 

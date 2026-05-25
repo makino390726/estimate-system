@@ -253,7 +253,6 @@ export default function RepairRequestsPage() {
     const [lineWorksAcks, setLineWorksAcks] = useState<LwAckRow[]>([])
     const [detailNotifyMessage, setDetailNotifyMessage] = useState<string | null>(null)
     const [submittingCompletion, setSubmittingCompletion] = useState(false)
-    const [deployHostWarning, setDeployHostWarning] = useState<string | null>(null)
     /** 案件詳細を開いたときの DB 上のステータス（「保存して閉じる」まで確定しない） */
     const [detailStatusBaseline, setDetailStatusBaseline] = useState<string | null>(null)
 
@@ -342,20 +341,6 @@ export default function RepairRequestsPage() {
         void fetchRequests()
         void fetchGlobalStatusCounts()
     }, [fetchRequests, fetchGlobalStatusCounts])
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        const host = window.location.hostname
-        const ok =
-            host === 'estimate-system-ten.vercel.app' ||
-            host === 'localhost' ||
-            host === '127.0.0.1'
-        if (!ok) {
-            setDeployHostWarning(
-                `現在のURL（${host}）は古いデプロイの可能性があります。完了報告は https://estimate-system-ten.vercel.app/repair-requests で操作してください。`,
-            )
-        }
-    }, [])
 
     /** LINE WORKS 確認後のステータス変更を一覧に反映（20秒ごと） */
     useEffect(() => {
@@ -1239,22 +1224,6 @@ export default function RepairRequestsPage() {
 
     return (
         <div style={pageStyle}>
-            {deployHostWarning && (
-                <div
-                    style={{
-                        marginBottom: 16,
-                        padding: '12px 14px',
-                        borderRadius: 8,
-                        background: '#451a1a',
-                        border: '1px solid #f87171',
-                        color: '#fecaca',
-                        fontSize: 13,
-                        lineHeight: 1.55,
-                    }}
-                >
-                    {deployHostWarning}
-                </div>
-            )}
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
                 <div>
@@ -1267,7 +1236,7 @@ export default function RepairRequestsPage() {
                             <strong style={{ color: '#5eead4' }}>「→ 担当者確認」</strong>
                             を選び、右上の
                             <strong style={{ color: '#5eead4' }}>「保存して閉じる」</strong>
-                            で確定すると一覧が担当者確認になり、LINE WORKS に確認メッセージが届きます。
+                            で確定すると一覧が担当者確認になり、LINE WORKS 担当者へ確認メッセージが届きます（お客様へLINE通知）。
                         </span>
                     </p>
                 </div>
