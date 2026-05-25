@@ -108,6 +108,7 @@ export default function RepairMobileDetailPage() {
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [confirmingStaff, setConfirmingStaff] = useState(false)
+    const [markingRepairing, setMarkingRepairing] = useState(false)
     const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
     const [statusBaseline, setStatusBaseline] = useState('')
@@ -217,6 +218,12 @@ export default function RepairMobileDetailPage() {
         load()
     }, [load])
 
+    const lineNotifySuffix = (receivedVia: string | undefined, statusUpdated: boolean) => {
+        if (!statusUpdated) return ''
+        if (receivedVia === 'line') return '（お客様へLINEで通知しました）'
+        return '（LINE受付以外のため顧客LINE通知は省略）'
+    }
+
     const handleStaffConfirm = async () => {
         if (!request) return
         setConfirmingStaff(true)
@@ -230,10 +237,14 @@ export default function RepairMobileDetailPage() {
             const json = await res.json()
             if (!res.ok) throw new Error(json.error || '担当者確認に失敗しました')
 
+            const suffix = lineNotifySuffix(json.received_via, Boolean(json.status_updated))
             if (json.status_updated) {
-                setMessage({ type: 'ok', text: '担当者確認を記録しました（ステータスを更新しました）' })
+                setMessage({
+                    type: 'ok',
+                    text: `担当者確認を記録しました。案件一覧を「担当者確認」に更新しました。${suffix}`,
+                })
             } else if (json.already_confirmed) {
-                setMessage({ type: 'ok', text: '確認済みとして記録しました' })
+                setMessage({ type: 'ok', text: 'すでに担当者確認済みです' })
             } else {
                 setMessage({ type: 'ok', text: '担当者確認を記録しました' })
             }
@@ -245,6 +256,41 @@ export default function RepairMobileDetailPage() {
             })
         } finally {
             setConfirmingStaff(false)
+        }
+    }
+
+    const handleMarkRepairing = async () => {
+        if (!request) return
+        setMarkingRepairing(true)
+        setMessage(null)
+        try {
+            const res = await fetch('/api/repair-mobile/mark-repairing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repair_request_id: request.id }),
+            })
+            const json = await res.json()
+            if (!res.ok) throw new Error(json.error || '修理中の記録に失敗しました')
+
+            const suffix = lineNotifySuffix(json.received_via, Boolean(json.status_updated))
+            if (json.status_updated) {
+                setMessage({
+                    type: 'ok',
+                    text: `「修理中」を記録しました。案件一覧を更新しました。${suffix}`,
+                })
+            } else if (json.already_repairing) {
+                setMessage({ type: 'ok', text: 'すでに修理中です' })
+            } else {
+                setMessage({ type: 'ok', text: '修理中を記録しました' })
+            }
+            await load()
+        } catch (e: unknown) {
+            setMessage({
+                type: 'err',
+                text: e instanceof Error ? e.message : '修理中の記録に失敗しました',
+            })
+        } finally {
+            setMarkingRepairing(false)
         }
     }
 
@@ -530,6 +576,12 @@ export default function RepairMobileDetailPage() {
     }
     const pr = REPAIR_PRIORITY_CONFIG[request.priority]
     const suggested = getMobileSuggestedStatuses(statusBaseline)
+    const canStaffConfirm = request.status === 'received'
+    const canMarkRepairing =
+        request.status !== 'repairing' &&
+        request.status !== 'completed' &&
+        request.status !== 'billed' &&
+        request.status !== 'closed'
 
     return (
         <>
@@ -543,19 +595,6 @@ export default function RepairMobileDetailPage() {
                 <div className="repair-mobile-header-row" style={{ marginTop: 6 }}>
                     <div className="repair-mobile-header-title">
                         <h1 style={{ margin: 0 }}>No.{request.request_no}</h1>
-                        {request.status === 'received' ? (
-                            <button
-                                type="button"
-                                className="repair-mobile-staff-confirm-btn"
-                                disabled={confirmingStaff}
-                                onClick={() => void handleStaffConfirm()}
-                            >
-                                {confirmingStaff ? '記録中…' : '担当者確認'}
-                            </button>
-                        ) : request.status === 'staff_confirmed' ||
-                          statusBaseline === 'staff_confirmed' ? (
-                            <span className="repair-mobile-staff-confirmed-done">確認済</span>
-                        ) : null}
                     </div>
                     <span
                         className="repair-mobile-badge"
@@ -587,6 +626,69 @@ export default function RepairMobileDetailPage() {
                         完了報告済みです。顧客がLINEで「承諾する」を押すと承諾日時が記録されます。
                     </div>
                 )}
+
+                <section className="repair-mobile-section repair-mobile-case-info">
+                    <h2>案件情報</h2>
+                    <div className="repair-mobile-case-summary">
+                        <div>
+                            <span className="repair-mobile-case-label">ステータス</span>
+                            <span
+                                className="repair-mobile-badge"
+                                style={{ color: st.color, background: st.bg, marginLeft: 8 }}
+                            >
+                                {st.label}
+                            </span>
+                        </div>
+                        <div style={{ marginTop: 8 }}>
+                            <span className="repair-mobile-case-label">顧客</span>
+                            <span style={{ marginLeft: 8 }}>{request.customer_name}</span>
+                        </div>
+                        {request.model && (
+                            <div style={{ marginTop: 4, fontSize: 13, color: '#94a3b8' }}>
+                                型式: {request.model}
+                            </div>
+                        )}
+                        <p
+                            style={{
+                                margin: '10px 0 0',
+                                fontSize: 14,
+                                lineHeight: 1.5,
+                                whiteSpace: 'pre-wrap',
+                            }}
+                        >
+                            {request.symptom}
+                        </p>
+                    </div>
+                    {(canStaffConfirm || canMarkRepairing) && (
+                        <>
+                            <div className="repair-mobile-case-actions">
+                                {canStaffConfirm && (
+                                    <button
+                                        type="button"
+                                        className="repair-mobile-action-btn repair-mobile-action-btn--confirm"
+                                        disabled={confirmingStaff || markingRepairing}
+                                        onClick={() => void handleStaffConfirm()}
+                                    >
+                                        {confirmingStaff ? '記録中…' : '担当者確認'}
+                                    </button>
+                                )}
+                                {canMarkRepairing && (
+                                    <button
+                                        type="button"
+                                        className="repair-mobile-action-btn repair-mobile-action-btn--repairing"
+                                        disabled={confirmingStaff || markingRepairing}
+                                        onClick={() => void handleMarkRepairing()}
+                                    >
+                                        {markingRepairing ? '記録中…' : '修理中'}
+                                    </button>
+                                )}
+                            </div>
+                            <p className="repair-mobile-case-actions-hint">
+                                ボタンを押すと案件一覧のステータスが更新され、LINE受付のお客様へ進捗が通知されます。
+                            </p>
+                        </>
+                    )}
+                </section>
 
                 <section className="repair-mobile-section">
                     <h2>顧客・機器情報</h2>

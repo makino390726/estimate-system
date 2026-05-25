@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { recordRepairStaffConfirmed } from '@/lib/repairStaffConfirm'
+import { recordRepairRepairing } from '@/lib/repairStaffConfirm'
 import { getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
 
 export const runtime = 'nodejs'
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
         }
 
         const sb = getRepairAdminSupabase()
-        const result = await recordRepairStaffConfirmed(sb, repairRequestId)
+        const result = await recordRepairRepairing(sb, repairRequestId)
 
         if (!result.ok) {
             return NextResponse.json({ error: result.message }, { status: 400 })
@@ -25,12 +25,12 @@ export async function POST(request: Request) {
             ok: true,
             request_no: result.requestNo,
             status_updated: result.statusUpdated,
-            already_confirmed: result.alreadyConfirmed,
+            already_repairing: result.alreadyRepairing,
             received_via: result.receivedVia,
         })
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : 'Unknown error'
-        console.error('repair-mobile staff-confirm:', e)
+        console.error('repair-mobile mark-repairing:', e)
         return NextResponse.json({ error: message }, { status: 500 })
     }
 }

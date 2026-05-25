@@ -224,7 +224,7 @@ export default function LineWorksStaffNotifyPage() {
                 <h1 style={{ margin: '12px 0 8px', fontSize: 24 }}>修理通知 LINE WORKS 連携</h1>
                 <p style={{ margin: 0, color: '#94a3b8', fontSize: 14, lineHeight: 1.6 }}>
                     修理依頼受付時、管轄営業所の担当者へ LINE WORKS Bot から通知します。
-                    新規受付通知には「担当者確認」「修理中」ボタンが付きます。タップで進捗が記録され、LINE受付のお客様へステータスが通知されます。
+                    新規受付通知の「案件を開く」から案件画面を開き、案件情報欄の「担当者確認」「修理中」で進捗を記録してください（LINE受付のお客様へステータスが通知されます）。
                     <br />
                     <strong>lineworks_user_id</strong> にはログインメール（推奨）または WORKS ユーザー ID を入力してください。
                 </p>

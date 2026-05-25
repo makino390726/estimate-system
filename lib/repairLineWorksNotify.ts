@@ -2,12 +2,7 @@ import { randomUUID } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
 import { findLineWorksStaffMappingsForNames } from '@/lib/lineworksStaffMappingDb'
-import {
-    buildRepairAckPostbackData,
-    buildRepairRepairingPostbackData,
-    isLineWorksConfigured,
-    sendLineWorksUserMessage,
-} from '@/lib/lineWorksClient'
+import { isLineWorksConfigured, sendLineWorksUserMessage } from '@/lib/lineWorksClient'
 import { notifyRepairCustomerLineStatus } from '@/lib/repairCustomerLineNotify'
 import { persistRepairStatusTransition } from '@/lib/repairStatusUpdate'
 import {
@@ -96,9 +91,8 @@ function buildCompletionReportLineWorksMessage(params: {
     }
 }
 
-/** 新規受付通知（担当者確認・修理中ボタン + 案件リンク） */
+/** 新規受付通知（トーク画面は「案件を開く」のみ。進捗操作は案件画面で行う） */
 function buildCaseLinkMessage(params: {
-    notificationId: string
     requestNo: number
     customerName: string
     branchLabel: string
@@ -121,26 +115,15 @@ function buildCaseLinkMessage(params: {
         params.category ? `分野: ${formatRepairCategoryDisplay(params.category)}` : null,
         `症状: ${params.symptom}`,
         '',
-        '「担当者確認」または「修理中」をタップすると進捗が記録され、',
-        'LINE受付のお客様へステータスが通知されます。',
+        '下の「案件を開く」から案件情報を表示し、',
+        '「担当者確認」「修理中」ボタンで進捗を記録してください。',
+        '（LINE受付のお客様へステータスが通知されます）',
     ].filter(Boolean)
 
     return {
         type: 'button_template',
         contentText: lines.join('\n'),
         actions: [
-            {
-                type: 'message',
-                label: '担当者確認',
-                text: `担当者確認 #${params.requestNo}`,
-                postback: buildRepairAckPostbackData(params.notificationId),
-            },
-            {
-                type: 'message',
-                label: '修理中',
-                text: `修理中 #${params.requestNo}`,
-                postback: buildRepairRepairingPostbackData(params.notificationId),
-            },
             {
                 type: 'uri',
                 label: '案件を開く',
@@ -254,7 +237,6 @@ export async function sendRepairRequestLineWorksToStaff(
 
         try {
             const content = buildCaseLinkMessage({
-                notificationId,
                 requestNo: repair.request_no,
                 customerName: repair.customer_name,
                 branchLabel,
