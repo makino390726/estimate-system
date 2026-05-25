@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { pushMessage } from '@/lib/lineClient'
 import { isValidLineUserId } from '@/lib/lineUserId'
+import { formatLinePushError } from '@/lib/linePushErrors'
 import { pushRepairCompletionToCustomer } from '@/lib/repairLineCustomerNotify'
 
 function trim(v: unknown) {
@@ -10,7 +11,7 @@ function trim(v: unknown) {
 export type RepairCustomerLineNotifyResult =
     | { ok: true }
     | { ok: false; skipped: string }
-    | { ok: false; error: string }
+    | { ok: false; error: string; line_profile_http_status?: number | null }
 
 function canNotifyCustomerLine(repair: {
     received_via?: string | null
@@ -45,24 +46,26 @@ export async function notifyRepairCustomerOnCompleted(
         .eq('repair_request_id', repairId)
         .order('created_at')
 
-    try {
-        await pushRepairCompletionToCustomer(lineUserId, {
-            repairRequestId: repairId,
-            requestNo: repair.request_no,
-            visitCompletedDate: repair.visit_completed_date,
-            treatmentDetails: repair.treatment_details,
-            rootCause: repair.root_cause,
-            durationMinutes: repair.repair_duration_minutes,
-            visitFee: repair.visit_fee,
-            laborCost: repair.labor_cost,
-            parts: parts || [],
-            alreadyAcknowledged: Boolean(repair.customer_acknowledged_at),
-        })
+    const pushResult = await pushRepairCompletionToCustomer(lineUserId, {
+        repairRequestId: repairId,
+        requestNo: repair.request_no,
+        visitCompletedDate: repair.visit_completed_date,
+        treatmentDetails: repair.treatment_details,
+        rootCause: repair.root_cause,
+        durationMinutes: repair.repair_duration_minutes,
+        visitFee: repair.visit_fee,
+        laborCost: repair.labor_cost,
+        parts: parts || [],
+        alreadyAcknowledged: Boolean(repair.customer_acknowledged_at),
+    })
+
+    if (pushResult.ok) {
         return { ok: true }
-    } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e)
-        console.error('notifyRepairCustomerOnCompleted:', repairId, e)
-        return { ok: false, error: message }
+    }
+
+    return {
+        ok: false,
+        error: `LINE完了報告の送信に失敗しました (HTTP ${pushResult.status}): ${formatLinePushError(pushResult.status, pushResult.error)}`,
     }
 }
 
@@ -100,16 +103,10 @@ export async function notifyRepairCustomerLineStatus(
     }
 
     const statusLabels: Record<string, string> = {
-        received: '受付完了',
-        staff_confirmed: '担当者確認済み',
-        confirming: '確認中',
-        phone_done: '電話対応済み',
-        visit_scheduled: '出張訪問予定',
-        parts_waiting: '部品手配中',
-        repairing: '修理作業中',
-        completed: '完了報告済（承諾待ち）',
-        billed: '請求済み',
-        closed: '完了',
+        received: '受付',
+        staff_confirmed: '担当者確認',
+        repairing: '修理中',
+        completed: '完了',
     }
 
     const statusText = statusLabels[repair.status] || repair.status
@@ -118,9 +115,6 @@ export async function notifyRepairCustomerLineStatus(
         `受付番号: #${repair.request_no}`,
         `ステータス: ${statusText}`,
         '',
-        repair.status === 'visit_scheduled' && repair.visit_scheduled_date
-            ? `出張予定日: ${repair.visit_scheduled_date}`
-            : null,
     ]
         .filter(Boolean)
         .join('\n')

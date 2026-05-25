@@ -12,6 +12,7 @@ import {
 import {
     REPAIR_PRIORITY_CONFIG,
     REPAIR_STATUS_CONFIG,
+    canSubmitRepairCompletionReport,
     getMobileSuggestedStatuses,
     isAwaitingCustomerAck,
 } from '@/lib/repairConstants'
@@ -574,18 +575,16 @@ export default function RepairMobileDetailPage() {
                     <div className={`repair-mobile-msg ${message.type}`}>{message.text}</div>
                 )}
 
-                {request.status === 'closed' && (
+                {request.status === 'completed' && request.customer_acknowledged_at && (
                     <div className="repair-mobile-msg ok">
-                        案件は完了です（顧客承諾済み
-                        {request.customer_acknowledged_at
-                            ? ` ${new Date(request.customer_acknowledged_at).toLocaleString('ja-JP')}`
-                            : ''}
+                        完了（顧客承諾済み
+                        {` ${new Date(request.customer_acknowledged_at).toLocaleString('ja-JP')}`}
                         ）
                     </div>
                 )}
                 {isAwaitingCustomerAck(request.status) && !request.customer_acknowledged_at && (
                     <div className="repair-mobile-msg ok">
-                        完了報告済みです。顧客がLINEで「承諾する」を押すと案件が完了になります。
+                        完了報告済みです。顧客がLINEで「承諾する」を押すと承諾日時が記録されます。
                     </div>
                 )}
 
@@ -1025,7 +1024,7 @@ export default function RepairMobileDetailPage() {
             )}
 
             <div className="repair-mobile-bar" style={{ maxWidth: '100%' }}>
-                {!isAwaitingCustomerAck(request.status) && request.status !== 'closed' && (
+                {canSubmitRepairCompletionReport(request.status) && (
                     <button
                         type="button"
                         className="repair-mobile-btn-primary"

@@ -15,7 +15,13 @@ import { normalizeRepairMediaUrls } from '@/lib/repairPhotoStorage'
 import { buildRepairSymptomQuery } from '@/lib/repairSymptomText'
 import { isValidLineUserId } from '@/lib/lineUserId'
 import { buildRepairLineLinkLiffUrl } from '@/lib/repairLiffUrls'
-import { canSubmitRepairCompletionReport, getRepairNextStatuses } from '@/lib/repairConstants'
+import {
+    canSubmitRepairCompletionReport,
+    getRepairNextStatuses,
+    REPAIR_STATUS_CONFIG,
+    REPAIR_MANAGED_STATUS_ORDER,
+    FINISHED_REPAIR_STATUSES,
+} from '@/lib/repairConstants'
 import { parseRepairApiJsonResponse } from '@/lib/repairApiResponse'
 import { RepairPhoneCallLinks } from '@/components/RepairPhoneCallLink'
 
@@ -90,18 +96,7 @@ type StaffOption = { id: string; name: string; department: string | null; email:
 
 // ── Constants ──
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-    received:        { label: '受付',         color: '#60a5fa', bg: '#1e3a5f' },
-    staff_confirmed: { label: '担当者確認',   color: '#2dd4bf', bg: '#134e4a' },
-    confirming:      { label: '確認中',       color: '#fbbf24', bg: '#4a3728' },
-    phone_done:      { label: '電話対応済', color: '#a78bfa', bg: '#3b2e5a' },
-    visit_scheduled: { label: '出張予定',   color: '#fb923c', bg: '#4a3020' },
-    parts_waiting:   { label: '部品待ち',   color: '#f87171', bg: '#4a2020' },
-    repairing:       { label: '修理中',     color: '#38bdf8', bg: '#1e3a5f' },
-    completed:       { label: '完了報告済', color: '#4ade80', bg: '#1a3a2a' },
-    billed:          { label: '請求済',     color: '#818cf8', bg: '#2e2e5a' },
-    closed:          { label: '完了',       color: '#94a3b8', bg: '#334155' },
-}
+const STATUS_CONFIG = REPAIR_STATUS_CONFIG
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
     urgent: { label: '緊急',   color: '#ef4444', bg: '#4a1515' },
@@ -214,6 +209,10 @@ export default function RepairRequestsPage() {
 
     // Filters
     const [filterStatus, setFilterStatus] = useState<string>('active')
+    /** フィルタに依存しないステータス件数（対応中フィルタ時も完了件数を表示） */
+    const [globalStatusCounts, setGlobalStatusCounts] = useState<Record<string, number>>({})
+    /** 完了報告送信成功後、閉じる時の古いステータス上書きを防ぐ */
+    const completionReportSentForIdRef = useRef<string | null>(null)
     const [filterPriority, setFilterPriority] = useState<string>('')
     const [filterBranch, setFilterBranch] = useState<string>('')
     const [searchKeyword, setSearchKeyword] = useState('')
@@ -298,6 +297,8 @@ export default function RepairRequestsPage() {
 
             if (filterStatus === 'active') {
                 query = query.not('status', 'in', '("completed","billed","closed")')
+            } else if (filterStatus === 'finished') {
+                query = query.in('status', [...FINISHED_REPAIR_STATUSES])
             } else if (filterStatus === 'needs_staff_ack') {
                 query = query.eq('status', 'received')
             } else if (filterStatus && filterStatus !== 'all') {
@@ -321,8 +322,26 @@ export default function RepairRequestsPage() {
         }
     }, [filterStatus, filterPriority, filterBranch])
 
+    const fetchGlobalStatusCounts = useCallback(async () => {
+        try {
+            const { data, error } = await supabase.from('repair_requests').select('status')
+            if (error) throw error
+            const counts: Record<string, number> = {}
+            for (const row of data || []) {
+                const st = String(row.status || '')
+                counts[st] = (counts[st] || 0) + 1
+            }
+            setGlobalStatusCounts(counts)
+        } catch (e) {
+            console.error('status counts:', e)
+        }
+    }, [])
+
     useEffect(() => { fetchStaffs() }, [fetchStaffs])
-    useEffect(() => { fetchRequests() }, [fetchRequests])
+    useEffect(() => {
+        void fetchRequests()
+        void fetchGlobalStatusCounts()
+    }, [fetchRequests, fetchGlobalStatusCounts])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -342,9 +361,10 @@ export default function RepairRequestsPage() {
     useEffect(() => {
         const timer = setInterval(() => {
             void fetchRequests({ silent: true })
+            void fetchGlobalStatusCounts()
         }, 20_000)
         return () => clearInterval(timer)
-    }, [fetchRequests])
+    }, [fetchRequests, fetchGlobalStatusCounts])
 
     const filteredRows = useMemo(() => {
         const kw = searchKeyword.trim().toLowerCase()
@@ -359,12 +379,12 @@ export default function RepairRequestsPage() {
         })
     }, [rows, searchKeyword])
 
-    // Status counts
-    const statusCounts = useMemo(() => {
-        const counts: Record<string, number> = {}
-        rows.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1 })
-        return counts
-    }, [rows])
+    const statusCounts = globalStatusCounts
+
+    const finishedCount = useMemo(
+        () => FINISHED_REPAIR_STATUSES.reduce((n, st) => n + (statusCounts[st] || 0), 0),
+        [statusCounts],
+    )
 
     const handleChange = (field: keyof FormState, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }))
@@ -695,7 +715,7 @@ export default function RepairRequestsPage() {
                 | undefined
             const fieldWarnings = data.field_warnings as string[] | undefined
             const lineTokenSet = data.line_channel_token_set === true
-            let feedback = '完了報告を送信しました。ステータスを「完了報告済」に更新しました。'
+            let feedback = '完了報告を送信しました。ステータスを「完了」に更新しました。'
             if (lineNotify?.ok) {
                 feedback += '（顧客へLINEで届けました）'
             } else if (lineNotify?.skipped) {
@@ -723,8 +743,25 @@ export default function RepairRequestsPage() {
                     : null,
             )
             setDetailStatusBaseline('completed')
+            completionReportSentForIdRef.current = rid
+            const visitDate = new Date().toISOString().split('T')[0]
+            setRows((prev) =>
+                prev.map((r) =>
+                    r.id === rid
+                        ? {
+                              ...r,
+                              status: 'completed',
+                              treatment_details:
+                                  completionData.treatment_details || r.treatment_details,
+                              root_cause: completionData.root_cause || r.root_cause,
+                              visit_completed_date: visitDate,
+                          }
+                        : r,
+                ),
+            )
             setFilterStatus('completed')
             await fetchRequests({ silent: true })
+            void fetchGlobalStatusCounts()
         } catch (e: unknown) {
             setNotifyFeedback(e instanceof Error ? e.message : '完了報告の送信に失敗しました')
         } finally {
@@ -784,6 +821,7 @@ export default function RepairRequestsPage() {
     }
 
     const openDetail = async (row: RepairRequest) => {
+        completionReportSentForIdRef.current = null
         setDetailRequest({
             ...row,
             photo_urls: normalizeRepairMediaUrls(row.photo_urls),
@@ -940,7 +978,12 @@ export default function RepairRequestsPage() {
             setDetailStatusBaseline(null)
             return
         }
+        if (submittingCompletion) {
+            setDetailNotifyMessage('完了報告を送信中です。送信が終わってから閉じてください。')
+            return
+        }
         const rid = detailRequest.id
+        const skipStatusOnClose = completionReportSentForIdRef.current === rid
         const statusBaseline = detailStatusBaseline ?? detailRequest.status
         const statusDraft = detailRequest.status
         const receivedVia = detailRequest.received_via
@@ -1007,7 +1050,8 @@ export default function RepairRequestsPage() {
                     setShowPartSuggestions(false)
                 }
 
-                const statusChanged = snapshot.statusDraft !== snapshot.statusBaseline
+                const statusChanged =
+                    !skipStatusOnClose && snapshot.statusDraft !== snapshot.statusBaseline
                 if (statusChanged) {
                     if (snapshot.statusDraft === 'completed') {
                         const res = await fetch('/api/repair-requests/complete-report', {
@@ -1047,6 +1091,10 @@ export default function RepairRequestsPage() {
                         : '案件内容を保存して閉じました',
                 )
                 await fetchRequests({ silent: true })
+                void fetchGlobalStatusCounts()
+                if (skipStatusOnClose) {
+                    completionReportSentForIdRef.current = null
+                }
             } catch (e: any) {
                 console.error('repair_requests close-save:', e)
                 setMessage(`モーダルは閉じましたが保存に失敗しました: ${e.message}（一覧から案件を開き直して再度お試しください）`)
@@ -1212,7 +1260,7 @@ export default function RepairRequestsPage() {
                 <div>
                     <h1 style={{ margin: 0, fontSize: 32, color: '#f8fafc' }}>修理案件管理</h1>
                     <p style={{ margin: '8px 0 0 0', color: '#94a3b8', lineHeight: 1.6 }}>
-                        修理受付から完了・請求まで、案件のライフサイクルを一元管理します。
+                        修理受付から完了報告までを管理します（請求以降は別システム）。
                         <br />
                         <span style={{ color: '#2dd4bf' }}>
                             LINE WORKS の通知から案件画面を開き、
@@ -1299,12 +1347,38 @@ export default function RepairRequestsPage() {
                     >
                         担当者確認済のみ
                     </button>
+                    <button
+                        type="button"
+                        className="btn-3d"
+                        onClick={() => setFilterStatus('finished')}
+                        style={{
+                            padding: '8px 14px',
+                            fontSize: 13,
+                            background: filterStatus === 'finished' ? '#1a3a2a' : '#334155',
+                            border: `1px solid ${filterStatus === 'finished' ? '#4ade80' : '#475569'}`,
+                        }}
+                    >
+                        完了案件を表示{finishedCount > 0 ? `（${finishedCount}）` : ''}
+                    </button>
                 </div>
             </div>
 
             {/* Status summary cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 20 }}>
-                {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                <div
+                    onClick={() => setFilterStatus('finished')}
+                    style={{
+                        ...panelStyle, padding: '12px 14px', cursor: 'pointer', textAlign: 'center',
+                        borderColor: filterStatus === 'finished' ? '#4ade80' : '#334155',
+                        transition: 'border-color 0.2s',
+                    }}
+                >
+                    <div style={{ fontSize: 24, fontWeight: 800, color: '#4ade80' }}>{finishedCount}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>完了案件</div>
+                </div>
+                {REPAIR_MANAGED_STATUS_ORDER.map((key) => {
+                    const cfg = STATUS_CONFIG[key]
+                    return (
                     <div
                         key={key}
                         onClick={() => setFilterStatus(key)}
@@ -1317,7 +1391,8 @@ export default function RepairRequestsPage() {
                         <div style={{ fontSize: 24, fontWeight: 800, color: cfg.color }}>{statusCounts[key] || 0}</div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{cfg.label}</div>
                     </div>
-                ))}
+                    )
+                })}
             </div>
 
             {/* Filters */}
@@ -1327,10 +1402,11 @@ export default function RepairRequestsPage() {
                         <label style={labelStyle}>ステータス</label>
                         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={inputStyle}>
                             <option value="active">対応中のみ</option>
+                            <option value="finished">完了案件</option>
                             <option value="needs_staff_ack">要確認（受付のみ）</option>
                             <option value="all">すべて</option>
-                            {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                                <option key={k} value={k}>{v.label}</option>
+                            {REPAIR_MANAGED_STATUS_ORDER.map((k) => (
+                                <option key={k} value={k}>{STATUS_CONFIG[k].label}</option>
                             ))}
                         </select>
                     </div>
@@ -1613,7 +1689,11 @@ export default function RepairRequestsPage() {
                                             ? { boxShadow: 'inset 4px 0 0 #f59e0b' }
                                             : row.status === 'staff_confirmed'
                                                 ? { boxShadow: 'inset 4px 0 0 #2dd4bf' }
-                                                : undefined
+                                                : FINISHED_REPAIR_STATUSES.includes(
+                                                      row.status as (typeof FINISHED_REPAIR_STATUSES)[number],
+                                                  )
+                                                  ? { boxShadow: 'inset 4px 0 0 #4ade80' }
+                                                  : undefined
                                     return (
                                         <tr key={row.id} style={{ cursor: 'pointer', ...rowHighlight }} onClick={() => openDetail(row)}>
                                             <td style={tdStyle}>{row.request_no}</td>
@@ -1719,6 +1799,7 @@ export default function RepairRequestsPage() {
                                 <button
                                     type="button"
                                     disabled={submittingCompletion}
+                                    title={submittingCompletion ? '完了報告の送信が終わるまでお待ちください' : undefined}
                                     onClick={e => {
                                         e.preventDefault()
                                         e.stopPropagation()
@@ -1769,7 +1850,7 @@ export default function RepairRequestsPage() {
                                     {submittingCompletion ? '完了報告を送信中…' : '完了報告送信'}
                                 </button>
                                 <p style={{ margin: '8px 0 0', fontSize: 11, color: '#94a3b8' }}>
-                                    受付・担当者確認の段階からでも送信できます。送信後は一覧フィルタ「完了報告済」で確認してください。
+                                    受付・担当者確認の段階からでも送信できます。送信後は「完了案件を表示」またはステータス「完了」で確認してください。
                                     {!hasCustomerLineUserId(detailRequest.line_user_id) &&
                                         ' ※LINE ID未取得のため顧客へLINEは届きません。'}
                                 </p>
@@ -1780,7 +1861,7 @@ export default function RepairRequestsPage() {
                         {getRepairNextStatuses(detailRequest.status).filter((ns) => ns !== 'completed').length > 0 && (
                             <div style={{ marginBottom: 20, padding: '12px 14px', background: '#1e293b', borderRadius: 10, border: '1px solid #334155' }}>
                                 <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
-                                    中間ステータスは選んでから「保存して閉じる」で確定します（完了報告は上のボタン）。
+                                    流れ: 受付 → 担当者確認 → 修理中 → 完了報告送信。中間ステータスは選んでから「保存して閉じる」で確定（完了は上のボタン）。
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     {getRepairNextStatuses(detailRequest.status)
@@ -2155,7 +2236,7 @@ export default function RepairRequestsPage() {
                                 </div>
                                 <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0 0', lineHeight: 1.55 }}>
                                     <strong style={{ color: '#86efac' }}>完了報告送信</strong>
-                                    でステータスが「完了報告済」になり、顧客へLINE通知します（LINE ID がある場合）。
+                                    でステータスが「完了」になり、顧客へLINE通知します（LINE ID がある場合）。
                                     「修理内容のみ保存」はステータスを変えません。
                                 </p>
                             </div>

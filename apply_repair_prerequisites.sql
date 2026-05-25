@@ -20,7 +20,7 @@ alter table public.repair_requests
         'closed'
     ));
 
-comment on column public.repair_requests.status is 'received=受付, staff_confirmed=担当者確認(LINE WORKS), confirming=確認中, ...';
+comment on column public.repair_requests.status is '本システム: received=受付, staff_confirmed=担当者確認, repairing=修理中, completed=完了（請求以降は別システム）。旧値 confirming等もDB制約上残存';
 
 -- ② 出張費・工賃
 alter table public.repair_requests

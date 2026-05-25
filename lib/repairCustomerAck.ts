@@ -6,7 +6,7 @@ export type RepairCustomerAckResult =
 
 /**
  * 顧客が LINE postback で完了内容を承諾。
- * status: completed → closed、customer_acknowledged_at を記録。
+ * ステータスは「完了」のまま、customer_acknowledged_at のみ記録（請求以降は別システム）。
  */
 export async function acknowledgeRepairByCustomer(
     sb: SupabaseClient,
@@ -37,7 +37,7 @@ export async function acknowledgeRepairByCustomer(
         return { ok: true, requestNo: repair.request_no, alreadyDone: true }
     }
 
-    if (repair.status !== 'completed' && repair.status !== 'billed') {
+    if (repair.status !== 'completed') {
         return {
             ok: false,
             message: 'この案件はまだ完了報告の承諾を受け付けていません',
@@ -45,14 +45,10 @@ export async function acknowledgeRepairByCustomer(
     }
 
     const now = new Date().toISOString()
-    const oldStatus = repair.status
 
     const { error: upErr } = await sb
         .from('repair_requests')
-        .update({
-            customer_acknowledged_at: now,
-            status: 'closed',
-        })
+        .update({ customer_acknowledged_at: now })
         .eq('id', rid)
 
     if (upErr) {
@@ -61,8 +57,8 @@ export async function acknowledgeRepairByCustomer(
 
     await sb.from('repair_status_history').insert({
         repair_request_id: rid,
-        old_status: oldStatus,
-        new_status: 'closed',
+        old_status: 'completed',
+        new_status: 'completed',
         comment: 'customer_line_ack',
     })
 

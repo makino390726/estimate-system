@@ -48,6 +48,7 @@ type LiffModule = {
     isInClient: () => boolean
     login: () => void
     getProfile: () => Promise<{ userId: string; displayName: string; pictureUrl?: string }>
+    getFriendship?: () => Promise<{ friendFlag: boolean }>
     closeWindow: () => void
 }
 
@@ -57,6 +58,27 @@ const LIFF_ID_AI = process.env.NEXT_PUBLIC_LIFF_ID_AI || ''
 function isAiEntryPath(): boolean {
     if (typeof window === 'undefined') return false
     return window.location.pathname.replace(/\/$/, '').endsWith('/liff/ai')
+}
+
+function buildLineConfirmWarning(lineConf: {
+    error?: string
+    channel_basic_id?: string
+}): string {
+    const basicId = lineConf.channel_basic_id
+        ? String(lineConf.channel_basic_id).replace(/^@/, '')
+        : ''
+    return [
+        '【LINE確認メッセージ未送信】',
+        '受付は完了していますが、このトークに確認メッセージは届きません。',
+        '考えられる原因:',
+        '・このLINEが公式アカウントの友だちになっていない、またはブロックしている',
+        '・スマホのブラウザで開いた（LINEアプリのトークから開き直してください）',
+        '・受付したLINEアカウントと、今見ているトークが別人',
+        basicId ? `（公式ID: @${basicId}）` : '',
+        '友だち追加後、店舗担当者に再送を依頼してください。',
+    ]
+        .filter(Boolean)
+        .join('\n')
 }
 
 function formatLiffInitError(e: unknown): string {
@@ -82,11 +104,12 @@ function RepairFormInner() {
     const [submitting, setSubmitting] = useState(false)
     const [submitted, setSubmitted] = useState(false)
     const [requestNo, setRequestNo] = useState<number | null>(null)
+    const [lineConfirmWarning, setLineConfirmWarning] = useState('')
     const [linkSubmitting, setLinkSubmitting] = useState(false)
     const [linkDone, setLinkDone] = useState(false)
     const [linkRequestNo, setLinkRequestNo] = useState<number | null>(null)
     const [error, setError] = useState('')
-    /** AIモード: LIFF失敗時も検索は続行（赤い致命エラーにしない） */
+    /** AIモード: LIFF未設定時のみ表示（プロフィール取得失敗は修理フォームで再取得するため非表示） */
     const [liffNotice, setLiffNotice] = useState('')
     const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -152,12 +175,14 @@ function RepairFormInner() {
             const urlParams = new URLSearchParams(window.location.search)
             const preCategory = urlParams.get('category') || ''
             const preSymptom = urlParams.get('symptom') || ''
-            let stored: { category?: string; symptom?: string } | null = null
+            let stored: { category?: string; symptom?: string; displayName?: string } | null = null
             try {
                 const raw = sessionStorage.getItem(LIFF_PREFILL_KEY)
-                if (raw) stored = JSON.parse(raw) as { category?: string; symptom?: string }
+                if (raw) stored = JSON.parse(raw) as { category?: string; symptom?: string; displayName?: string }
             } catch { /* ignore */ }
             sessionStorage.removeItem(LIFF_PREFILL_KEY)
+
+            const nameFromStore = stored?.displayName?.trim() || ''
 
             if (isAi) {
                 const cat = preCategory ? repairCategoryToSheetType(preCategory) : (stored?.category || '')
@@ -169,70 +194,91 @@ function RepairFormInner() {
                 const symFromStore = stored?.symptom || ''
                 setForm(prev => ({
                     ...prev,
-                    customer_name: displayName || prev.customer_name,
+                    customer_name: displayName || nameFromStore || prev.customer_name,
                     ...(preCategory ? { category: repairCategoryToSheetType(preCategory) } : catFromStore ? { category: catFromStore } : {}),
                     ...(preSymptom ? { symptom: preSymptom } : symFromStore ? { symptom: symFromStore } : {}),
                 }))
             }
         }
 
+        const finishAiLoading = () => {
+            applyUrlAndSessionPrefill()
+            setLoading(false)
+        }
+
+        /** AI用LIFFが失敗しても修理用LIFFでプロフィール取得を試す（警告は出さない） */
+        const tryInitLiff = (id: string, options?: { forAiFallback?: boolean }): Promise<void> =>
+            import('@line/liff').then((mod) => {
+                const liffMod = mod.default as unknown as LiffModule
+                return liffMod.init({ liffId: id }).then(() => {
+                    if (!options?.forAiFallback) {
+                        setLiff(liffMod)
+                        if (typeof liffMod.isInClient === 'function') {
+                            setInLineClient(liffMod.isInClient())
+                        }
+                    }
+                    if (!liffMod.isLoggedIn()) {
+                        liffMod.login()
+                        return
+                    }
+                    return liffMod.getProfile().then((p) => {
+                        setProfile(p)
+                        if (!options?.forAiFallback) {
+                            applyUrlAndSessionPrefill(p.displayName)
+                        }
+                        if (!isAi && typeof liffMod.getFriendship === 'function') {
+                            return liffMod.getFriendship().then((f) => {
+                                if (!f.friendFlag) {
+                                    setLiffNotice(
+                                        '公式アカウントが友だち登録されていません。友だち追加すると、受付後にLINEで確認メッセージが届きます。リッチメニューから開いているかもご確認ください。',
+                                    )
+                                }
+                            })
+                        }
+                    })
+                })
+            })
+
         if (!liffId) {
             if (isAi) {
-                setLiffNotice('LINE連携は未設定ですが、AI検索は利用できます。')
-                applyUrlAndSessionPrefill()
+                if (!LIFF_ID) {
+                    setLiffNotice('LINE連携は未設定ですが、AI検索は利用できます。')
+                }
+                finishAiLoading()
             } else {
                 setError('LIFF IDが設定されていません（NEXT_PUBLIC_LIFF_ID）')
+                setLoading(false)
             }
-            setLoading(false)
             return
         }
 
-        import('@line/liff').then(mod => {
-            const liffMod = mod.default as unknown as LiffModule
-            liffMod.init({ liffId }).then(() => {
-                setLiff(liffMod)
-                if (typeof liffMod.isInClient === 'function') {
-                    setInLineClient(liffMod.isInClient())
-                }
-                if (!liffMod.isLoggedIn()) {
-                    liffMod.login()
-                    return
-                }
-                return liffMod.getProfile()
-                    .then((p) => {
-                        setProfile(p)
-                        applyUrlAndSessionPrefill(p.displayName)
-                    })
-                    .catch((e) => {
-                        console.error('LIFF getProfile error:', e)
-                        if (isAi) {
-                            setLiffNotice('LINEプロフィールは取得できませんでしたが、AI検索は利用できます。')
-                            applyUrlAndSessionPrefill()
-                        } else {
-                            setError('LINEプロフィールの取得に失敗しました。LINEアプリから再度開いてください。')
-                        }
-                    })
-                    .finally(() => setLoading(false))
-            }).catch((e: unknown) => {
+        tryInitLiff(liffId)
+            .catch((e: unknown) => {
                 console.error('LIFF init error:', e, { liffId, isAi })
                 if (isAi) {
-                    setLiffNotice('LINE連携に失敗しましたが、AI検索は利用できます。')
-                    applyUrlAndSessionPrefill()
-                } else {
-                    setError(formatLiffInitError(e))
+                    const repairLiffId = LIFF_ID.trim()
+                    if (repairLiffId && repairLiffId !== liffId) {
+                        return tryInitLiff(repairLiffId, { forAiFallback: true }).catch((e2) => {
+                            console.warn('LIFF repair fallback for AI:', e2)
+                        })
+                    }
+                    return undefined
                 }
-                setLoading(false)
+                setError(formatLiffInitError(e))
             })
-        }).catch((e) => {
-            console.error('LIFF SDK load error:', e)
-            if (isAi) {
-                setLiffNotice('LINE連携に失敗しましたが、AI検索は利用できます。')
-                applyUrlAndSessionPrefill()
-            } else {
-                setError('LINE連携モジュールの読み込みに失敗しました。')
-            }
-            setLoading(false)
-        })
+            .catch((e) => {
+                console.error('LIFF getProfile error:', e)
+                if (!isAi) {
+                    setError('LINEプロフィールの取得に失敗しました。LINEアプリから再度開いてください。')
+                }
+            })
+            .finally(() => {
+                if (isAi) {
+                    finishAiLoading()
+                } else {
+                    setLoading(false)
+                }
+            })
     }, [mode])
 
     useEffect(() => {
@@ -290,6 +336,7 @@ function RepairFormInner() {
             sessionStorage.setItem(LIFF_PREFILL_KEY, JSON.stringify({
                 category: aiSheetCategory || '',
                 symptom: aiSymptom.trim(),
+                displayName: profile?.displayName?.trim() || '',
             }))
         } catch { /* ignore */ }
         window.location.assign(new URL('/liff/repair-form', window.location.origin).toString())
@@ -370,6 +417,7 @@ function RepairFormInner() {
         }
         setSubmitting(true)
         setError('')
+        setLineConfirmWarning('')
 
         try {
             const resolvedCategory = form.category === 'unknown' && form.custom_category.trim()
@@ -393,6 +441,10 @@ function RepairFormInner() {
             }
             const result = await res.json()
             setRequestNo(result.request_no || null)
+            const lineConf = result.line_confirmation as { ok?: boolean; error?: string; channel_basic_id?: string } | undefined
+            if (lineConf && lineConf.ok === false) {
+                setLineConfirmWarning(buildLineConfirmWarning(lineConf))
+            }
             setSubmitted(true)
         } catch (err: any) {
             setError(err.message || '送信に失敗しました')
@@ -586,16 +638,22 @@ function RepairFormInner() {
                     )}
                     <p style={styles.successText}>
                         修理依頼を受け付けました。<br />
-                        担当者より折り返しご連絡いたします。<br />
-                        LINEにも確認メッセージをお送りしました。
+                        担当者より折り返しご連絡いたします。
+                        {!lineConfirmWarning && (
+                            <>
+                                <br />
+                                LINEにも確認メッセージをお送りしました。
+                            </>
+                        )}
                     </p>
+                    {lineConfirmWarning && (
+                        <div style={styles.warningBoxCard}>{lineConfirmWarning}</div>
+                    )}
                     <button type="button" onClick={handleClose} style={styles.closeButton}>
                         閉じる
                     </button>
                     {closeHint && (
-                        <p style={{ marginTop: 14, fontSize: 13, color: '#fde68a', lineHeight: 1.6, textAlign: 'center' }}>
-                            {closeHint}
-                        </p>
+                        <p style={styles.hintOnCard}>{closeHint}</p>
                     )}
                 </div>
             </div>
@@ -1073,6 +1131,28 @@ const styles: Record<string, React.CSSProperties> = {
         fontSize: '13px',
         border: '1px solid #b45309',
         lineHeight: 1.5,
+    },
+    /** 白い完了画面用（黄文字は背景と同化するため使わない） */
+    warningBoxCard: {
+        margin: '16px 20px 0',
+        padding: '14px 16px',
+        background: '#fff7ed',
+        color: '#7c2d12',
+        border: '2px solid #ea580c',
+        borderRadius: '10px',
+        fontSize: '14px',
+        lineHeight: 1.7,
+        textAlign: 'left' as const,
+        whiteSpace: 'pre-wrap' as const,
+        fontWeight: 500,
+    },
+    hintOnCard: {
+        marginTop: 14,
+        padding: '0 20px',
+        fontSize: 13,
+        color: '#475569',
+        lineHeight: 1.6,
+        textAlign: 'center' as const,
     },
     loadingWrapper: {
         display: 'flex',

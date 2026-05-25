@@ -1,81 +1,237 @@
 /** 修理案件のステータス表示・遷移（PC・モバイル共通） */
 
+
+
+/** 本システムで管理するステータス（受付→担当者確認→修理中→完了） */
+
+export const REPAIR_MANAGED_STATUS_ORDER = [
+
+    'received',
+
+    'staff_confirmed',
+
+    'repairing',
+
+    'completed',
+
+] as const
+
+
+
+export type RepairManagedStatus = (typeof REPAIR_MANAGED_STATUS_ORDER)[number]
+
+
+
+/** DB上の旧ステータス（表示のみ・新規遷移は修理中へ誘導） */
+
+export const REPAIR_LEGACY_STATUSES = [
+
+    'confirming',
+
+    'phone_done',
+
+    'visit_scheduled',
+
+    'parts_waiting',
+
+    'billed',
+
+    'closed',
+
+] as const
+
+
+
 export const REPAIR_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+
     received: { label: '受付', color: '#60a5fa', bg: '#1e3a5f' },
+
     staff_confirmed: { label: '担当者確認', color: '#2dd4bf', bg: '#134e4a' },
-    confirming: { label: '確認中', color: '#fbbf24', bg: '#4a3728' },
-    phone_done: { label: '電話対応済', color: '#a78bfa', bg: '#3b2e5a' },
-    visit_scheduled: { label: '出張予定', color: '#fb923c', bg: '#4a3020' },
-    parts_waiting: { label: '部品待ち', color: '#f87171', bg: '#4a2020' },
+
     repairing: { label: '修理中', color: '#38bdf8', bg: '#1e3a5f' },
-    /** 担当者が完了報告を送信済み・顧客承諾待ち */
-    completed: { label: '完了報告済', color: '#4ade80', bg: '#1a3a2a' },
-    billed: { label: '請求済', color: '#818cf8', bg: '#2e2e5a' },
-    /** 顧客承諾後の業務完了 */
-    closed: { label: '完了', color: '#94a3b8', bg: '#334155' },
+
+    completed: { label: '完了', color: '#4ade80', bg: '#1a3a2a' },
+
+    // 旧データ用（一覧バッジのみ）
+
+    confirming: { label: '確認中（旧）', color: '#fbbf24', bg: '#4a3728' },
+
+    phone_done: { label: '電話対応済（旧）', color: '#a78bfa', bg: '#3b2e5a' },
+
+    visit_scheduled: { label: '出張予定（旧）', color: '#fb923c', bg: '#4a3020' },
+
+    parts_waiting: { label: '部品待ち（旧）', color: '#f87171', bg: '#4a2020' },
+
+    billed: { label: '請求済（旧）', color: '#818cf8', bg: '#2e2e5a' },
+
+    closed: { label: '終了（旧）', color: '#94a3b8', bg: '#334155' },
+
 }
+
+
 
 export const REPAIR_PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
+
     urgent: { label: '緊急', color: '#ef4444' },
+
     high: { label: '高', color: '#f97316' },
+
     normal: { label: '通常', color: '#60a5fa' },
+
     low: { label: '低', color: '#94a3b8' },
+
 }
+
+
 
 const STATUS_FLOW: Record<string, string[]> = {
-    received: ['staff_confirmed', 'confirming', 'phone_done', 'visit_scheduled', 'completed'],
-    staff_confirmed: ['confirming', 'phone_done', 'visit_scheduled', 'repairing', 'completed'],
-    confirming: ['phone_done', 'visit_scheduled', 'parts_waiting', 'completed'],
-    phone_done: ['visit_scheduled', 'parts_waiting', 'repairing', 'completed'],
-    visit_scheduled: ['repairing', 'parts_waiting', 'completed'],
-    parts_waiting: ['visit_scheduled', 'repairing', 'completed'],
-    repairing: ['completed', 'parts_waiting'],
-    completed: ['billed'],
-    billed: ['closed'],
+
+    received: ['staff_confirmed'],
+
+    staff_confirmed: ['repairing'],
+
+    repairing: [],
+
+    completed: [],
+
+    confirming: ['repairing'],
+
+    phone_done: ['repairing'],
+
+    visit_scheduled: ['repairing'],
+
+    parts_waiting: ['repairing'],
+
+    billed: [],
+
     closed: [],
+
 }
 
-/** 完了報告送信可能（顧客承諾前） */
+
+
+/** 完了報告送信可能 */
+
 export function canSubmitRepairCompletionReport(status: string): boolean {
-    return status !== 'completed' && status !== 'billed' && status !== 'closed'
+
+    return status !== 'completed' && !isRepairFinishedStatus(status)
+
 }
 
-/** PC 修理案件管理用 */
+
+
+/** PC 修理案件管理：次に選べる中間ステータス（完了は専用ボタン） */
+
 export function getRepairNextStatuses(current: string): string[] {
+
     return STATUS_FLOW[current] || []
+
 }
 
-/** 現場スマホ向け（完了報告は専用ボタンのみ。completed は含めない） */
-export const MOBILE_QUICK_STATUSES = ['visit_scheduled', 'repairing', 'parts_waiting'] as const
 
-const MOBILE_EXCLUDED_STATUSES = new Set(['completed', 'closed', 'billed'])
+
+/** 現場スマホ：修理中へのクイック変更のみ */
+
+export const MOBILE_QUICK_STATUSES = ['repairing'] as const
+
+
+
+const MOBILE_EXCLUDED_STATUSES = new Set<string>(['completed', 'closed', 'billed'])
+
+
 
 export function getMobileSuggestedStatuses(current: string): string[] {
-    const quick = MOBILE_QUICK_STATUSES.filter((s) => s !== current)
+
+    if (current === 'received') return []
+
+    if (current === 'staff_confirmed') return ['repairing']
+
+    if (REPAIR_LEGACY_STATUSES.includes(current as (typeof REPAIR_LEGACY_STATUSES)[number])) {
+
+        return current === 'repairing' ? [] : ['repairing']
+
+    }
+
     const fromFlow = (STATUS_FLOW[current] || []).filter((s) =>
+
         MOBILE_QUICK_STATUSES.includes(s as (typeof MOBILE_QUICK_STATUSES)[number]),
+
     )
-    const merged = [...new Set([...fromFlow, ...quick])]
-    return merged.filter((s) => s !== current && !MOBILE_EXCLUDED_STATUSES.has(s))
+
+    return fromFlow.filter((s) => s !== current && !MOBILE_EXCLUDED_STATUSES.has(s))
+
 }
 
-/** ステータス遷移ボタン表示（完了報告送信アクション） */
+
+
 export function getRepairStatusTransitionLabel(status: string): string {
+
     if (status === 'completed') return '完了報告送信'
+
     return REPAIR_STATUS_CONFIG[status]?.label ?? status
+
 }
 
-/** 完了報告送信済みか（顧客承諾前） */
+
+
+/** 完了報告済み・顧客承諾待ち */
+
 export function isAwaitingCustomerAck(status: string): boolean {
-    return status === 'completed' || status === 'billed'
+
+    return status === 'completed'
+
 }
 
-export const ACTIVE_REPAIR_STATUSES = [
+
+
+export const ACTIVE_REPAIR_STATUSES: RepairManagedStatus[] = [
+
     'received',
+
     'staff_confirmed',
-    'confirming',
-    'phone_done',
-    'visit_scheduled',
-    'parts_waiting',
+
     'repairing',
+
 ]
+
+
+
+/** 一覧の「完了案件」（旧 billed/closed も含む） */
+
+export const FINISHED_REPAIR_STATUSES = ['completed', 'billed', 'closed'] as const
+
+
+
+const TERMINAL_REPAIR_STATUSES = new Set<string>(FINISHED_REPAIR_STATUSES)
+
+
+
+export function isRepairFinishedStatus(status: string): boolean {
+
+    return TERMINAL_REPAIR_STATUSES.has(status)
+
+}
+
+
+
+export function isRepairLegacyStatus(status: string): boolean {
+
+    return (REPAIR_LEGACY_STATUSES as readonly string[]).includes(status)
+
+}
+
+
+
+/** 完了後に「受付」等へ戻すダウングレードを防ぐ */
+
+export function isAllowedRepairStatusTransition(from: string, to: string): boolean {
+
+    if (from === to) return true
+
+    if (!TERMINAL_REPAIR_STATUSES.has(from)) return true
+
+    return false
+
+}
+
+

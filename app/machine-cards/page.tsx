@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
+import { REPAIR_STATUS_CONFIG } from '@/lib/repairConstants'
 
 // ── Types ──
 
@@ -80,11 +81,9 @@ const tdStyle: React.CSSProperties = {
     border: '1px solid #334155', padding: '8px 10px', fontSize: 12, color: '#cbd5e1', verticalAlign: 'top',
 }
 
-const STATUS_LABELS: Record<string, string> = {
-    received: '受付', staff_confirmed: '担当者確認', confirming: '確認中', phone_done: '電話対応済',
-    visit_scheduled: '出張予定', parts_waiting: '部品待ち', repairing: '修理中',
-    completed: '完了報告済', billed: '請求済', closed: '完了',
-}
+const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+    Object.entries(REPAIR_STATUS_CONFIG).map(([k, v]) => [k, v.label]),
+)
 
 export default function MachineCardsPage() {
     const [cards, setCards] = useState<MachineCard[]>([])

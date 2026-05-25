@@ -61,7 +61,7 @@ export async function POST(request: Request) {
                 : String(existing.status || 'received')
 
         const currentStatus = String(existing.status || '')
-        if (currentStatus === 'completed' || currentStatus === 'closed') {
+        if (currentStatus === 'completed') {
             return NextResponse.json(
                 { error: `すでに完了報告済み、または案件完了です（現在: ${currentStatus}）` },
                 { status: 400 },

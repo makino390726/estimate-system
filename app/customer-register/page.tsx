@@ -11,6 +11,7 @@ import {
     type WarrantySavedMapping,
 } from '@/lib/warrantyMappingStorage'
 import { SHEET_TYPE_OPTIONS, getSheetTypeLabel } from '@/lib/customerRegisterSheetTypes'
+import { REPAIR_STATUS_CONFIG } from '@/lib/repairConstants'
 
 const WarrantyPdfMapper = dynamic(() => import('@/components/WarrantyPdfMapper'), { ssr: false })
 
@@ -195,18 +196,9 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
     return out
 }
 
-const REPAIR_STATUS_LABEL: Record<string, string> = {
-    received: '受付',
-    staff_confirmed: '担当者確認',
-    confirming: '確認中',
-    phone_done: '電話対応済',
-    visit_scheduled: '出張予定',
-    parts_waiting: '部品待ち',
-    repairing: '修理中',
-    completed: '完了報告済',
-    billed: '請求済',
-    closed: 'クローズ',
-}
+const REPAIR_STATUS_LABEL: Record<string, string> = Object.fromEntries(
+    Object.entries(REPAIR_STATUS_CONFIG).map(([k, v]) => [k, v.label]),
+)
 
 function formatChartDate(iso: string | null | undefined): string {
     if (!iso) return '-'

@@ -1,6 +1,6 @@
 import { NextResponse, after } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { sendRepairConfirmation, pushMessage } from '@/lib/lineClient'
+import { sendRepairAcceptLineConfirmation } from '@/lib/repairLineAcceptNotify'
 import { notifyRepairRequestCreated } from '@/lib/repairStaffNotify'
 import { repairCategoryToSheetType } from '@/lib/customerRegisterSheetTypes'
 import {
@@ -155,51 +155,16 @@ async function insertRepairRequest(
     return { error: null, data }
 }
 
-async function sendLineConfirmation(
-    fields: RepairFormFields,
-    requestNo: number,
-    photoCount: number,
-) {
-    if (!fields.line_user_id) return
-
-    try {
-        await sendRepairConfirmation(
-            fields.line_user_id,
-            requestNo,
-            fields.symptom,
-            fields.model ?? undefined,
-        )
-    } catch (e) {
-        console.error('LIFF受付確認Flex送信エラー:', e)
-        try {
-            await pushMessage(
-                fields.line_user_id,
-                `修理依頼の送信が完了しました（受付番号: #${requestNo}）\n\n` +
-                    `お名前: ${fields.customer_name}\n` +
-                    (fields.model ? `型式: ${fields.model}\n` : '') +
-                    `症状: ${fields.symptom}\n` +
-                    (photoCount > 0 ? `写真: ${photoCount}枚\n` : '') +
-                    '\n担当者より折り返しご連絡いたします。',
-            )
-        } catch (e2) {
-            console.error('LIFFフォールバックpush送信エラー:', e2)
-        }
-    }
-}
-
-/** 受付レスポンス返却後に写真保存・LINE通知（失敗しても受付は維持） */
+/** 受付レスポンス返却後に写真保存・担当者通知（顧客LINEは同期送信済み） */
 function schedulePostAcceptTasks(
     sb: SupabaseClient,
-    fields: RepairFormFields,
     data: InsertedRequest,
     photoEntries: RepairPhotoUploadItem[],
 ) {
     after(async () => {
-        let photoCount = 0
         try {
             if (photoEntries.length > 0) {
                 const photo_urls = await uploadRepairRequestPhotos(sb, data.id, photoEntries)
-                photoCount = photo_urls.length
                 if (photo_urls.length > 0) {
                     const { error: upErr } = await sb
                         .from('repair_requests')
@@ -219,21 +184,27 @@ function schedulePostAcceptTasks(
         } catch (e) {
             console.error('repair staff notify after LIFF accept:', e)
         }
-        await sendLineConfirmation(fields, data.request_no, photoCount)
     })
 }
 
-function acceptAndRespond(
+async function acceptAndRespond(
     sb: SupabaseClient,
     fields: RepairFormFields,
     data: InsertedRequest,
     photoEntries: RepairPhotoUploadItem[],
 ) {
-    schedulePostAcceptTasks(sb, fields, data, photoEntries)
+    const lineConfirmation = await sendRepairAcceptLineConfirmation(
+        fields.line_user_id,
+        data.request_no,
+        fields.symptom,
+        { customerName: fields.customer_name, model: fields.model },
+    )
+    schedulePostAcceptTasks(sb, data, photoEntries)
     return NextResponse.json({
         ok: true,
         request_no: data.request_no,
         id: data.id,
+        line_confirmation: lineConfirmation,
     })
 }
 
@@ -268,7 +239,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: '登録に失敗しました' }, { status: 500 })
             }
 
-            return acceptAndRespond(sb, normalized, data, photoEntries)
+            return await acceptAndRespond(sb, normalized, data, photoEntries)
         }
 
         const body = await request.json()
@@ -298,7 +269,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '登録に失敗しました' }, { status: 500 })
         }
 
-        return acceptAndRespond(sb, normalized, data, [])
+        return await acceptAndRespond(sb, normalized, data, [])
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : 'Unknown error'
         console.error('LIFF repair-form error:', e)

@@ -97,59 +97,182 @@ export async function replyWithQuickReply(
     }
 }
 
-/** テキストメッセージをプッシュ送信 */
-export async function pushMessage(userId: string, text: string) {
+export type LinePushResult = { ok: true } | { ok: false; status: number; error: string }
+
+function linePushHttpStatusLabel(status: number): string {
+    if (status === 0) return '0 (LINE_CHANNEL_ACCESS_TOKEN未設定)'
+    if (status === 400) return '400 Bad Request'
+    if (status === 401) return '401 Unauthorized'
+    if (status === 403) return '403 Forbidden'
+    if (status === 500) return '500 Internal Server Error'
+    return `${status} (other)`
+}
+
+export type LinePushOptions = { /** 顧客向けLINE（ログに成功/失敗ラベル） */ customerLine?: boolean }
+
+/** LINE Push API（/v2/bot/message/push）共通。to には line_user_id をそのまま渡す */
+async function linePushRequest(
+    context: string,
+    userId: string,
+    messages: Record<string, unknown>[],
+    opts?: LinePushOptions,
+): Promise<LinePushResult> {
+    const to = String(userId || '').trim()
+    const { channelAccessToken } = getLineConfig()
+    const tokenSet = Boolean(channelAccessToken)
+    if (!tokenSet) {
+        const msg = 'LINE_CHANNEL_ACCESS_TOKEN is not set'
+        console.log('[LINE Push API]', context, {
+            line_channel_access_token: false,
+            http_status: 0,
+            response_body: msg,
+            to,
+        })
+        if (opts?.customerLine) {
+            console.log('顧客LINE送信失敗 HTTP 0')
+        }
+        return { ok: false, status: 0, error: msg }
+    }
+
     const res = await fetch(`${LINE_API_BASE}/message/push`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({
-            to: userId,
-            messages: [{ type: 'text', text }],
-        }),
+        body: JSON.stringify({ to, messages }),
     })
-    if (!res.ok) {
-        const errBody = await res.text()
-        console.error('LINE pushMessage failed:', res.status, errBody)
+    const responseBody = await res.text()
+    console.log('[LINE Push API]', context, {
+        line_channel_access_token: true,
+        http_status: res.status,
+        http_status_label: linePushHttpStatusLabel(res.status),
+        response_body: responseBody,
+        to,
+    })
+
+    if (res.ok) {
+        if (opts?.customerLine) {
+            console.log('顧客LINE送信成功')
+        }
+        return { ok: true }
     }
+
+    if (opts?.customerLine) {
+        console.log(`顧客LINE送信失敗 HTTP ${res.status}`)
+    }
+    console.error(
+        `[LINE Push API] ${context} failed — ${linePushHttpStatusLabel(res.status)}`,
+        { to, response_body: responseBody },
+    )
+    return { ok: false, status: res.status, error: responseBody }
 }
 
-export type LinePushResult = { ok: true } | { ok: false; status: number; error: string }
+/** テキストメッセージをプッシュ送信 */
+export async function pushMessage(
+    userId: string,
+    text: string,
+    opts?: LinePushOptions,
+): Promise<LinePushResult> {
+    return linePushRequest('pushMessage', userId, [{ type: 'text', text }], opts)
+}
+
+/** テキスト + postback クイックリプライをプッシュ */
+export async function pushTextWithPostbackQuickReply(
+    userId: string,
+    text: string,
+    postback: { label: string; data: string; displayText: string },
+    opts?: LinePushOptions,
+): Promise<LinePushResult> {
+    return linePushRequest('pushTextWithPostbackQuickReply', userId, [
+        {
+            type: 'text',
+            text,
+            quickReply: {
+                items: [
+                    {
+                        type: 'action',
+                        action: {
+                            type: 'postback',
+                            label: postback.label,
+                            data: postback.data,
+                            displayText: postback.displayText,
+                        },
+                    },
+                ],
+            },
+        },
+    ], opts)
+}
 
 /** 複数メッセージをプッシュ送信（Flex Message等対応） */
 export async function pushMessages(
     userId: string,
     messages: Record<string, unknown>[],
+    opts?: LinePushOptions,
 ): Promise<LinePushResult> {
-    const { channelAccessToken } = getLineConfig()
-    if (!channelAccessToken) {
-        return { ok: false, status: 0, error: 'LINE_CHANNEL_ACCESS_TOKEN is not set' }
-    }
+    return linePushRequest('pushMessages', userId, messages, opts)
+}
 
-    const res = await fetch(`${LINE_API_BASE}/message/push`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ to: userId, messages }),
-    })
+/** トークンが紐づく公式アカウント情報（チャネル一致確認用） */
+export async function getBotChannelInfo(): Promise<{
+    userId: string
+    basicId: string
+    displayName: string
+} | null> {
+    const { channelAccessToken } = getLineConfig()
+    if (!channelAccessToken) return null
+    const res = await fetch(`${LINE_API_BASE}/info`, { headers: authHeaders() })
     if (!res.ok) {
-        const errBody = await res.text()
-        console.error('LINE pushMessages failed:', res.status, errBody)
-        return { ok: false, status: res.status, error: errBody }
+        console.error('LINE bot info failed:', res.status, await res.text())
+        return null
     }
-    return { ok: true }
+    return res.json() as Promise<{ userId: string; basicId: string; displayName: string }>
 }
 
 /** ユーザープロフィール取得 */
 export async function getProfile(userId: string) {
-    const res = await fetch(`${LINE_API_BASE}/profile/${userId}`, {
-        headers: authHeaders(),
-    })
-    if (!res.ok) return null
-    return res.json() as Promise<{
+    const r = await getProfileWithStatus(userId)
+    return r.profile
+}
+
+/** プロフィール取得（HTTPステータス付き・診断用） */
+export async function getProfileWithStatus(userId: string): Promise<{
+    profile: {
         userId: string
         displayName: string
         pictureUrl?: string
         statusMessage?: string
-    }>
+    } | null
+    http_status: number | null
+}> {
+    const to = String(userId || '').trim()
+    const res = await fetch(`${LINE_API_BASE}/profile/${to}`, {
+        headers: authHeaders(),
+    })
+    const responseBody = await res.text()
+    if (!res.ok) {
+        console.log('[LINE Profile API]', {
+            http_status: res.status,
+            response_body: responseBody,
+            to,
+        })
+        return { profile: null, http_status: res.status }
+    }
+    let profile: {
+        userId: string
+        displayName: string
+        pictureUrl?: string
+        statusMessage?: string
+    } | null = null
+    try {
+        profile = JSON.parse(responseBody) as {
+            userId: string
+            displayName: string
+            pictureUrl?: string
+            statusMessage?: string
+        }
+    } catch {
+        console.log('[LINE Profile API] invalid JSON', { to, response_body: responseBody })
+    }
+    return { profile, http_status: res.status }
 }
 
 /** メッセージに添付されたコンテンツ（画像・動画）のURLを取得 */
@@ -172,7 +295,7 @@ export async function sendRepairConfirmation(
     requestNo: number,
     symptom: string,
     model?: string,
-) {
+): Promise<LinePushResult> {
     const flexMessage = {
         type: 'flex',
         altText: `修理受付完了: No.${requestNo}`,
@@ -241,7 +364,7 @@ export async function sendRepairConfirmation(
         },
     }
 
-    await pushMessages(userId, [flexMessage])
+    return pushMessages(userId, [flexMessage], { customerLine: true })
 }
 
 /** 修理依頼「フォーム／チャット」選択用 Flex（reply / push 共通） */

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isAllowedRepairStatusTransition } from '@/lib/repairConstants'
 import { applyRepairMarkCompleted } from '@/lib/repairMarkCompleted'
 import { hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { persistRepairStatusTransition, getRepairAdminSupabase } from '@/lib/repairStatusUpdate'
@@ -48,8 +49,19 @@ export async function POST(request: Request) {
                 ? body.old_status.trim()
                 : String(existing.status || '')
 
+        const currentStatus = String(existing.status || '')
+
         if (oldStatus === newStatus) {
             return NextResponse.json({ ok: true, status: newStatus, unchanged: true })
+        }
+
+        if (!isAllowedRepairStatusTransition(currentStatus, newStatus)) {
+            return NextResponse.json({
+                ok: true,
+                status: currentStatus,
+                unchanged: true,
+                skipped: 'cannot_downgrade_from_terminal',
+            })
         }
 
         if (newStatus === 'completed') {

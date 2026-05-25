@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { repairCategoryToSheetType, formatRepairCategoryDisplay } from '@/lib/customerRegisterSheetTypes'
+import { isRepairFinishedStatus } from '@/lib/repairConstants'
 
 // ── Types ──
 
@@ -147,8 +148,8 @@ export default function RepairDashboardPage() {
     // ── Analytics ──
 
     const totalRepairs = repairs.length
-    const completedRepairs = repairs.filter(r => ['completed', 'billed', 'closed'].includes(r.status))
-    const activeRepairs = repairs.filter(r => !['completed', 'billed', 'closed'].includes(r.status))
+    const completedRepairs = repairs.filter((r) => isRepairFinishedStatus(r.status))
+    const activeRepairs = repairs.filter((r) => !isRepairFinishedStatus(r.status))
     const urgentRepairs = repairs.filter(r => r.priority === 'urgent')
     const totalCost = repairs.reduce((s, r) => s + (r.repair_cost || 0), 0)
     const avgDuration = completedRepairs.length > 0

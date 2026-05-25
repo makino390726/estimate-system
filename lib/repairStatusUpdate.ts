@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isAllowedRepairStatusTransition } from '@/lib/repairConstants'
 import { notifyRepairCustomerLineStatus } from '@/lib/repairCustomerLineNotify'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
@@ -18,6 +19,19 @@ export async function persistRepairStatusTransition(
     options?: { skipCustomerLineNotify?: boolean },
 ): Promise<void> {
     if (oldStatus === newStatus) return
+
+    const { data: currentRow } = await sb
+        .from('repair_requests')
+        .select('status')
+        .eq('id', repairId)
+        .maybeSingle()
+    const currentStatus = String(currentRow?.status || oldStatus)
+    if (!isAllowedRepairStatusTransition(currentStatus, newStatus)) {
+        console.warn(
+            `repair status transition blocked: ${currentStatus} -> ${newStatus} (repair_id=${repairId})`,
+        )
+        return
+    }
 
     const { error } = await sb.from('repair_requests').update({ status: newStatus }).eq('id', repairId)
     if (error) throw error
