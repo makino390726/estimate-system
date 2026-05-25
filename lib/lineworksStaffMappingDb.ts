@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { resolveStaffName } from '@/lib/staffNameMatch'
+import { findSimilarStaffNames, resolveStaffName, resolveStaffRecord, type StaffNameRow } from '@/lib/staffNameMatch'
 
 function trim(v: unknown) {
     return typeof v === 'string' ? v.trim() : ''
@@ -18,6 +18,7 @@ export async function listLineWorksStaffMappings(sb: SupabaseClient) {
 export async function upsertLineWorksStaffMapping(
     sb: SupabaseClient,
     input: {
+        staff_id?: string | null
         staff_name?: string | null
         lineworks_user_id?: string | null
         display_name?: string | null
@@ -26,27 +27,53 @@ export async function upsertLineWorksStaffMapping(
     | { ok: true; staff_name: string; lineworks_user_id: string }
     | { ok: false; error: string; status: number }
 > {
-    const staff_name = String(input.staff_name || '').trim()
+    const staff_name_input = String(input.staff_name || '').trim()
+    const staff_id_input = String(input.staff_id || '').trim()
     const lineworks_user_id = String(input.lineworks_user_id || '').trim()
     const display_name = input.display_name ? String(input.display_name).trim() || null : null
 
-    if (!staff_name || !lineworks_user_id) {
-        return { ok: false, error: 'staff_name and lineworks_user_id are required', status: 400 }
-    }
-
-    const { data: staffRows, error: staffListErr } = await sb.from('staffs').select('name').order('name')
-    if (staffListErr) {
-        return { ok: false, error: staffListErr.message, status: 500 }
-    }
-    const staffNames = (staffRows || []).map((r) => String(r.name || '').trim()).filter(Boolean)
-    const canonicalName = resolveStaffName(staff_name, staffNames)
-    if (!canonicalName) {
+    if ((!staff_name_input && !staff_id_input) || !lineworks_user_id) {
         return {
             ok: false,
-            error: `担当者「${staff_name}」が staffs に見つかりません`,
+            error: 'staff_name（または staff_id）と lineworks_user_id は必須です',
             status: 400,
         }
     }
+
+    const { data: staffRows, error: staffListErr } = await sb.from('staffs').select('id, name').order('name')
+    if (staffListErr) {
+        return { ok: false, error: staffListErr.message, status: 500 }
+    }
+    const rows: StaffNameRow[] = (staffRows || []).map((r) => ({
+        id: String(r.id ?? ''),
+        name: String(r.name || '').trim(),
+    })).filter((r) => r.id && r.name)
+
+    if (rows.length === 0) {
+        return {
+            ok: false,
+            error: 'staffs マスタが空か読み取れません。Supabase の RLS または SUPABASE_SERVICE_ROLE_KEY を確認してください',
+            status: 500,
+        }
+    }
+
+    const record = resolveStaffRecord(
+        { staff_id: staff_id_input || null, staff_name: staff_name_input || null },
+        rows,
+    )
+    if (!record) {
+        const similar = findSimilarStaffNames(staff_name_input, rows)
+        const hint =
+            similar.length > 0
+                ? ` 登録されている表記の例: ${similar.join(' / ')}`
+                : ''
+        return {
+            ok: false,
+            error: `担当者「${staff_name_input || staff_id_input}」が staffs に見つかりません。担当者マスタの氏名と同じ表記を選ぶか、プルダウンから選択してください。${hint}`,
+            status: 400,
+        }
+    }
+    const canonicalName = record.name
 
     const { error } = await sb.from('lineworks_staff_mappings').upsert(
         {

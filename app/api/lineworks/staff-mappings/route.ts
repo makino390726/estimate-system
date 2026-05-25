@@ -31,6 +31,7 @@ export async function POST(request: Request) {
         }
         const body = await request.json().catch(() => ({}))
         const result = await upsertLineWorksStaffMapping(getSupabaseAdmin(), {
+            staff_id: body.staff_id,
             staff_name: body.staff_name,
             lineworks_user_id: body.lineworks_user_id,
             display_name: body.display_name,

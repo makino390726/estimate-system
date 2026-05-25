@@ -1,12 +1,19 @@
-/** 担当者 LINE WORKS 自己登録用 Web URL */
-export function getLineWorksStaffRegisterUrl(staffName: string, baseUrl?: string): string {
+/** 担当者 LINE WORKS 自己登録用 Web URL（staff_id 推奨） */
+export function getLineWorksStaffRegisterUrl(
+    staffName: string,
+    baseUrl?: string,
+    staffId?: string,
+): string {
     const base =
         baseUrl?.trim() ||
         process.env.NEXT_PUBLIC_APP_URL?.trim() ||
         process.env.PROD_BASE_URL?.trim() ||
         'https://estimate-system-ten.vercel.app'
     const url = new URL('/lineworks-staff-register', base)
-    if (staffName.trim()) {
+    const id = String(staffId || '').trim()
+    if (id) {
+        url.searchParams.set('staff_id', id)
+    } else if (staffName.trim()) {
         url.searchParams.set('staff', staffName.trim())
     }
     return url.toString()

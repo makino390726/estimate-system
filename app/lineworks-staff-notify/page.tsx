@@ -20,6 +20,8 @@ type Mapping = {
     notify_enabled: boolean
 }
 
+type StaffOption = { id: string; name: string }
+
 const pageStyle: React.CSSProperties = {
     padding: 24,
     maxWidth: 900,
@@ -45,8 +47,9 @@ const inputStyle: React.CSSProperties = {
 
 export default function LineWorksStaffNotifyPage() {
     const [rows, setRows] = useState<Mapping[]>([])
-    const [staffNames, setStaffNames] = useState<string[]>([])
+    const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
     const [msg, setMsg] = useState<string | null>(null)
+    const [qrStaffId, setQrStaffId] = useState('')
     const [qrStaffName, setQrStaffName] = useState('')
     const [showAdvanced, setShowAdvanced] = useState(false)
     const [origin, setOrigin] = useState('')
@@ -80,9 +83,16 @@ export default function LineWorksStaffNotifyPage() {
     }, [])
 
     const registerUrl = useMemo(
-        () => (origin ? getLineWorksStaffRegisterUrl(qrStaffName, origin) : null),
-        [origin, qrStaffName],
+        () => (origin ? getLineWorksStaffRegisterUrl(qrStaffName, origin, qrStaffId) : null),
+        [origin, qrStaffName, qrStaffId],
     )
+
+    const applyStaffSelection = (staffId: string) => {
+        const opt = staffOptions.find((s) => s.id === staffId)
+        setQrStaffId(staffId)
+        setQrStaffName(opt?.name || '')
+        setForm((p) => ({ ...p, staff_name: opt?.name || '' }))
+    }
 
     const fetchAll = useCallback(async () => {
         const [mapRes, staffRes] = await Promise.all([
@@ -100,7 +110,13 @@ export default function LineWorksStaffNotifyPage() {
             return
         }
         setRows((mapData.mappings || []) as Mapping[])
-        setStaffNames((staffData.names || []) as string[])
+        const staff = (staffData.staff || []) as StaffOption[]
+        if (staff.length > 0) {
+            setStaffOptions(staff)
+        } else {
+            const names = (staffData.names || []) as string[]
+            setStaffOptions(names.map((name, i) => ({ id: `name-${i}`, name })))
+        }
     }, [])
 
     const fetchStatus = useCallback(async () => {
@@ -141,16 +157,19 @@ export default function LineWorksStaffNotifyPage() {
     }
 
     const handleSave = async () => {
-        const staff_name = form.staff_name.trim()
         const lineworks_user_id = form.lineworks_user_id.trim()
-        if (!staff_name || !lineworks_user_id) {
-            setMsg('担当者名と LINE WORKS ID（メール）は必須です')
+        const matched = staffOptions.find((s) => s.id === qrStaffId)
+        const staff_name = (matched?.name || form.staff_name).trim()
+        if (!qrStaffId || !staff_name || !lineworks_user_id) {
+            setMsg('担当者（プルダウン）と LINE WORKS ID（メール）は必須です')
             return
         }
+        const staff_id = qrStaffId.startsWith('name-') ? undefined : qrStaffId
         const res = await fetch('/api/lineworks/staff-mappings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                staff_id,
                 staff_name,
                 lineworks_user_id,
                 display_name: form.display_name.trim() || null,
@@ -311,23 +330,22 @@ export default function LineWorksStaffNotifyPage() {
                     担当者本人がスマートフォンで読み取り、LINE WORKS のログインメールを入力してください。
                 </div>
                 <div style={{ marginBottom: 12 }}>
-                    <label style={{ fontSize: 12, color: '#94a3b8' }}>登録する担当者名</label>
-                    <input
-                        list="lw-staff-name-list-qr"
-                        value={qrStaffName}
-                        onChange={(e) => {
-                            const v = e.target.value
-                            setQrStaffName(v)
-                            setForm((p) => ({ ...p, staff_name: v }))
-                        }}
-                        placeholder="staffs.name と同じ表記"
+                    <label style={{ fontSize: 12, color: '#94a3b8' }}>登録する担当者（担当者マスタから選択）</label>
+                    <select
+                        value={qrStaffId}
+                        onChange={(e) => applyStaffSelection(e.target.value)}
                         style={inputStyle}
-                    />
-                    <datalist id="lw-staff-name-list-qr">
-                        {staffNames.map((n) => (
-                            <option key={n} value={n} />
+                    >
+                        <option value="">-- 選択してください --</option>
+                        {staffOptions.map((s) => (
+                            <option key={s.id} value={s.id}>
+                                {s.name}
+                            </option>
                         ))}
-                    </datalist>
+                    </select>
+                    <p style={{ margin: '8px 0 0', fontSize: 11, color: '#64748b' }}>
+                        手入力ではなく一覧から選ぶと、氏名のスペース違いで登録に失敗しにくくなります。
+                    </p>
                 </div>
                 {registerUrl ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
@@ -380,18 +398,19 @@ export default function LineWorksStaffNotifyPage() {
                             <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>手動登録</h3>
                             <div style={{ display: 'grid', gap: 10 }}>
                                 <div>
-                                    <label style={{ fontSize: 12, color: '#94a3b8' }}>担当者名（staffs.name と一致）</label>
-                                    <input
-                                        list="lw-staff-name-list"
-                                        value={form.staff_name}
-                                        onChange={(e) => setForm((p) => ({ ...p, staff_name: e.target.value }))}
+                                    <label style={{ fontSize: 12, color: '#94a3b8' }}>担当者（マスタから選択）</label>
+                                    <select
+                                        value={qrStaffId}
+                                        onChange={(e) => applyStaffSelection(e.target.value)}
                                         style={inputStyle}
-                                    />
-                                    <datalist id="lw-staff-name-list">
-                                        {staffNames.map((n) => (
-                                            <option key={n} value={n} />
+                                    >
+                                        <option value="">-- 選択 --</option>
+                                        {staffOptions.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name}
+                                            </option>
                                         ))}
-                                    </datalist>
+                                    </select>
                                 </div>
                                 <div>
                                     <label style={{ fontSize: 12, color: '#94a3b8' }}>LINE WORKS ID（メールまたはユーザーID）</label>

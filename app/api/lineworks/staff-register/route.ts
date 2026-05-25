@@ -11,6 +11,7 @@ import { getSupabaseAdmin, hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 export const runtime = 'nodejs'
 
 type Body = {
+    staff_id?: string
     staff_name?: string
     lineworks_user_id?: string
     display_name?: string | null
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
         }
         const body = (await request.json().catch(() => ({}))) as Body
         const result = await upsertLineWorksStaffMapping(getSupabaseAdmin(), {
+            staff_id: body.staff_id,
             staff_name: body.staff_name,
             lineworks_user_id: body.lineworks_user_id,
             display_name: body.display_name,
