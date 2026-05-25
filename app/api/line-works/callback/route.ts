@@ -8,10 +8,13 @@ import {
 } from '@/lib/lineWorksClient'
 import {
     acknowledgeRepairLineWorksNotification,
+    findLineWorksNotificationIdByRequestNo,
     findPendingLineWorksNotificationIdForUser,
     isLineWorksAckText,
     isLineWorksRepairingText,
     markRepairRepairingFromLineWorksNotification,
+    parseLineWorksRepairingButtonText,
+    parseLineWorksStaffConfirmButtonText,
 } from '@/lib/repairLineWorksNotify'
 
 export const runtime = 'nodejs'
@@ -41,6 +44,33 @@ function parseNotificationPostback(body: LineWorksCallbackBody) {
         const parsed = parseRepairLineWorksPostback(raw)
         if (parsed) return parsed
     }
+    return null
+}
+
+/** postback なしでボタンラベル／表示テキストだけ届いた場合 */
+async function resolvePostbackFromButtonText(text: string, userId: string) {
+    if (isLineWorksRepairingText(text)) {
+        const repairing = parseLineWorksRepairingButtonText(text)
+        const notificationId =
+            repairing?.requestNo != null
+                ? await findLineWorksNotificationIdByRequestNo(repairing.requestNo)
+                : await findPendingLineWorksNotificationIdForUser(userId)
+        if (notificationId) {
+            return { action: 'repairing' as const, notificationId }
+        }
+    }
+
+    if (isLineWorksAckText(text)) {
+        const staffConfirm = parseLineWorksStaffConfirmButtonText(text)
+        const notificationId =
+            staffConfirm?.requestNo != null
+                ? await findLineWorksNotificationIdByRequestNo(staffConfirm.requestNo)
+                : await findPendingLineWorksNotificationIdForUser(userId)
+        if (notificationId) {
+            return { action: 'staff_confirm' as const, notificationId }
+        }
+    }
+
     return null
 }
 
@@ -74,29 +104,39 @@ export async function POST(request: Request) {
     if (!postback && body.type === 'message' && body.content?.type === 'text' && userId) {
         const text = body.content.text || ''
         if (isLineWorksAckText(text) || isLineWorksRepairingText(text)) {
-            const notificationId = await findPendingLineWorksNotificationIdForUser(userId)
-            if (notificationId) {
-                postback = {
-                    action: isLineWorksRepairingText(text) ? 'repairing' : 'staff_confirm',
-                    notificationId,
-                }
-                console.log('LINE WORKS postback via text fallback:', postback.action, notificationId)
+            postback = await resolvePostbackFromButtonText(text, userId)
+            if (postback) {
+                console.log('LINE WORKS postback via text fallback:', postback.action, postback.notificationId, text)
             }
         }
     }
 
     if (!postback) {
         if (body.type === 'message' || body.type === 'postback') {
+            const text = body.content?.text || ''
             console.log(
                 'LINE WORKS callback: no repair postback in payload',
                 JSON.stringify({
                     type: body.type,
                     contentType: body.content?.type,
-                    text: body.content?.text?.slice(0, 40),
+                    text: text.slice(0, 80),
                     hasPostback: Boolean(body.content?.postback),
+                    postbackPreview: body.content?.postback?.slice(0, 60),
                     hasData: Boolean(body.data),
+                    userId: userId ? `${userId.slice(0, 8)}…` : '',
                 }),
             )
+            if (
+                userId &&
+                (text === '担当者確認' || text === '修理中' || text.startsWith('担当者確認 #') || text.startsWith('修理中 #'))
+            ) {
+                await sendLineWorksUserMessage(userId, {
+                    type: 'text',
+                    text:
+                        'ボタンの処理に失敗しました。案件番号付きの新しい通知から再度タップするか、修理一覧でステータスを更新してください。\n' +
+                        '（コールバック未設定・BOT_SECRET不一致の可能性があります）',
+                }).catch(() => undefined)
+            }
         }
         return new NextResponse(null, { status: 200 })
     }
