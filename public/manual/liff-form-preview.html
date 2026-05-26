@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>修理依頼フォーム（説明書用イメージ）</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+      background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+      color: #f8fafc;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .wrap { max-width: 420px; margin: 0 auto; }
+    .badge {
+      font-size: 11px;
+      color: #94a3b8;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    header h1 { font-size: 20px; margin: 0 0 6px; }
+    header p { margin: 0; font-size: 13px; color: #94a3b8; }
+    .field { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .req { color: #f87171; }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 14px;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    .hint { font-size: 12px; color: #94a3b8; margin: 0 0 8px; line-height: 1.45; }
+    .photo {
+      border: 2px dashed #475569;
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+    .submit {
+      width: 100%;
+      margin-top: 8px;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="badge">取扱説明書用イメージ（実際の画面は LINE アプリ内 LIFF で表示）</p>
+    <header>
+      <h1>修理依頼フォーム</h1>
+      <p>公式 LINE リッチメニュー「修理受付」から開きます</p>
+    </header>
+    <form>
+      <div class="field">
+        <label>お名前（会社名）<span class="req">*</span></label>
+        <input type="text" value="株式会社サンプル　山田太郎" readonly />
+      </div>
+      <div class="field">
+        <label>機械の種別<span class="req">*</span></label>
+        <select disabled>
+          <option selected>農業機械</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>住所</label>
+        <input type="text" value="宮崎県宮崎市…" readonly />
+      </div>
+      <div class="field">
+        <label>緊急時連絡先（電話番号）<span class="req">*</span></label>
+        <p class="hint">固定・携帯どちらでも構いません。</p>
+        <input type="tel" value="0985-00-0000" readonly />
+      </div>
+      <div class="field">
+        <label>管轄営業所<span class="req">*</span></label>
+        <select disabled><option selected>宮崎営業所</option></select>
+      </div>
+      <div class="field">
+        <label>症状・ご要望<span class="req">*</span></label>
+        <textarea readonly>エンジンがかからない。昨日から発生。</textarea>
+      </div>
+      <div class="field">
+        <label>写真（任意）</label>
+        <div class="photo">📷 タップして写真を追加</div>
+      </div>
+      <button type="button" class="submit">修理依頼を送信</button>
+    </form>
+  </div>
+</body>
+</html>

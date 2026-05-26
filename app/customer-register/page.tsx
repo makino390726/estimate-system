@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import {
     loadWarrantyMapping,
@@ -12,6 +12,8 @@ import {
 } from '@/lib/warrantyMappingStorage'
 import { SHEET_TYPE_OPTIONS, getSheetTypeLabel } from '@/lib/customerRegisterSheetTypes'
 import { REPAIR_STATUS_CONFIG } from '@/lib/repairConstants'
+import { BRANCHES } from '@/lib/branches'
+import type { ServiceRepairReportLite } from '@/lib/serviceRepairReportCustomerMatch'
 
 const WarrantyPdfMapper = dynamic(() => import('@/components/WarrantyPdfMapper'), { ssr: false })
 
@@ -200,6 +202,11 @@ const REPAIR_STATUS_LABEL: Record<string, string> = Object.fromEntries(
     Object.entries(REPAIR_STATUS_CONFIG).map(([k, v]) => [k, v.label]),
 )
 
+const BRANCH_NAME_BY_ID: Record<string, string> = Object.fromEntries(BRANCHES.map((b) => [b.id, b.name]))
+
+const SERVICE_REPORT_COLS =
+    'id, branch_id, work_date, customer_name, address, phone, mobile, staff_name, category, model, treatment_details, remarks'
+
 function formatChartDate(iso: string | null | undefined): string {
     if (!iso) return '-'
     const d = new Date(iso)
@@ -372,6 +379,9 @@ export default function CustomerRegisterPage() {
     const [savedMapping, setSavedMapping] = useState<WarrantySavedMapping | null>(null)
     const [repairsByRowId, setRepairsByRowId] = useState<Record<string, RepairChartRow[]>>({})
     const [partsByRepairId, setPartsByRepairId] = useState<Record<string, RepairPartRow[]>>({})
+    const [serviceReportsByRowId, setServiceReportsByRowId] = useState<Record<string, ServiceRepairReportLite[]>>({})
+    const [linkingServiceReports, setLinkingServiceReports] = useState(false)
+    const [serviceLinkSummary, setServiceLinkSummary] = useState<string | null>(null)
     const [chartPage, setChartPage] = useState(0)
     const [chartPageSize, setChartPageSize] = useState(50)
     const [chartTotalCount, setChartTotalCount] = useState<number | null>(null)
@@ -383,6 +393,35 @@ export default function CustomerRegisterPage() {
     useEffect(() => {
         fetchStaffOptions()
         setSavedMapping(loadWarrantyMapping())
+    }, [])
+
+    const runLinkServiceReports = async () => {
+        setLinkingServiceReports(true)
+        setServiceLinkSummary(null)
+        try {
+            const res = await fetch('/api/customer-register/link-service-reports', { method: 'POST' })
+            const json = await res.json()
+            if (!res.ok || !json.ok) {
+                const detail = json.hint ? `${json.error}\n${json.hint}` : json.error || '紐づけに失敗しました'
+                setMessage(detail)
+                return
+            }
+            setServiceLinkSummary(
+                `出張修理管理表: 新規紐づけ ${json.linked} 件 / 未一致 ${json.skippedNoMatch} / 複数候補 ${json.skippedAmbiguous}`,
+            )
+            setChartNonce((n) => n + 1)
+        } catch (e: unknown) {
+            setMessage(e instanceof Error ? e.message : '紐づけに失敗しました')
+        } finally {
+            setLinkingServiceReports(false)
+        }
+    }
+
+    const initialServiceLinkDone = useRef(false)
+    useEffect(() => {
+        if (initialServiceLinkDone.current) return
+        initialServiceLinkDone.current = true
+        void runLinkServiceReports()
     }, [])
 
     useEffect(() => {
@@ -451,6 +490,7 @@ export default function CustomerRegisterPage() {
         if (rows.length === 0) {
             setRepairsByRowId({})
             setPartsByRepairId({})
+            setServiceReportsByRowId({})
             return
         }
         let cancelled = false
@@ -523,9 +563,29 @@ export default function CustomerRegisterPage() {
                     }
                 }
 
+                const serviceByRow: Record<string, ServiceRepairReportLite[]> = {}
+                for (const row of rows) {
+                    serviceByRow[row.id] = []
+                }
+                for (const idChunk of chunkArray(ids, 80)) {
+                    const { data, error } = await supabase
+                        .from('service_repair_reports')
+                        .select(SERVICE_REPORT_COLS)
+                        .in('customer_register_id', idChunk)
+                        .order('work_date', { ascending: false })
+                    if (error) throw error
+                    for (const r of (data || []) as (ServiceRepairReportLite & { customer_register_id?: string })[]) {
+                        const cid = r.customer_register_id
+                        if (cid && serviceByRow[cid] && !serviceByRow[cid].some((x) => x.id === r.id)) {
+                            serviceByRow[cid].push(r)
+                        }
+                    }
+                }
+
                 if (!cancelled) {
                     setRepairsByRowId(byRow)
                     setPartsByRepairId(partsMap)
+                    setServiceReportsByRowId(serviceByRow)
                 }
             } catch (e: any) {
                 if (!cancelled) console.error('顧客カルテ修理取得:', e)
@@ -795,7 +855,7 @@ export default function CustomerRegisterPage() {
                 <div>
                     <h1 style={{ margin: 0, fontSize: 32, color: '#f8fafc' }}>顧客カルテ</h1>
                     <p style={{ margin: '8px 0 0 0', color: '#94a3b8' }}>
-                        顧客名のあいまい検索でカルテを表示します。ヘッダに基本・機種情報、明細に修理履歴・交換部品を表示します。
+                        顧客名のあいまい検索でカルテを表示します。出張修理管理表はお客様氏名・機種（分野）・型式が一致した行のみ表示します。
                     </p>
                 </div>
                 <Link href="/selectors">
@@ -1063,14 +1123,32 @@ export default function CustomerRegisterPage() {
                                 ))}
                             </select>
                         </div>
+                        <button
+                            type="button"
+                            className="btn-3d"
+                            disabled={linkingServiceReports}
+                            onClick={() => void runLinkServiceReports()}
+                            style={{
+                                padding: '8px 14px',
+                                background: linkingServiceReports ? '#334155' : '#0ea5e9',
+                                border: `1px solid ${linkingServiceReports ? '#475569' : '#0284c7'}`,
+                                fontSize: 13,
+                                whiteSpace: 'nowrap',
+                            }}
+                        >
+                            {linkingServiceReports ? '照合中...' : '管理表を照合して紐づけ'}
+                        </button>
                         <Link href="/repair-requests">
                             <button type="button" className="btn-3d" style={{ padding: '8px 14px', background: '#2563eb', border: '1px solid #1d4ed8', fontSize: 13, whiteSpace: 'nowrap' }}>
                                 修理案件管理
                             </button>
                         </Link>
                     </div>
+                    {serviceLinkSummary && (
+                        <p style={{ margin: '0 0 8px 0', fontSize: 12, color: '#86efac' }}>{serviceLinkSummary}</p>
+                    )}
                     <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8' }}>
-                        キーワードは氏名だけでなく、電話・本体番号・型式・販売店などでもヒットします。機種のみ選ぶと該当機種のカルテをページ送りで一覧できます。
+                        キーワードは氏名だけでなく、電話・本体番号・型式・販売店などでもヒットします。出張修理管理表は氏名・機種・型式が一致し1件に特定できた行のみ紐づけて表示します。
                     </p>
 
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
@@ -1140,6 +1218,7 @@ export default function CustomerRegisterPage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                             {chartRows.map((row) => {
                                 const repairs = repairsByRowId[row.id] || []
+                                const serviceReports = serviceReportsByRowId[row.id] || []
                                 return (
                                     <div
                                         key={row.id}
@@ -1206,6 +1285,66 @@ export default function CustomerRegisterPage() {
                                                                     <td style={{ ...tdStyle, maxWidth: 260, whiteSpace: 'pre-wrap' }}>{summarizeRepairContent(r)}</td>
                                                                     <td style={{ ...tdStyle, maxWidth: 280, whiteSpace: 'pre-wrap', fontSize: 11 }}>{summarizeParts(r.id, partsByRepairId)}</td>
                                                                     <td style={tdStyle}>{REPAIR_STATUS_LABEL[r.status] || r.status}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                            <div
+                                                style={{
+                                                    fontSize: 12,
+                                                    fontWeight: 600,
+                                                    color: '#94a3b8',
+                                                    marginBottom: 8,
+                                                    marginTop: 16,
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    gap: 8,
+                                                    flexWrap: 'wrap',
+                                                }}
+                                            >
+                                                <span>出張修理履歴（管理表）</span>
+                                                <Link
+                                                    href="/service-repair-reports"
+                                                    style={{ fontSize: 11, color: '#60a5fa', textDecoration: 'none' }}
+                                                >
+                                                    出張修理管理表で編集 →
+                                                </Link>
+                                            </div>
+                                            {serviceReports.length === 0 ? (
+                                                <div style={{ fontSize: 13, color: '#64748b', padding: '8px 0' }}>
+                                                    紐づけ済みの出張修理履歴はありません。上の「管理表を照合して紐づけ」を実行するか、氏名・機種・型式がカルテと一致しているか確認してください。
+                                                </div>
+                                            ) : (
+                                                <div style={{ overflowX: 'auto' }}>
+                                                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
+                                                        <thead>
+                                                            <tr>
+                                                                <th style={thStyle}>作業日</th>
+                                                                <th style={thStyle}>営業所</th>
+                                                                <th style={thStyle}>担当</th>
+                                                                <th style={thStyle}>分野</th>
+                                                                <th style={thStyle}>型式</th>
+                                                                <th style={thStyle}>処置内容</th>
+                                                                <th style={thStyle}>備考</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {serviceReports.map((sr) => (
+                                                                <tr key={sr.id}>
+                                                                    <td style={tdStyle}>{sr.work_date}</td>
+                                                                    <td style={tdStyle}>{BRANCH_NAME_BY_ID[sr.branch_id] || sr.branch_id}</td>
+                                                                    <td style={tdStyle}>{sr.staff_name || '—'}</td>
+                                                                    <td style={tdStyle}>{sr.category || '—'}</td>
+                                                                    <td style={tdStyle}>{sr.model || '—'}</td>
+                                                                    <td style={{ ...tdStyle, maxWidth: 280, whiteSpace: 'pre-wrap' }}>
+                                                                        {sr.treatment_details || '—'}
+                                                                    </td>
+                                                                    <td style={{ ...tdStyle, maxWidth: 180, whiteSpace: 'pre-wrap' }}>
+                                                                        {sr.remarks || '—'}
+                                                                    </td>
                                                                 </tr>
                                                             ))}
                                                         </tbody>

@@ -1,0 +1,214 @@
+{
+  "capturedAt": "2026-05-26T00:10:37.887Z",
+  "baseUrl": "https://estimate-system-ten.vercel.app",
+  "pages": [
+    {
+      "path": "/selectors",
+      "file": "00-menu.png",
+      "title": "メインメニュー",
+      "url": "https://estimate-system-ten.vercel.app/selectors",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/new",
+      "file": "01-estimate-new.png",
+      "title": "見積書作成",
+      "url": "https://estimate-system-ten.vercel.app/cases/new",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/import-excel",
+      "file": "02-estimate-import-excel.png",
+      "title": "Excel取込",
+      "url": "https://estimate-system-ten.vercel.app/cases/import-excel",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/list",
+      "file": "03-cases-list.png",
+      "title": "案件一覧",
+      "fullPage": true,
+      "url": "https://estimate-system-ten.vercel.app/cases/list",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/deal-rank",
+      "file": "04-deal-rank.png",
+      "title": "見込み区分",
+      "url": "https://estimate-system-ten.vercel.app/cases/deal-rank",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/approval",
+      "file": "05-approval.png",
+      "title": "承認依頼",
+      "url": "https://estimate-system-ten.vercel.app/cases/approval",
+      "status": "ok"
+    },
+    {
+      "path": "/settlement-rules",
+      "file": "06-settlement-rules.png",
+      "title": "決済ルール",
+      "url": "https://estimate-system-ten.vercel.app/settlement-rules",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/new/order",
+      "file": "07-order-new.png",
+      "title": "注文書作成",
+      "url": "https://estimate-system-ten.vercel.app/cases/new/order",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/orders",
+      "file": "08-orders.png",
+      "title": "注文受付確認",
+      "url": "https://estimate-system-ten.vercel.app/cases/orders",
+      "status": "ok"
+    },
+    {
+      "path": "/products",
+      "file": "09-products.png",
+      "title": "商品検索",
+      "url": "https://estimate-system-ten.vercel.app/products",
+      "status": "ok"
+    },
+    {
+      "path": "/products/price_import",
+      "file": "10-products-import.png",
+      "title": "商品マスタ取込",
+      "url": "https://estimate-system-ten.vercel.app/products/price_import",
+      "status": "ok"
+    },
+    {
+      "path": "/customer-register",
+      "file": "11-customer-register.png",
+      "title": "顧客カルテ",
+      "url": "https://estimate-system-ten.vercel.app/customer-register",
+      "status": "ok"
+    },
+    {
+      "path": "/customers/select",
+      "file": "12-customers-master.png",
+      "title": "顧客マスタ",
+      "url": "https://estimate-system-ten.vercel.app/customers/select",
+      "status": "ok"
+    },
+    {
+      "path": "/staffs",
+      "file": "13-staffs.png",
+      "title": "担当者マスタ",
+      "url": "https://estimate-system-ten.vercel.app/staffs",
+      "status": "ok"
+    },
+    {
+      "path": "/wfrehouses",
+      "file": "14-warehouses.png",
+      "title": "倉庫登録",
+      "url": "https://estimate-system-ten.vercel.app/wfrehouses",
+      "status": "ok"
+    },
+    {
+      "path": "/warehouses/stock",
+      "file": "15-warehouse-stock.png",
+      "title": "在庫一覧",
+      "url": "https://estimate-system-ten.vercel.app/warehouses/stock",
+      "status": "ok"
+    },
+    {
+      "path": "/plan",
+      "file": "16-plan.png",
+      "title": "製造計画一覧",
+      "url": "https://estimate-system-ten.vercel.app/plan",
+      "status": "ok"
+    },
+    {
+      "path": "/plan/staff_performance",
+      "file": "17-staff-performance.png",
+      "title": "担当者別実績表",
+      "url": "https://estimate-system-ten.vercel.app/plan/staff_performance",
+      "status": "ok"
+    },
+    {
+      "path": "/cases/code-mapping",
+      "file": "18-code-mapping.png",
+      "title": "コード置換設定",
+      "url": "https://estimate-system-ten.vercel.app/cases/code-mapping",
+      "status": "ok"
+    },
+    {
+      "path": "/service-repair-reports",
+      "file": "19-service-repair-reports.png",
+      "title": "出張修理管理表",
+      "url": "https://estimate-system-ten.vercel.app/service-repair-reports",
+      "status": "ok"
+    },
+    {
+      "path": "/repair-requests",
+      "file": "20-repair-requests.png",
+      "title": "修理案件管理",
+      "fullPage": true,
+      "url": "https://estimate-system-ten.vercel.app/repair-requests",
+      "status": "ok"
+    },
+    {
+      "path": "/repair-sales-processing",
+      "file": "21-repair-sales-processing.png",
+      "title": "部品等売上処理",
+      "fullPage": true,
+      "url": "https://estimate-system-ten.vercel.app/repair-sales-processing",
+      "status": "ok"
+    },
+    {
+      "path": "/machine-cards",
+      "file": "22-machine-cards.png",
+      "title": "機械カルテ",
+      "url": "https://estimate-system-ten.vercel.app/machine-cards",
+      "status": "ok"
+    },
+    {
+      "path": "/repair-dashboard",
+      "file": "23-repair-dashboard.png",
+      "title": "故障分析",
+      "url": "https://estimate-system-ten.vercel.app/repair-dashboard",
+      "status": "ok"
+    },
+    {
+      "path": "/repair-mobile",
+      "file": "24-repair-mobile.png",
+      "title": "修理対応（スマホ一覧）",
+      "url": "https://estimate-system-ten.vercel.app/repair-mobile",
+      "status": "ok"
+    },
+    {
+      "path": "/lineworks-staff-notify",
+      "file": "25-lineworks-staff-notify.png",
+      "title": "LINE WORKS連携",
+      "url": "https://estimate-system-ten.vercel.app/lineworks-staff-notify",
+      "status": "ok"
+    },
+    {
+      "path": "/line-staff-notify",
+      "file": "26-line-staff-notify.png",
+      "title": "LINE公式連携",
+      "url": "https://estimate-system-ten.vercel.app/line-staff-notify",
+      "status": "ok"
+    },
+    {
+      "path": "/lineworks-staff-register",
+      "file": "27-lineworks-staff-register.png",
+      "title": "LINE WORKS自己登録",
+      "url": "https://estimate-system-ten.vercel.app/lineworks-staff-register",
+      "status": "ok"
+    },
+    {
+      "path": "/manual/liff-form-preview.html",
+      "file": "28-liff-repair-form.png",
+      "title": "LINE修理依頼フォーム",
+      "skipErrorCheck": true,
+      "url": "http://localhost:3001/manual/liff-form-preview.html",
+      "status": "ok",
+      "source": "local"
+    }
+  ]
+}

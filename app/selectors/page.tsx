@@ -306,6 +306,12 @@ export default function MasterSelectorPage() {
             </div>
           </div>
         </div>
+
+        <p style={{ marginTop: 32, textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>
+          <Link href="/manual" style={{ color: '#60a5fa', textDecoration: 'underline' }}>
+            取扱説明書を Word 形式でダウンロード
+          </Link>
+        </p>
       </div>
     </div>
   )

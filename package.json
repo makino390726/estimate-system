@@ -6,7 +6,12 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "docs:capture": "node scripts/capture-manual-screenshots.mjs",
+    "docs:capture:prod": "node scripts/capture-manual-prod.mjs",
+    "docs:word": "node scripts/build-word-manual.mjs",
+    "docs:manual": "npm run docs:capture && npm run docs:word",
+    "docs:manual:prod": "npm run docs:capture:prod && npm run docs:word"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -42,6 +47,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.0.3",
+    "html-to-docx": "^1.8.0",
+    "marked": "^18.0.4",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
