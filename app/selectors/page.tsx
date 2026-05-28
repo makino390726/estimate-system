@@ -309,7 +309,7 @@ export default function MasterSelectorPage() {
 
         <p style={{ marginTop: 32, textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>
           <Link href="/manual" style={{ color: '#60a5fa', textDecoration: 'underline' }}>
-            取扱説明書を Word 形式でダウンロード
+            取扱説明書・LINE WORKS運用方法（Word）をダウンロード
           </Link>
         </p>
       </div>

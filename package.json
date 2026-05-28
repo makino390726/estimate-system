@@ -10,8 +10,10 @@
     "docs:capture": "node scripts/capture-manual-screenshots.mjs",
     "docs:capture:prod": "node scripts/capture-manual-prod.mjs",
     "docs:word": "node scripts/build-word-manual.mjs",
+    "docs:lineworks-word": "node scripts/build-lineworks-word-manual.mjs",
+    "docs:manuals": "npm run docs:word && npm run docs:lineworks-word",
     "docs:manual": "npm run docs:capture && npm run docs:word",
-    "docs:manual:prod": "npm run docs:capture:prod && npm run docs:word"
+    "docs:manual:prod": "npm run docs:capture:prod && npm run docs:manuals"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

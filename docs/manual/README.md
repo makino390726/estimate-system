@@ -12,19 +12,28 @@ npm run docs:word
 
 **http://localhost:3000/manual**
 
-→ **「Word 形式でダウンロード（.docx）」** から保存。Microsoft Word で開いて編集できます。
+→ 次の2種類をダウンロードできます。
 
-生成ファイルの場所:
+| マニュアル | ファイル |
+|------------|----------|
+| 三州見積書作成システム 取扱説明書 | `estimate-system-manual.docx`（`npm run docs:word` で生成） |
+| LINE WORKS 運用方法 | `LINEWORKS運用方法.docx`（`npm run docs:lineworks-word` で生成） |
+
+配置場所（いずれも `public/manual/` に置くと URL から取得可能）:
 
 - `docs/manual/estimate-system-manual.docx`
-- `public/manual/estimate-system-manual.docx`（上記 URL 用）
+- `docs/manual/LINEWORKS運用方法.docx`
+- `public/manual/estimate-system-manual.docx`
+- `public/manual/LINEWORKS運用方法.docx`
 
 ## ファイル
 
 | ファイル | 内容 |
 |----------|------|
 | [取扱説明書.md](./取扱説明書.md) | 本文（編集用の元原稿・画面画像参照） |
-| [estimate-system-manual.docx](./estimate-system-manual.docx) | Word 版（`npm run docs:word` で生成） |
+| [estimate-system-manual.docx](./estimate-system-manual.docx) | システム取扱説明書 Word 版（`npm run docs:word` で生成） |
+| [LINEWORKS運用方法.md](./LINEWORKS運用方法.md) | LINE WORKS 運用の元原稿 |
+| [LINEWORKS運用方法.docx](./LINEWORKS運用方法.docx) | LINE WORKS 運用 Word（`npm run docs:lineworks-word`） |
 | [screenshots/](./screenshots/) | ローカルで撮影した PNG（29枚） |
 | [screenshots-manifest.json](./screenshots-manifest.json) | 撮影ログ |
 
@@ -57,13 +66,19 @@ npm run docs:capture
 
 開発サーバーでは `canvas` モジュール関連のエラー画面が多数のページに重なって表示されます。
 
-## 一式の再生成（画面＋Word）
+## LINE WORKS 運用方法の Word 再生成
 
 ```bash
-npm run docs:manual
+npm run docs:lineworks-word
 ```
 
-（`docs:capture` → `docs:word` を連続実行）
+## 一式の再生成（画面＋Word 2種）
+
+```bash
+npm run docs:manual:prod
+```
+
+（`docs:capture:prod` → `docs:word` + `docs:lineworks-word`）
 
 ## Markdown のみ閲覧
 
