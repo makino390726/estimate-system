@@ -339,7 +339,15 @@ function RepairFormInner() {
                 displayName: profile?.displayName?.trim() || '',
             }))
         } catch { /* ignore */ }
-        window.location.assign(new URL('/liff/repair-form', window.location.origin).toString())
+        const repairLiffUrl = buildRepairFormLiffUrl({
+            category: aiSheetCategory ? getSheetTypeLabel(aiSheetCategory) : undefined,
+            symptom: aiSymptom.trim() || undefined,
+        })
+        if (repairLiffUrl) {
+            window.location.assign(repairLiffUrl)
+            return
+        }
+        setError('LIFF URLが未設定です（NEXT_PUBLIC_LIFF_URL または NEXT_PUBLIC_LIFF_ID）')
     }
 
     const openInLineApp = () => {
