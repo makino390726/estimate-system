@@ -1,21 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import {
-    loadWarrantyMapping,
-    saveWarrantyMappingToStorage,
-    type WarrantyFieldMapping,
-    type WarrantySavedMapping,
-} from '@/lib/warrantyMappingStorage'
-import { SHEET_TYPE_OPTIONS, getSheetTypeLabel } from '@/lib/customerRegisterSheetTypes'
+import { formatCustomerRegisterDisplayTitle } from '@/lib/customerRegisterDisplay'
+import { parseCustomerRegisterWorkbook } from '@/lib/customerRegisterExcelImport'
+import { upsertParsedCustomerRegisterRows } from '@/lib/customerRegisterExcelUpsert'
+import { SHEET_TYPE_OPTIONS, getSheetTypeLabel, type SheetTypeValue } from '@/lib/customerRegisterSheetTypes'
 import { REPAIR_STATUS_CONFIG } from '@/lib/repairConstants'
 import { BRANCHES } from '@/lib/branches'
 import type { ServiceRepairReportLite } from '@/lib/serviceRepairReportCustomerMatch'
-
-const WarrantyPdfMapper = dynamic(() => import('@/components/WarrantyPdfMapper'), { ssr: false })
 
 type CustomerRegisterRow = {
     id: string
@@ -227,129 +221,6 @@ function summarizeRepairContent(r: RepairChartRow): string {
     return parts.length ? parts.join(' / ') : '-'
 }
 
-const normalizeMatchText = (value: unknown) => String(value || '')
-    .replace(/[\s　\-ー－]/g, '')
-    .replace(/[()（）]/g, '')
-    .toLowerCase()
-
-const bigramDiceScore = (leftRaw: string, rightRaw: string) => {
-    const left = normalizeMatchText(leftRaw)
-    const right = normalizeMatchText(rightRaw)
-    if (!left || !right) return 0
-    if (left === right) return 1
-    if (left.includes(right) || right.includes(left)) return 0.92
-
-    const toBigrams = (text: string) => {
-        if (text.length < 2) return [text]
-        const grams: string[] = []
-        for (let i = 0; i < text.length - 1; i += 1) grams.push(text.slice(i, i + 2))
-        return grams
-    }
-
-    const leftBigrams = toBigrams(left)
-    const rightBigrams = toBigrams(right)
-    const counts = new Map<string, number>()
-    for (const gram of leftBigrams) counts.set(gram, (counts.get(gram) || 0) + 1)
-    let overlap = 0
-    for (const gram of rightBigrams) {
-        const current = counts.get(gram) || 0
-        if (current > 0) {
-            overlap += 1
-            counts.set(gram, current - 1)
-        }
-    }
-    return (2 * overlap) / (leftBigrams.length + rightBigrams.length)
-}
-
-const findClosestStaffName = (ocrName: string | null | undefined, staffs: StaffOption[]) => {
-    const source = String(ocrName || '').trim()
-    if (!source) return ''
-
-    let bestName = ''
-    let bestScore = 0
-    for (const staff of staffs) {
-        const score = bigramDiceScore(source, staff.name)
-        if (score > bestScore) {
-            bestScore = score
-            bestName = staff.name
-        }
-    }
-
-    return bestScore >= 0.45 ? bestName : source
-}
-
-const normalizeHeader = (value: unknown) => String(value || '').replace(/[\s　]/g, '').replace(/[()（）]/g, '').toLowerCase()
-
-const inferSheetType = (sheetName: string) => {
-    const compact = String(sheetName || '').replace(/\s/g, '')
-    if (compact.includes('暖房機')) return 'heating'
-    if (compact.includes('光合成促進装置')) return 'co2_device'
-    if (compact.includes('食品乾燥機')) return 'food_dryer'
-    if (compact.includes('ソーメン乾燥機')) return 'soumen_dryer'
-    if (compact.includes('薬草乾燥機')) return 'leaf_dryer'
-    if (compact.includes('干し芋乾燥機')) return 'sweetpotato_dryer'
-    if (compact.includes('たばこ乾燥機')) return 'tobacco_dryer'
-    if (compact.includes('冷熱機器')) return 'cooling_equipment'
-    return 'unknown'
-}
-
-const normalizeDate = (value: unknown): string | null => {
-    if (value == null) return null
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        const utc = Math.round((value - 25569) * 86400 * 1000)
-        const date = new Date(utc)
-        if (Number.isNaN(date.getTime())) return null
-        const y = date.getUTCFullYear()
-        const m = String(date.getUTCMonth() + 1).padStart(2, '0')
-        const d = String(date.getUTCDate()).padStart(2, '0')
-        return `${y}-${m}-${d}`
-    }
-    const text = String(value).trim()
-    if (!text) return null
-    const slash = text.match(/^(\d{2,4})[\/.-](\d{1,2})[\/.-](\d{1,2})$/)
-    if (slash) {
-        let year = Number(slash[1])
-        const month = Number(slash[2])
-        const day = Number(slash[3])
-        if (year < 100) year += 2000
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    }
-    const parsed = new Date(text)
-    if (Number.isNaN(parsed.getTime())) return null
-    return parsed.toISOString().split('T')[0]
-}
-
-const headerCandidates = ['出荷日', 'お客様氏名', '伝票番号', '販売店名']
-const normalizedCandidates = headerCandidates.map(normalizeHeader)
-
-const detectHeaderRow = (rows: unknown[][]) => {
-    const scanLimit = Math.min(rows.length, 30)
-    for (let i = 0; i < scanLimit; i += 1) {
-        const normalized = (rows[i] || []).map(normalizeHeader)
-        const hitCount = normalizedCandidates.filter((token) => normalized.includes(token)).length
-        if (hitCount >= 2) return i
-    }
-    return -1
-}
-
-const chunk = <T,>(items: T[], size: number) => {
-    const result: T[][] = []
-    for (let i = 0; i < items.length; i += size) {
-        result.push(items.slice(i, i + size))
-    }
-    return result
-}
-
-const pickByNormalizedHeader = (record: Record<string, unknown>, aliases: string[]) => {
-    const normalizedAliases = aliases.map(normalizeHeader)
-    for (const [key, value] of Object.entries(record)) {
-        if (normalizedAliases.includes(normalizeHeader(key)) && String(value || '').trim() !== '') {
-            return value
-        }
-    }
-    return ''
-}
-
 const getModelPreview = (row: Pick<CustomerRegisterRow, 'sheet_type' | 'model' | 'model_no' | 'outlet_type' | 'model_full'>) => {
     if (row.model_full) return row.model_full
     if (row.sheet_type === 'heating') {
@@ -372,11 +243,10 @@ export default function CustomerRegisterPage() {
     const [form, setForm] = useState<FormState>(initialForm)
     const [searchKeyword, setSearchKeyword] = useState('')
     const [filterSheetType, setFilterSheetType] = useState('')
-    const [pdfFile, setPdfFile] = useState<File | null>(null)
-    const [pdfExtracting, setPdfExtracting] = useState(false)
-    const [pdfPreviewImage, setPdfPreviewImage] = useState<string | null>(null)
-    const [showWarrantyMapper, setShowWarrantyMapper] = useState(false)
-    const [savedMapping, setSavedMapping] = useState<WarrantySavedMapping | null>(null)
+    const [excelFile, setExcelFile] = useState<File | null>(null)
+    const [excelImporting, setExcelImporting] = useState(false)
+    const [importSheetType, setImportSheetType] = useState<SheetTypeValue | ''>('')
+    const [importSummary, setImportSummary] = useState<string | null>(null)
     const [repairsByRowId, setRepairsByRowId] = useState<Record<string, RepairChartRow[]>>({})
     const [partsByRepairId, setPartsByRepairId] = useState<Record<string, RepairPartRow[]>>({})
     const [serviceReportsByRowId, setServiceReportsByRowId] = useState<Record<string, ServiceRepairReportLite[]>>({})
@@ -392,7 +262,6 @@ export default function CustomerRegisterPage() {
 
     useEffect(() => {
         fetchStaffOptions()
-        setSavedMapping(loadWarrantyMapping())
     }, [])
 
     const runLinkServiceReports = async () => {
@@ -712,140 +581,63 @@ export default function CustomerRegisterPage() {
         }
     }
 
-    const handlePdfRead = async () => {
-        if (!pdfFile) {
-            setMessage('PDFファイルを選択してください')
+    const applyExcelImportResult = (
+        fileName: string,
+        parsed: ReturnType<typeof parseCustomerRegisterWorkbook>,
+        result: Awaited<ReturnType<typeof upsertParsedCustomerRegisterRows>>,
+    ) => {
+        const summaryParts = [
+            `✓ ${fileName} を取り込みました`,
+            `シート: ${parsed.sheet_name}（${getSheetTypeLabel(parsed.sheet_type)}）`,
+            `新規 ${result.inserted} 件 / 更新 ${result.updated} 件`,
+            result.skipped ? `スキップ ${result.skipped} 件` : null,
+            result.error_count ? `DBエラー ${result.error_count} 件` : null,
+        ].filter(Boolean)
+        const summary = summaryParts.join(' / ')
+
+        const skipDetail =
+            result.skipped_details?.length
+                ? `スキップ行: ${result.skipped_details.map((s) => `Excel${s.source_row_no}行目`).join('、')}`
+                : null
+
+        setImportSummary(summary)
+        setMessage([summary, skipDetail, result.errors?.length
+            ? `DBエラー詳細: ${result.errors.map((e) => `${e.source_row_no}行目 ${e.reason}`).join(' / ')}`
+            : null].filter(Boolean).join('\n'))
+        setChartNonce((n) => n + 1)
+        if (parsed.sheet_type && parsed.sheet_type !== 'unknown') {
+            setFilterSheetType(parsed.sheet_type)
+        }
+    }
+
+    const handleExcelImport = async () => {
+        if (!excelFile) {
+            setMessage('Excelファイルを選択してください')
             return
         }
 
-        setPdfExtracting(true)
+        setExcelImporting(true)
         setMessage(null)
-        let timeoutId: ReturnType<typeof setTimeout> | null = null
+        setImportSummary(null)
 
         try {
-            const fd = new FormData()
-            fd.append('file', pdfFile)
-            // 領域マッピングが設定済みの場合は送信（定型書式向け高精度モード）
-            if (savedMapping) {
-                fd.append('fieldMappings', JSON.stringify(savedMapping.mappings))
-            }
-            const controller = new AbortController()
-            // 領域OCRはフィールドごとに画像処理を行うため時間がかかる
-            const timeoutMs = savedMapping ? 180000 : 45000
-            timeoutId = setTimeout(() => controller.abort(), timeoutMs)
-
-            const res = await fetch('/api/extract-warranty-pdf', { method: 'POST', body: fd, signal: controller.signal })
-            if (timeoutId) {
-                clearTimeout(timeoutId)
-                timeoutId = null
-            }
-            const json = await res.json()
-
-            if (!json.ok) throw new Error(json.message || 'PDF読み込みに失敗しました')
-
-            const ext = json.extracted as {
-                customer_name: string | null
-                postal_code: string | null
-                address: string | null
-                phone: string | null
-                mobile: string | null
-                product_name: string | null
-                model_no_full: string | null
-                manufacturing_no: string | null
-                slip_no: string | null
-                purchase_date: string | null
-                dealer_name: string | null
-                staff_name: string | null
-            }
-            const source = typeof json.source === 'string' ? json.source : ''
-            const warning = typeof json.warning === 'string' ? json.warning : ''
-
-            if (json.imageDataUrl) {
-                setPdfPreviewImage(json.imageDataUrl)
-            }
-
-            // 製品名 → sheet_type を推定
-            const sheetType = inferSheetType(ext.product_name || '')
-            const sheetLabel = getSheetTypeLabel(sheetType)
-
-            // 型式番号を model / outlet_type に分割（暖房機の場合）
-            let model = ''
-            let outletType = ''
-            let modelNo = ''
-
-            if (ext.model_no_full) {
-                if (sheetType === 'heating') {
-                    const lastDash = ext.model_no_full.lastIndexOf('-')
-                    if (lastDash > 0) {
-                        model = ext.model_no_full.substring(0, lastDash)
-                        outletType = ext.model_no_full.substring(lastDash + 1)
-                    } else {
-                        model = ext.model_no_full
-                    }
-                } else {
-                    modelNo = ext.model_no_full
-                }
-            }
-
-            // 住所に郵便番号を付加
-            const fullAddress = [
-                ext.postal_code ? `〒${ext.postal_code}` : '',
-                ext.address || '',
-            ].filter(Boolean).join(' ')
-
-            const matchedStaffName = findClosestStaffName(ext.staff_name, staffOptions)
-
-            setForm({
-                sheet_name: sheetLabel,
-                sheet_type: sheetType,
-                source_row_no: '',
-                shipment_date: '',
-                customer_name: ext.customer_name || '',
-                address: fullAddress,
-                phone: ext.phone || '',
-                mobile: ext.mobile || '',
-                staff_name: matchedStaffName,
-                slip_no: ext.slip_no || '',
-                purchase_ymd: ext.purchase_date || '',
-                dealer_name: ext.dealer_name || '',
-                model,
-                model_no: modelNo,
-                serial_no: '',
-                manufacturing_no: ext.manufacturing_no || '',
-                burner_no: '',
-                outlet_type: outletType,
-                raw_data_json: '{}',
+            const buffer = await excelFile.arrayBuffer()
+            const parsed = parseCustomerRegisterWorkbook(buffer, excelFile.name, {
+                sheetTypeOverride: importSheetType || undefined,
             })
 
-            if (warning) {
-                setMessage(`PDF抽出完了（${source || 'fallback'}）: ${warning}`)
-            } else if (source === 'region-ocr' || source === 'region-openai' || source === 'region-gemini' || source === 'gemini') {
-                setMessage(
-                    source === 'region-openai'
-                        ? '✓ マッピング設定を使用してAI Visionで読み取りました。内容を確認してから「登録する」をクリックしてください。'
-                        : source === 'region-gemini'
-                            ? '✓ マッピング設定を使用してGemini Visionで読み取りました。内容を確認してから「登録する」をクリックしてください。'
-                            : source === 'gemini'
-                                ? '✓ Gemini Visionで読み取りました。内容を確認してから「登録する」をクリックしてください。'
-                                : '✓ マッピング設定を使用して領域OCRで読み取りました。内容を確認してから「登録する」をクリックしてください。'
-                )
-            } else {
-                setMessage('PDFから情報を抽出しました。内容を確認してから「登録する」をクリックしてください。')
+            if (parsed.rows.length === 0) {
+                throw new Error('取込対象のデータ行がありません（本体・本体番号・製造番号が空の行はスキップされます）')
             }
-            window.scrollTo({ top: 0, behavior: 'smooth' })
-        } catch (error: any) {
-            if (error?.name === 'AbortError') {
-                setMessage(
-                    savedMapping
-                        ? 'PDF読み込みがタイムアウトしました。マッピング領域OCRは時間がかかる場合があります。再実行するか、設定項目を減らしてお試しください。'
-                        : 'PDF読み込みがタイムアウトしました。再実行するか、PDFサイズを小さくしてお試しください。'
-                )
-            } else {
-                setMessage(`PDF読み込み失敗: ${error.message || '詳細はコンソールを確認してください'}`)
-            }
+
+            const result = await upsertParsedCustomerRegisterRows(supabase, parsed, {
+                sourceFileName: excelFile.name,
+            })
+            applyExcelImportResult(excelFile.name, parsed, result)
+        } catch (error: unknown) {
+            setMessage(`Excel取込失敗: ${error instanceof Error ? error.message : '詳細はコンソールを確認してください'}`)
         } finally {
-            if (timeoutId) clearTimeout(timeoutId)
-            setPdfExtracting(false)
+            setExcelImporting(false)
         }
     }
 
@@ -865,112 +657,48 @@ export default function CustomerRegisterPage() {
                 </Link>
             </div>
 
-            {/* WarrantyPdfMapper モーダル */}
-            {showWarrantyMapper && pdfFile && (
-                <div
-                    style={{
-                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
-                        zIndex: 1000, display: 'flex', flexDirection: 'column',
-                        padding: 20, boxSizing: 'border-box',
-                    }}
-                >
-                    <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <h2 style={{ margin: 0, color: '#f8fafc', fontSize: 18 }}>保証書フィールドマッピング設定</h2>
-                        <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                            このPDFを参考に各フィールドの位置をドラッグで指定してください。次回以降も自動適用されます。
-                        </span>
-                    </div>
-                    <div style={{ flex: 1, minHeight: 0 }}>
-                        <WarrantyPdfMapper
-                            file={pdfFile}
-                            initialMappings={savedMapping?.mappings}
-                            onSave={(mappings: WarrantyFieldMapping[]) => {
-                                saveWarrantyMappingToStorage(mappings)
-                                const newSaved = { mappings, savedAt: new Date().toISOString() }
-                                setSavedMapping(newSaved)
-                                setShowWarrantyMapper(false)
-                                setMessage('✓ マッピング設定を保存しました。次回から「保証書を読み込む」で自動適用されます。')
-                            }}
-                            onCancel={() => setShowWarrantyMapper(false)}
-                        />
-                    </div>
-                </div>
-            )}
-
-            {/* 保証書PDF読み込みパネル */}
+            {/* 顧客リスト Excel 取込 */}
             <div style={{ ...panelStyle, marginBottom: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <label style={{ ...labelStyle, fontSize: 15, color: '#c4b5fd', marginBottom: 0 }}>📄 保証書PDFを読み込んで自動入力</label>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        {savedMapping && (
-                            <span style={{ fontSize: 11, color: '#86efac', background: '#052e16', border: '1px solid #16a34a', borderRadius: 4, padding: '3px 8px' }}>
-                                📍 マッピング設定済み ({savedMapping.mappings.filter(m => m.area).length}件)
-                            </span>
-                        )}
-                        <button
-                            onClick={() => {
-                                if (!pdfFile) {
-                                    setMessage('まずPDFファイルを選択してから「マッピング設定」をクリックしてください。')
-                                    return
-                                }
-                                setShowWarrantyMapper(true)
-                            }}
-                            className="btn-3d"
-                            style={{ padding: '6px 14px', background: '#0f4c75', border: '1px solid #1b6ca8', fontSize: 12 }}
-                        >
-                            📍 マッピング設定
-                        </button>
-                        {savedMapping && (
-                            <button
-                                onClick={() => {
-                                    if (confirm('マッピング設定を削除しますか？')) {
-                                        localStorage.removeItem('warranty_pdf_field_mapping_v1')
-                                        setSavedMapping(null)
-                                        setMessage('マッピング設定を削除しました。')
-                                    }
-                                }}
-                                style={{ padding: '6px 10px', background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}
-                            >
-                                設定を削除
-                            </button>
-                        )}
-                    </div>
-                </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <label style={{ ...labelStyle, fontSize: 15, color: '#c4b5fd', marginBottom: 8, display: 'block' }}>
+                    📊 顧客リスト Excel を取り込む
+                </label>
+                <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
+                    暖房機・光合成促進装置・たばこ乾燥機など、機種別の顧客リスト Excel を一括登録します。
+                    製造番号（本体番号列）が既存データと一致する場合は更新、なければ新規登録します。
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
                     <input
                         type="file"
-                        accept=".pdf"
-                        onChange={(e) => { setPdfFile(e.target.files?.[0] || null); setPdfPreviewImage(null) }}
+                        accept=".xlsx,.xls"
+                        onChange={(e) => { setExcelFile(e.target.files?.[0] || null); setImportSummary(null) }}
                         style={{ maxWidth: 480 }}
                     />
+                    <select
+                        value={importSheetType}
+                        onChange={(e) => setImportSheetType(e.target.value as SheetTypeValue | '')}
+                        style={{ ...inputStyle, width: 'auto', minWidth: 180 }}
+                        title="自動判定できない場合に機種を指定"
+                    >
+                        <option value="">機種: 自動判定</option>
+                        {SHEET_TYPE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                    </select>
                     <button
-                        onClick={handlePdfRead}
-                        disabled={!pdfFile || pdfExtracting}
+                        onClick={() => void handleExcelImport()}
+                        disabled={!excelFile || excelImporting}
                         className="btn-3d"
                         style={{
                             padding: '10px 20px',
-                            background: pdfExtracting ? '#334155' : '#7c3aed',
-                            border: `1px solid ${pdfExtracting ? '#475569' : '#6d28d9'}`,
+                            background: excelImporting ? '#334155' : '#7c3aed',
+                            border: `1px solid ${excelImporting ? '#475569' : '#6d28d9'}`,
                         }}
                     >
-                        {pdfExtracting ? 'AI読み込み中...' : '保証書を読み込む'}
+                        {excelImporting ? '取込中...' : 'Excelを取り込む'}
                     </button>
                 </div>
-                <p style={{ margin: '8px 0 4px 0', fontSize: 12, color: '#94a3b8' }}>
-                    {savedMapping
-                        ? '📍 マッピング設定済み：保証書の各フィールド位置を使って領域OCRで読み取ります。'
-                        : '保証書の文字をOCRで読み取り、フォームに自動入力します。「マッピング設定」で定型書式の位置を設定すると精度が向上します。'
-                    }
-                </p>
-                {pdfPreviewImage && (
-                    <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                        <img
-                            src={pdfPreviewImage}
-                            alt="保証書プレビュー"
-                            style={{ maxWidth: 360, maxHeight: 280, border: '1px solid #334155', borderRadius: 8, objectFit: 'contain', background: '#fff' }}
-                        />
-                        <span style={{ fontSize: 12, color: '#86efac', alignSelf: 'center' }}>✓ 読み取り完了 — 左のフォームを確認してください</span>
-                    </div>
+                {importSummary && (
+                    <p style={{ margin: 0, fontSize: 12, color: '#86efac' }}>{importSummary}</p>
                 )}
             </div>
 
@@ -1239,7 +967,7 @@ export default function CustomerRegisterPage() {
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                                                 <div style={{ flex: 1, minWidth: 200 }}>
                                                     <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc', marginBottom: 8 }}>
-                                                        {row.customer_name || '（氏名未設定）'}
+                                                        {formatCustomerRegisterDisplayTitle(row.customer_name, row.dealer_name)}
                                                     </div>
                                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '6px 16px', fontSize: 13, color: '#cbd5e1' }}>
                                                         <div><span style={{ color: '#64748b' }}>住所</span> {row.address?.trim() || '—'}</div>

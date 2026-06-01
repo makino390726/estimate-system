@@ -222,7 +222,7 @@ export default function MasterSelectorPage() {
               <FiUsers className="icon" />
               <h2>顧客カルテ</h2>
             </div>
-            <p>顧客名で検索し、基本情報と修理履歴・交換部品を一覧できます。新規登録・保証書取込にも対応します。</p>
+            <p>顧客名で検索し、基本情報と修理履歴・交換部品を一覧できます。新規登録・Excel一括取込にも対応します。</p>
             <div className="selector-card-buttons">
               <Link href="/customer-register" className="selector-button primary">
                 顧客カルテ
