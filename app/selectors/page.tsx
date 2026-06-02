@@ -55,9 +55,15 @@ export default function MasterSelectorPage() {
             />
           </div>
           <div className="flex-1 relative z-10" />
-          <h1 className="flex-1 relative z-10 text-center text-3xl sm:text-4xl font-bold text-white whitespace-nowrap">
-            三州見積書作成システム
-          </h1>
+          <div className="flex-1 relative z-10 flex justify-center">
+            <div className="brand-header">
+              <h1 className="brand-header-en">SANSHU SALES SUPPORT</h1>
+              <div className="brand-header-divider" aria-hidden="true">
+                <span className="brand-header-divider-dot" />
+              </div>
+              <p className="brand-header-ja">三州セールスサポートシステム</p>
+            </div>
+          </div>
           <div className="flex-1 relative z-10 flex justify-end">
             <Image
               src="/会社ロゴ（スタイリッシュ）.png"

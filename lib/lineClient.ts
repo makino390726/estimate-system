@@ -48,17 +48,22 @@ export async function verifySignature(body: string, signature: string): Promise<
 
 /** テキストメッセージを返信 */
 export async function replyMessage(replyToken: string, text: string) {
+    await replyMessages(replyToken, [{ type: 'text', text }])
+}
+
+/** 複数メッセージ（Flex 等）を返信 */
+export async function replyMessages(replyToken: string, messages: Record<string, unknown>[]) {
     const res = await fetch(`${LINE_API_BASE}/message/reply`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
             replyToken,
-            messages: [{ type: 'text', text }],
+            messages,
         }),
     })
     if (!res.ok) {
         const errBody = await res.text()
-        console.error('LINE replyMessage failed:', res.status, errBody)
+        console.error('LINE replyMessages failed:', res.status, errBody)
     }
 }
 

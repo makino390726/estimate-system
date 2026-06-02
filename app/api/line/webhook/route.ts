@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import {
     verifySignature,
     replyMessage,
+    replyMessages,
     pushMessage,
     replyWithQuickReply,
     getProfile,
@@ -25,6 +26,7 @@ import { searchDifyRepairKnowledge } from '@/lib/difyClient'
 import { acknowledgeRepairByCustomer } from '@/lib/repairCustomerAck'
 import { parseRepairAckPostbackData } from '@/lib/repairLineCustomerNotify'
 import { buildRepairFormLiffUrl } from '@/lib/repairLiffUrls'
+import { getCustomerRegisterInviteMessage } from '@/lib/lineCustomerRegisterFlex'
 
 export const runtime = 'nodejs'
 
@@ -145,7 +147,7 @@ export async function POST(request: Request) {
             if (!userId) continue
 
             if (event.type === 'follow') {
-                await handleStaffFollow(event, userId)
+                await handleCustomerFollow(event, userId)
                 continue
             }
 
@@ -199,13 +201,32 @@ async function handlePostback(event: LineEvent, userId: string) {
     }
 }
 
-async function handleStaffFollow(event: LineEvent, userId: string) {
+async function handleCustomerFollow(event: LineEvent, userId: string) {
     try {
-        const profile = await getProfile(userId).catch(() => null)
-        const text = buildStaffLineHelpReply(userId, profile?.displayName)
-        await replyMessage(event.replyToken, text)
+        const sb = getSupabase()
+        const { data: staffMapping } = await sb
+            .from('line_staff_mappings')
+            .select('staff_name')
+            .eq('line_user_id', userId)
+            .maybeSingle()
+
+        if (staffMapping?.staff_name) {
+            const profile = await getProfile(userId).catch(() => null)
+            await replyMessage(event.replyToken, buildStaffLineHelpReply(userId, profile?.displayName))
+            return
+        }
+
+        const invite = getCustomerRegisterInviteMessage()
+        if (invite.flex) {
+            await replyMessages(event.replyToken, [invite.flex])
+        } else {
+            await replyMessage(event.replyToken, invite.text)
+        }
     } catch (e) {
-        console.error('handleStaffFollow failed:', e)
+        console.error('handleCustomerFollow failed:', e)
+        try {
+            await replyMessage(event.replyToken, getCustomerRegisterInviteMessage().text)
+        } catch { /* ignore */ }
     }
 }
 
