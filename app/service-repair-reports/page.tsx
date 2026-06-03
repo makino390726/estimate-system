@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 type ServiceRepairReport = {
@@ -241,6 +241,72 @@ const chunk = <T,>(items: T[], size: number) => {
         result.push(items.slice(i, i + size))
     }
     return result
+}
+
+/** 横スクロールを上下両方に表示し、同期する */
+function DualHorizontalScroll({ children }: { children: ReactNode }) {
+    const topRef = useRef<HTMLDivElement>(null)
+    const bottomRef = useRef<HTMLDivElement>(null)
+    const contentRef = useRef<HTMLDivElement>(null)
+    const topSpacerRef = useRef<HTMLDivElement>(null)
+    const syncingRef = useRef(false)
+
+    const syncScroll = (source: 'top' | 'bottom') => {
+        const top = topRef.current
+        const bottom = bottomRef.current
+        if (!top || !bottom || syncingRef.current) return
+        syncingRef.current = true
+        if (source === 'top') {
+            bottom.scrollLeft = top.scrollLeft
+        } else {
+            top.scrollLeft = bottom.scrollLeft
+        }
+        requestAnimationFrame(() => {
+            syncingRef.current = false
+        })
+    }
+
+    useEffect(() => {
+        const content = contentRef.current
+        const spacer = topSpacerRef.current
+        if (!content || !spacer) return
+
+        const updateSpacerWidth = () => {
+            spacer.style.width = `${content.scrollWidth}px`
+        }
+
+        updateSpacerWidth()
+        const observer = new ResizeObserver(updateSpacerWidth)
+        observer.observe(content)
+        return () => observer.disconnect()
+    }, [children])
+
+    const scrollTrackStyle: React.CSSProperties = {
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+    }
+
+    return (
+        <div>
+            <div
+                ref={topRef}
+                onScroll={() => syncScroll('top')}
+                style={{ ...scrollTrackStyle, height: 14, marginBottom: 6 }}
+                aria-label="一覧を左右にスクロール（上）"
+            >
+                <div ref={topSpacerRef} style={{ height: 1 }} />
+            </div>
+            <div
+                ref={bottomRef}
+                onScroll={() => syncScroll('bottom')}
+                style={scrollTrackStyle}
+                aria-label="一覧を左右にスクロール（下）"
+            >
+                <div ref={contentRef}>{children}</div>
+            </div>
+        </div>
+    )
 }
 
 export default function ServiceRepairReportsPage() {
@@ -782,8 +848,8 @@ export default function ServiceRepairReportsPage() {
                         )}
                     </div>
 
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+                    <DualHorizontalScroll>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
                             <thead>
                                 <tr>
                                     <th style={thStyle}>作業日</th>
@@ -838,7 +904,7 @@ export default function ServiceRepairReportsPage() {
                                 )}
                             </tbody>
                         </table>
-                    </div>
+                    </DualHorizontalScroll>
                 </section>
             </div>
         </div>
