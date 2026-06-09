@@ -1,9 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useReactToPrint } from 'react-to-print'
 import { supabase } from '../../../lib/supabaseClient'
+import {
+  buildCaseDetailReportCsv,
+  computeCaseAmounts,
+  deriveBusinessFallback,
+  deriveGrossProfitFallback,
+  fetchCaseDetailsForReport,
+  fetchProductCostMap,
+  formatReportDate,
+  formatPercent,
+  formatYen,
+  mapDetailRowsForReport,
+  type CaseDetailReportRow,
+} from '../../../lib/caseDetailReport'
 
 type CaseWithDetails = {
   case_id: string
@@ -27,7 +41,29 @@ export default function CaseListPage() {
   const [loading, setLoading] = useState(true)
   const [staffFilter, setStaffFilter] = useState('')
   const [staffOptions, setStaffOptions] = useState<{ id: string; name: string }[]>([])
+  const [exportStartDate, setExportStartDate] = useState('')
+  const [exportEndDate, setExportEndDate] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [reportRows, setReportRows] = useState<CaseDetailReportRow[]>([])
+  const [reportMeta, setReportMeta] = useState({ staffLabel: 'すべて', count: 0 })
+  const printRef = useRef<HTMLDivElement | null>(null)
   const router = useRouter()
+
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: `案件明細表_${exportStartDate || '開始未指定'}_${exportEndDate || '終了未指定'}`,
+    pageStyle: `
+      @page {
+        size: A4 landscape;
+        margin: 12mm 10mm 10mm 10mm;
+      }
+      @media print {
+        body { margin: 0; padding: 0; font-size: 11pt; }
+        table { font-size: 10pt; }
+        th, td { padding: 4px 6px !important; }
+      }
+    `,
+  })
 
   useEffect(() => {
     fetchCases()
@@ -252,6 +288,180 @@ export default function CaseListPage() {
     fetchCases()
   }
 
+  const validateExportDateRange = () => {
+    if (!exportStartDate || !exportEndDate) {
+      alert('開始日と終了日を入力してください')
+      return false
+    }
+    if (exportStartDate > exportEndDate) {
+      alert('開始日は終了日以前に設定してください')
+      return false
+    }
+    return true
+  }
+
+  const fetchReportRows = async (): Promise<CaseDetailReportRow[]> => {
+    const startDateTime = `${exportStartDate}T00:00:00`
+    const endDate = new Date(`${exportEndDate}T00:00:00`)
+    endDate.setDate(endDate.getDate() + 1)
+    const endExclusive = endDate.toISOString().split('T')[0]
+    const endDateTime = `${endExclusive}T00:00:00`
+
+    let query = supabase
+      .from('cases_with_names')
+      .select('case_id, subject, created_date, status, staff_name, staff_id')
+      .gte('created_date', startDateTime)
+      .lt('created_date', endDateTime)
+      .order('created_date', { ascending: true })
+
+    if (staffFilter) {
+      query = query.eq('staff_id', staffFilter)
+    }
+
+    const { data: casesData, error: casesError } = await query
+    if (casesError) {
+      console.error('案件明細表取得エラー:', casesError)
+      throw new Error('案件データの取得に失敗しました')
+    }
+
+    if (!casesData || casesData.length === 0) {
+      return []
+    }
+
+    const caseIds = casesData.map((c) => c.case_id)
+
+    const [{ data: amountData, error: amountError }, detailData] = await Promise.all([
+      supabase
+        .from('cases')
+        .select('case_id, total_amount, gross_profit, gross_margin')
+        .in('case_id', caseIds),
+      fetchCaseDetailsForReport(supabase, caseIds),
+    ])
+
+    if (amountError) {
+      const errText = `${amountError.message || ''} ${amountError.details || ''}`.toLowerCase()
+      const missingAmountColumns =
+        errText.includes('column') &&
+        (errText.includes('total_amount') || errText.includes('gross_profit') || errText.includes('gross_margin'))
+
+      if (!missingAmountColumns) {
+        console.error('案件金額取得エラー:', amountError)
+        throw new Error('案件金額データの取得に失敗しました')
+      }
+    }
+
+    const amountByCaseId = new Map(
+      (amountData || []).map((row: any) => [row.case_id, row]),
+    )
+
+    const productIds = Array.from(
+      new Set(
+        detailData
+          .map((detail) => (detail.product_id != null ? String(detail.product_id) : ''))
+          .filter(Boolean),
+      ),
+    )
+    const productCostMap = await fetchProductCostMap(supabase, productIds)
+    const groupedDetails = mapDetailRowsForReport(detailData, productCostMap)
+
+    return casesData.map((caseRow) => {
+      const caseAmount = amountByCaseId.get(caseRow.case_id)
+      const amounts = computeCaseAmounts(groupedDetails.get(caseRow.case_id) || [], {
+        businessTotal: deriveBusinessFallback(caseAmount?.total_amount),
+        grossProfitTotal: deriveGrossProfitFallback(
+          caseAmount?.gross_profit,
+          caseAmount?.total_amount,
+          caseAmount?.gross_margin,
+        ),
+      })
+      return {
+        created_date: caseRow.created_date,
+        subject: caseRow.subject || '-',
+        business_total: amounts.businessTotal,
+        cost_total: amounts.costTotal,
+        gross_profit_total: amounts.grossProfitTotal,
+        gross_profit_rate: amounts.grossProfitRate,
+        status: caseRow.status || '-',
+        staff_name: caseRow.staff_name || '不明',
+      }
+    })
+  }
+
+  const getSelectedStaffLabel = () => {
+    if (!staffFilter) return 'すべて'
+    const selected = staffOptions.find((staff) => staff.id === staffFilter)
+    return selected?.name || staffFilter
+  }
+
+  const handleExportCsv = async () => {
+    if (!validateExportDateRange()) return
+
+    setExporting(true)
+    try {
+      const rows = await fetchReportRows()
+      if (rows.length === 0) {
+        alert('指定期間に該当する案件がありません')
+        return
+      }
+
+      const bom = '\ufeff'
+      const csvContent = buildCaseDetailReportCsv(rows)
+      const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `案件明細表_${exportStartDate}_${exportEndDate}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('CSV出力エラー:', error)
+      alert(error instanceof Error ? error.message : 'CSV出力に失敗しました')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleExportPdf = async () => {
+    if (!validateExportDateRange()) return
+
+    setExporting(true)
+    try {
+      const rows = await fetchReportRows()
+      if (rows.length === 0) {
+        alert('指定期間に該当する案件がありません')
+        return
+      }
+
+      setReportRows(rows)
+      setReportMeta({
+        staffLabel: getSelectedStaffLabel(),
+        count: rows.length,
+      })
+
+      setTimeout(() => {
+        handlePrint()
+      }, 200)
+    } catch (error) {
+      console.error('PDF出力エラー:', error)
+      alert(error instanceof Error ? error.message : 'PDF出力に失敗しました')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const reportTotals = reportRows.reduce(
+    (acc, row) => ({
+      business_total: acc.business_total + row.business_total,
+      cost_total: acc.cost_total + row.cost_total,
+      gross_profit_total: acc.gross_profit_total + row.gross_profit_total,
+    }),
+    { business_total: 0, cost_total: 0, gross_profit_total: 0 },
+  )
+  const reportTotalRate =
+    reportTotals.business_total > 0
+      ? (reportTotals.gross_profit_total / reportTotals.business_total) * 100
+      : null
+
   const getStatusBadge = (status: string) => {
     const styles: { [key: string]: React.CSSProperties } = {
       pending: { backgroundColor: '#ffc107', color: '#000' },
@@ -322,6 +532,74 @@ export default function CaseListPage() {
             </button>
           </Link>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 16, flexWrap: 'wrap', padding: 16, border: '1px solid #334155', borderRadius: 8, backgroundColor: '#111827' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', color: '#cbd5e1', fontSize: 12 }}>
+          出力開始日
+          <input
+            type="date"
+            value={exportStartDate}
+            onChange={(e) => setExportStartDate(e.target.value)}
+            className="input-inset"
+            style={{ minWidth: 160, marginTop: 4 }}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', color: '#cbd5e1', fontSize: 12 }}>
+          出力終了日
+          <input
+            type="date"
+            value={exportEndDate}
+            onChange={(e) => setExportEndDate(e.target.value)}
+            className="input-inset"
+            style={{ minWidth: 160, marginTop: 4 }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            const today = new Date().toISOString().split('T')[0]
+            setExportStartDate(today)
+            setExportEndDate(today)
+          }}
+          className="btn-3d btn-reset"
+          style={{ padding: '8px 12px', fontSize: 12 }}
+        >
+          今日
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const now = new Date()
+            const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+            setExportStartDate(start)
+            setExportEndDate(end)
+          }}
+          className="btn-3d btn-reset"
+          style={{ padding: '8px 12px', fontSize: 12 }}
+        >
+          今月
+        </button>
+        <button
+          onClick={handleExportCsv}
+          disabled={exporting}
+          className="btn-3d btn-search"
+          style={{ padding: '10px 18px', opacity: exporting ? 0.6 : 1 }}
+        >
+          {exporting ? '出力中...' : '案件明細表 CSV出力'}
+        </button>
+        <button
+          onClick={handleExportPdf}
+          disabled={exporting}
+          className="btn-3d btn-primary"
+          style={{ padding: '10px 18px', opacity: exporting ? 0.6 : 1 }}
+        >
+          {exporting ? '出力中...' : '案件明細表 PDF印刷'}
+        </button>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>
+          作成日で期間指定。担当者絞込は上部の選択が反映されます。
+        </span>
       </div>
 
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -395,6 +673,59 @@ export default function CaseListPage() {
           案件がありません
         </p>
       )}
+
+      <div style={{ position: 'absolute', left: -99999, top: 0 }}>
+        <div ref={printRef} style={{ width: 1280, padding: 24, backgroundColor: '#ffffff', color: '#000000' }}>
+          <div style={{ marginBottom: 16 }}>
+            <h1 style={{ margin: '0 0 8px', fontSize: 22 }}>案件明細表</h1>
+            <div style={{ fontSize: 13, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <span>期間: {exportStartDate || '未指定'} ～ {exportEndDate || '未指定'}</span>
+              <span>担当者: {reportMeta.staffLabel}</span>
+              <span>件数: {reportMeta.count} 件</span>
+              <span>出力日: {new Date().toLocaleDateString('ja-JP')}</span>
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr>
+                <th style={printThStyle}>作成日</th>
+                <th style={{ ...printThStyle, width: '28%' }}>件名</th>
+                <th style={{ ...printThStyle, textAlign: 'right' }}>事業費計</th>
+                <th style={{ ...printThStyle, textAlign: 'right' }}>原価合計</th>
+                <th style={{ ...printThStyle, textAlign: 'right' }}>粗利額計</th>
+                <th style={{ ...printThStyle, textAlign: 'right' }}>粗利率</th>
+                <th style={printThStyle}>ステータス</th>
+                <th style={printThStyle}>担当者</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportRows.map((row, index) => (
+                <tr key={`${row.created_date}-${row.subject}-${index}`}>
+                  <td style={printTdStyle}>{formatReportDate(row.created_date)}</td>
+                  <td style={printTdStyle}>{row.subject}</td>
+                  <td style={{ ...printTdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatYen(row.business_total)}</td>
+                  <td style={{ ...printTdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatYen(row.cost_total)}</td>
+                  <td style={{ ...printTdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatYen(row.gross_profit_total)}</td>
+                  <td style={{ ...printTdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatPercent(row.gross_profit_rate)}</td>
+                  <td style={printTdStyle}>{row.status}</td>
+                  <td style={printTdStyle}>{row.staff_name}</td>
+                </tr>
+              ))}
+              {reportRows.length > 0 && (
+                <tr>
+                  <td style={printTotalStyle} colSpan={2}>合計</td>
+                  <td style={{ ...printTotalStyle, textAlign: 'right' }}>{formatYen(reportTotals.business_total)}</td>
+                  <td style={{ ...printTotalStyle, textAlign: 'right' }}>{formatYen(reportTotals.cost_total)}</td>
+                  <td style={{ ...printTotalStyle, textAlign: 'right' }}>{formatYen(reportTotals.gross_profit_total)}</td>
+                  <td style={{ ...printTotalStyle, textAlign: 'right' }}>{formatPercent(reportTotalRate)}</td>
+                  <td style={printTotalStyle} colSpan={2} />
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
@@ -413,4 +744,29 @@ const tdStyle: React.CSSProperties = {
   border: '1px solid #ccc',
   padding: '8px 12px',
   fontSize: 12,
+}
+
+const printThStyle: React.CSSProperties = {
+  border: '1px solid #334155',
+  padding: '6px 8px',
+  backgroundColor: '#e2e8f0',
+  textAlign: 'left',
+  fontSize: 12,
+  fontWeight: 'bold',
+}
+
+const printTdStyle: React.CSSProperties = {
+  border: '1px solid #cbd5e1',
+  padding: '6px 8px',
+  fontSize: 12,
+  verticalAlign: 'top',
+  wordBreak: 'break-word',
+}
+
+const printTotalStyle: React.CSSProperties = {
+  border: '1px solid #334155',
+  padding: '6px 8px',
+  fontSize: 12,
+  fontWeight: 'bold',
+  backgroundColor: '#f8fafc',
 }
