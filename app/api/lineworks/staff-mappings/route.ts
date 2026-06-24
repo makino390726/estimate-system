@@ -11,7 +11,12 @@ export async function GET() {
         if (error) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
         }
-        return NextResponse.json({ ok: true, mappings: data || [] })
+        const mappings = data || []
+        const readHint =
+            mappings.length === 0 && !hasSupabaseServiceRole()
+                ? '登録があるのに空の場合: Supabase で enable_lineworks_staff_mappings_rls.sql を実行するか、SUPABASE_SERVICE_ROLE_KEY を設定してください'
+                : null
+        return NextResponse.json({ ok: true, mappings, readHint })
     } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e)
         return NextResponse.json({ ok: false, error: message }, { status: 500 })

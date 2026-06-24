@@ -77,6 +77,8 @@ export default function LineWorksStaffNotifyPage() {
         staffNotifyPolicy?: string
     } | null>(null)
     const [testSending, setTestSending] = useState(false)
+    const [saving, setSaving] = useState(false)
+    const [saveHint, setSaveHint] = useState<string | null>(null)
 
     useEffect(() => {
         setOrigin(window.location.origin)
@@ -101,15 +103,24 @@ export default function LineWorksStaffNotifyPage() {
         ])
         const mapData = await mapRes.json().catch(() => ({}))
         const staffData = await staffRes.json().catch(() => ({}))
+
         if (!mapRes.ok || !mapData.ok) {
-            setMsg(`取得エラー: ${mapData.error || mapRes.statusText}`)
+            setMsg(`登録一覧の取得エラー: ${mapData.error || mapRes.statusText}`)
+            setRows([])
             return
         }
-        if (!staffRes.ok || !staffData.ok) {
-            setMsg(`担当者取得エラー: ${staffData.error || staffRes.statusText}`)
-            return
-        }
+
         setRows((mapData.mappings || []) as Mapping[])
+
+        if (mapData.readHint) {
+            setMsg(mapData.readHint)
+        }
+
+        if (!staffRes.ok || !staffData.ok) {
+            setMsg(`担当者マスタの取得エラー（登録一覧は表示しています）: ${staffData.error || staffRes.statusText}`)
+            return
+        }
+
         const staff = (staffData.staff || []) as StaffOption[]
         if (staff.length > 0) {
             setStaffOptions(staff)
@@ -159,30 +170,53 @@ export default function LineWorksStaffNotifyPage() {
     const handleSave = async () => {
         const lineworks_user_id = form.lineworks_user_id.trim()
         const matched = staffOptions.find((s) => s.id === qrStaffId)
-        const staff_name = (matched?.name || form.staff_name).trim()
-        if (!qrStaffId || !staff_name || !lineworks_user_id) {
-            setMsg('担当者（プルダウン）と LINE WORKS ID（メール）は必須です')
+        const staff_name = (matched?.name || form.staff_name || qrStaffName).trim()
+        if (!staff_name || !lineworks_user_id) {
+            const hint = '担当者（プルダウンで選択）と LINE WORKS ID（メール）は必須です'
+            setSaveHint(hint)
+            setMsg(hint)
             return
         }
-        const staff_id = qrStaffId.startsWith('name-') ? undefined : qrStaffId
-        const res = await fetch('/api/lineworks/staff-mappings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                staff_id,
-                staff_name,
-                lineworks_user_id,
-                display_name: form.display_name.trim() || null,
-            }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok || !data.ok) {
-            setMsg(`保存失敗: ${data.error || res.statusText}`)
+        if (!qrStaffId) {
+            const hint = '担当者をプルダウンから選択してください（メールだけ入力しても保存できません）'
+            setSaveHint(hint)
+            setMsg(hint)
             return
         }
-        setMsg(`${data.staff_name} の LINE WORKS 通知を登録しました`)
-        setForm({ staff_name: '', lineworks_user_id: '', display_name: '' })
-        await fetchAll()
+        setSaving(true)
+        setSaveHint(null)
+        setMsg(null)
+        try {
+            const staff_id = qrStaffId.startsWith('name-') ? undefined : qrStaffId
+            const res = await fetch('/api/lineworks/staff-mappings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    staff_id,
+                    staff_name,
+                    lineworks_user_id,
+                    display_name: form.display_name.trim() || null,
+                }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok || !data.ok) {
+                const hint = `保存失敗: ${data.error || res.statusText}`
+                setSaveHint(hint)
+                setMsg(hint)
+                return
+            }
+            const okMsg = `${data.staff_name} の LINE WORKS 通知を登録しました`
+            setSaveHint(okMsg)
+            setMsg(okMsg)
+            setForm({ staff_name: '', lineworks_user_id: '', display_name: '' })
+            await fetchAll()
+        } catch (e: unknown) {
+            const hint = e instanceof Error ? e.message : '保存に失敗しました'
+            setSaveHint(hint)
+            setMsg(hint)
+        } finally {
+            setSaving(false)
+        }
     }
 
     const handleQrDecoded = (decoded: string): boolean => {
@@ -298,7 +332,7 @@ export default function LineWorksStaffNotifyPage() {
                         <li>担当者通知チャネル: {lwStatus.staffNotifyChannelLabel || lwStatus.staffNotifyChannel || '—'}</li>
                         <li>環境変数: {lwStatus.configured ? '設定済み' : '未設定'}</li>
                         <li>APIトークン: {lwStatus.tokenOk ? '取得成功' : `失敗 ${lwStatus.tokenError || ''}`}</li>
-                        <li>担当者登録: {lwStatus.mappingCount ?? 0} 名</li>
+                        <li>担当者登録: {lwStatus.mappingCount ?? rows.length} 名{rows.length > 0 ? `（一覧表示: ${rows.length} 名）` : ''}</li>
                         <li>確認用テーブル: {lwStatus.notificationsTableOk === false
                             ? `未作成（${lwStatus.notificationsTableError}）`
                             : 'OK'}</li>
@@ -429,21 +463,33 @@ export default function LineWorksStaffNotifyPage() {
                                         style={inputStyle}
                                     />
                                 </div>
+                                {saveHint && (
+                                    <p style={{
+                                        margin: 0,
+                                        fontSize: 13,
+                                        color: saveHint.includes('登録しました') ? '#86efac' : '#fbbf24',
+                                        lineHeight: 1.6,
+                                    }}>
+                                        {saveHint}
+                                    </p>
+                                )}
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     <button
                                         type="button"
+                                        disabled={saving}
                                         onClick={() => void handleSave()}
                                         style={{
                                             padding: '12px 16px',
-                                            background: '#2563eb',
+                                            background: saving ? '#475569' : '#2563eb',
                                             color: '#fff',
                                             border: 'none',
                                             borderRadius: 8,
                                             fontWeight: 700,
-                                            cursor: 'pointer',
+                                            cursor: saving ? 'wait' : 'pointer',
+                                            opacity: saving ? 0.8 : 1,
                                         }}
                                     >
-                                        保存
+                                        {saving ? '保存中…' : '保存'}
                                     </button>
                                     <button
                                         type="button"
@@ -470,9 +516,35 @@ export default function LineWorksStaffNotifyPage() {
             </div>
 
             <div style={panelStyle}>
-                <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>登録一覧</h2>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                    <h2 style={{ margin: 0, fontSize: 16 }}>登録一覧</h2>
+                    <button
+                        type="button"
+                        onClick={() => void fetchAll()}
+                        style={{
+                            padding: '6px 12px',
+                            borderRadius: 6,
+                            border: '1px solid #475569',
+                            background: '#1e293b',
+                            color: '#e2e8f0',
+                            fontSize: 13,
+                            cursor: 'pointer',
+                        }}
+                    >
+                        一覧を更新
+                    </button>
+                </div>
                 {rows.length === 0 ? (
-                    <p style={{ color: '#64748b', fontSize: 14 }}>未登録です</p>
+                    <div style={{ color: '#64748b', fontSize: 14, lineHeight: 1.7 }}>
+                        <p style={{ margin: '0 0 8px' }}>未登録です（または一覧の取得に失敗しています）</p>
+                        <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>
+                            過去に登録済みなのに表示されない場合は「一覧を更新」を押してください。
+                            ローカル開発では Supabase で <code style={{ color: '#cbd5e1' }}>enable_lineworks_staff_mappings_rls.sql</code> の実行、
+                            または <code style={{ color: '#cbd5e1' }}>SUPABASE_SERVICE_ROLE_KEY</code> の設定が必要です。
+                            <br />
+                            <strong>LINE 公式の登録（/line-staff-notify）とは別テーブル</strong>です。LINE WORKS の登録はこの画面のみに表示されます。
+                        </p>
+                    </div>
                 ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                         <thead>

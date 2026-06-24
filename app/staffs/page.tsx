@@ -5,6 +5,12 @@ import Link from 'next/link'
 import { supabase } from '../../lib/supabaseClient'
 import { DEPARTMENTS } from '@/lib/departments'
 import { BRANCH_OTHER_ID, LIFF_REPAIR_BRANCH_OPTIONS } from '@/lib/branches'
+import { resolveStaffName } from '@/lib/staffNameMatch'
+
+type LwMapping = {
+  staff_name: string
+  lineworks_user_id: string
+}
 
 type Staff = {
   id: string
@@ -35,6 +41,8 @@ export default function StaffsPage() {
   const [branchOtherHolder, setBranchOtherHolder] = useState<{ staffId: string; staffName: string } | null>(
     null,
   )
+  const [lwMappings, setLwMappings] = useState<LwMapping[]>([])
+  const [lineWorksUserId, setLineWorksUserId] = useState('')
 
   // フォーム用ステート
   const [formData, setFormData] = useState<Partial<Staff>>({
@@ -51,8 +59,64 @@ export default function StaffsPage() {
   })
 
   useEffect(() => {
-    fetchStaffs()
+    void fetchStaffs()
+    void fetchLwMappings()
   }, [])
+
+  useEffect(() => {
+    if (!selectedStaff || lwMappings.length === 0) return
+    setLineWorksUserId(lwIdForStaffName(selectedStaff.name))
+  }, [lwMappings, selectedStaff?.id])
+
+  const fetchLwMappings = async () => {
+    const res = await fetch('/api/lineworks/staff-mappings', { cache: 'no-store' })
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data.ok) {
+      setLwMappings(
+        (data.mappings || []).map((m: LwMapping) => ({
+          staff_name: String(m.staff_name || '').trim(),
+          lineworks_user_id: String(m.lineworks_user_id || '').trim(),
+        })),
+      )
+    }
+  }
+
+  const lwIdForStaffName = (name: string | null | undefined): string => {
+    if (!name) return ''
+    const mappingNames = lwMappings.map((m) => m.staff_name)
+    const resolved = resolveStaffName(name, mappingNames)
+    if (!resolved) return ''
+    return lwMappings.find((m) => m.staff_name === resolved)?.lineworks_user_id || ''
+  }
+
+  const lwIdLabel = (name: string | null | undefined) => {
+    const id = lwIdForStaffName(name)
+    return id || 'LINE WORKS ID未登録'
+  }
+
+  const syncLineWorksMapping = async (
+    staffId: string,
+    staffName: string,
+    lwId: string,
+  ): Promise<string | null> => {
+    const trimmed = lwId.trim()
+    if (!trimmed) return null
+    const res = await fetch('/api/lineworks/staff-mappings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        staff_id: staffId,
+        staff_name: staffName.trim(),
+        lineworks_user_id: trimmed,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.ok) {
+      return data.error || 'LINE WORKS 連携の保存に失敗しました'
+    }
+    await fetchLwMappings()
+    return null
+  }
 
   const loadBranchOtherHolder = async (staffList: Staff[]) => {
     const { data, error } = await supabase
@@ -160,6 +224,7 @@ export default function StaffsPage() {
       approver_shacho_id: staff.approver_shacho_id,
     })
     setStampFile(null)
+    setLineWorksUserId(lwIdForStaffName(staff.name))
     setIsRepairOfficeNotify(Boolean(staff.is_repair_office_notify))
     await loadOfficeBranchesForStaff(staff.id)
     setIsEditing(true)
@@ -168,6 +233,7 @@ export default function StaffsPage() {
   const handleNewStaff = () => {
     setSelectedStaff(null)
     resetOfficeNotifyForm()
+    setLineWorksUserId('')
     setFormData({
       name: '',
       furigana: '',
@@ -188,6 +254,7 @@ export default function StaffsPage() {
     setIsEditing(false)
     setSelectedStaff(null)
     resetOfficeNotifyForm()
+    setLineWorksUserId('')
     setFormData({
       name: '',
       furigana: '',
@@ -201,6 +268,7 @@ export default function StaffsPage() {
       approver_shacho_id: null,
     })
     setStampFile(null)
+    setLineWorksUserId('')
     setMsg(null)
   }
 
@@ -323,7 +391,13 @@ export default function StaffsPage() {
           fetchStaffs()
           return
         }
-        setMsg('更新しました')
+        const lwErr = await syncLineWorksMapping(selectedStaff.id, formData.name!, lineWorksUserId)
+        if (lwErr) {
+          setMsg(`担当者は更新しましたが、${lwErr}`)
+          fetchStaffs()
+          return
+        }
+        setMsg(lineWorksUserId.trim() ? '更新しました（LINE WORKS 連携も反映）' : '更新しました')
         fetchStaffs()
         handleCancel()
       }
@@ -377,9 +451,15 @@ export default function StaffsPage() {
               .eq('id', createdId)
           }
         }
+        const lwErr = await syncLineWorksMapping(createdId, formData.name!, lineWorksUserId)
+        if (lwErr) {
+          setMsg(`登録しましたが、${lwErr}`)
+          fetchStaffs()
+          return
+        }
       }
 
-      setMsg('登録しました')
+      setMsg(lineWorksUserId.trim() ? '登録しました（LINE WORKS 連携も反映）' : '登録しました')
       fetchStaffs()
       handleCancel()
     }
@@ -535,7 +615,7 @@ export default function StaffsPage() {
                     ) : null}
                   </div>
                   <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {staff.email}
+                    {lwIdForStaffName(staff.name) || 'LINE WORKS ID未登録'}
                   </div>
                 </div>
               </div>
@@ -635,7 +715,24 @@ export default function StaffsPage() {
                     )}
                   </select>
                   <p style={{ fontSize: 11, color: '#94a3b8', margin: '8px 0 0 0' }}>
-                    メールと部署（営業所・出張所など）を設定すると、修理案件の管轄営業所と一致する担当者に通知メールが届きます。
+                    部署（営業所・出張所など）を設定すると、修理案件の管轄営業所と一致する担当者に LINE WORKS で通知されます。
+                  </p>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', color: '#cbd5e1' }}>
+                    LINE WORKS ID（ログインメール）
+                  </label>
+                  <input
+                    type="text"
+                    value={lineWorksUserId}
+                    onChange={(e) => setLineWorksUserId(e.target.value)}
+                    placeholder="name@sanshu"
+                    className="input-inset"
+                    style={{ width: '100%', maxWidth: 400 }}
+                  />
+                  <p style={{ fontSize: 11, color: '#94a3b8', margin: '8px 0 0 0' }}>
+                    保存すると <Link href="/lineworks-staff-notify" style={{ color: '#38bdf8' }}>LINE WORKS 連携画面</Link> の登録一覧にも反映されます（見積承認・修理通知の送信先）。
                   </p>
                 </div>
 
@@ -773,6 +870,9 @@ export default function StaffsPage() {
                 {/* 承認経路設定 */}
                 <div style={{ borderTop: '1px solid #334155', paddingTop: 16, marginTop: 8 }}>
                   <h3 style={{ marginTop: 0, fontSize: 16, color: '#cbd5e1' }}>承認経路設定</h3>
+                  <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 12px 0' }}>
+                    この担当者の見積承認フロー。各承認者の LINE WORKS ID は連携登録から表示します。
+                  </p>
 
                   <div style={{ display: 'grid', gap: 12 }}>
                     <div>
@@ -794,6 +894,9 @@ export default function StaffsPage() {
                           </option>
                         ))}
                       </select>
+                      <p style={{ fontSize: 11, color: '#64748b', margin: '6px 0 0 0' }}>
+                        LINE WORKS ID: {lwIdLabel(staffs.find((s) => s.id === formData.approver_section_head_id)?.name)}
+                      </p>
                     </div>
 
                     <div>
@@ -815,6 +918,9 @@ export default function StaffsPage() {
                           </option>
                         ))}
                       </select>
+                      <p style={{ fontSize: 11, color: '#64748b', margin: '6px 0 0 0' }}>
+                        LINE WORKS ID: {lwIdLabel(staffs.find((s) => s.id === formData.approver_senmu_id)?.name)}
+                      </p>
                     </div>
 
                     <div>
@@ -836,6 +942,9 @@ export default function StaffsPage() {
                           </option>
                         ))}
                       </select>
+                      <p style={{ fontSize: 11, color: '#64748b', margin: '6px 0 0 0' }}>
+                        LINE WORKS ID: {lwIdLabel(staffs.find((s) => s.id === formData.approver_shacho_id)?.name)}
+                      </p>
                     </div>
                   </div>
                 </div>

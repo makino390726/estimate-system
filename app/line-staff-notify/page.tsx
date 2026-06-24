@@ -71,13 +71,14 @@ export default function LineStaffNotifyPage() {
         const staffData = await staffRes.json().catch(() => ({}))
         if (!mapRes.ok || !mapData.ok) {
             setMsg(`取得エラー: ${mapData.error || mapRes.statusText}`)
-            return
-        }
-        if (!staffRes.ok || !staffData.ok) {
-            setMsg(`担当者取得エラー: ${staffData.error || staffRes.statusText}`)
+            setRows([])
             return
         }
         setRows((mapData.mappings || []) as Mapping[])
+        if (!staffRes.ok || !staffData.ok) {
+            setMsg(`担当者取得エラー（登録一覧は表示しています）: ${staffData.error || staffRes.statusText}`)
+            return
+        }
         setStaffNames((staffData.names || []) as string[])
     }, [])
 
@@ -399,7 +400,14 @@ export default function LineStaffNotifyPage() {
                     スマホで LIFF 登録したあと、この画面で「一覧を更新」を押すと反映されます。
                 </p>
                 {rows.length === 0 ? (
-                    <p style={{ color: '#64748b', fontSize: 14 }}>未登録です</p>
+                    <div style={{ color: '#64748b', fontSize: 14, lineHeight: 1.7 }}>
+                        <p style={{ margin: '0 0 8px' }}>未登録です</p>
+                        <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>
+                            社内担当者の LINE WORKS 登録は
+                            <Link href="/lineworks-staff-notify" style={{ color: '#38bdf8', marginLeft: 4 }}>修理通知 LINE WORKS 連携</Link>
+                            に表示されます（この画面とは別です）。
+                        </p>
+                    </div>
                 ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                         <thead>

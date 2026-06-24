@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../../../lib/supabaseClient'
 import { useReactToPrint } from 'react-to-print'
+import { resolveStaffName } from '@/lib/staffNameMatch'
 import PrintEstimate from '../../new/PrintEstimate'
 
 type CaseDetail = {
@@ -31,6 +32,11 @@ type CaseDetail = {
   comment?: string
   // ★ 動的に追加されるプロパティ
   product_name?: string
+}
+
+type LwMapping = {
+  staff_name: string
+  lineworks_user_id: string
 }
 
 type StaffInfo = {
@@ -82,13 +88,17 @@ export default function CaseApprovalPage() {
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [msg, setMsg] = useState<string | null>(null)
 
-  const [managerEmail, setManagerEmail] = useState('')
-  const [directorEmail, setDirectorEmail] = useState('')
-  const [presidentEmail, setPresidentEmail] = useState('')
+  const [managerLineWorksId, setManagerLineWorksId] = useState('')
+  const [directorLineWorksId, setDirectorLineWorksId] = useState('')
+  const [presidentLineWorksId, setPresidentLineWorksId] = useState('')
 
-  const [rejectEmailManager, setRejectEmailManager] = useState('')
-  const [rejectEmailDirector, setRejectEmailDirector] = useState('')
-  const [rejectEmailPresident, setRejectEmailPresident] = useState('')
+  const [rejectLineWorksIdManager, setRejectLineWorksIdManager] = useState('')
+  const [rejectLineWorksIdDirector, setRejectLineWorksIdDirector] = useState('')
+  const [rejectLineWorksIdPresident, setRejectLineWorksIdPresident] = useState('')
+  const [lwMappings, setLwMappings] = useState<LwMapping[]>([])
+  const [rejectReasonManager, setRejectReasonManager] = useState('')
+  const [rejectReasonDirector, setRejectReasonDirector] = useState('')
+  const [rejectReasonPresident, setRejectReasonPresident] = useState('')
 
   const [showPrintPreview, setShowPrintPreview] = useState(false)
   const [previewApprovalLevel, setPreviewApprovalLevel] = useState<'staff' | 'manager' | 'director' | 'president'>('staff')
@@ -111,6 +121,20 @@ export default function CaseApprovalPage() {
     setShowPrintPreview(false)
   }
 
+  const resolveLwIdForStaff = (staffName: string | null | undefined, mappings: LwMapping[]): string => {
+    if (!staffName) return ''
+    const names = mappings.map((m) => m.staff_name)
+    const resolved = resolveStaffName(staffName, names)
+    if (!resolved) return ''
+    const row = mappings.find((m) => m.staff_name === resolved)
+    return row?.lineworks_user_id?.trim() || ''
+  }
+
+  const lwIdLabel = (staffName: string | null | undefined) => {
+    const id = resolveLwIdForStaff(staffName, lwMappings)
+    return id || 'LINE WORKS ID未登録'
+  }
+
   useEffect(() => {
     if (caseId) {
       console.log('案件ID:', caseId)
@@ -120,18 +144,22 @@ export default function CaseApprovalPage() {
     console.log('Initial showPrintPreview state:', showPrintPreview)
   }, [caseId])
 
-  // ★ approversが更新されたらメールアドレスを自動入力
+  // ★ approvers と LINE WORKS 連携から通知先 ID を自動入力
   useEffect(() => {
-    if (approvers.sectionHead?.email) {
-      setManagerEmail(approvers.sectionHead.email)
+    if (lwMappings.length === 0) return
+    const mgr = resolveLwIdForStaff(approvers.sectionHead?.name, lwMappings)
+    if (mgr) setManagerLineWorksId(mgr)
+    const dir = resolveLwIdForStaff(approvers.senmu?.name, lwMappings)
+    if (dir) setDirectorLineWorksId(dir)
+    const pre = resolveLwIdForStaff(approvers.shacho?.name, lwMappings)
+    if (pre) setPresidentLineWorksId(pre)
+    const app = resolveLwIdForStaff(approvers.applicant?.name, lwMappings)
+    if (app) {
+      setRejectLineWorksIdManager(app)
+      setRejectLineWorksIdDirector(app)
+      setRejectLineWorksIdPresident(app)
     }
-    if (approvers.senmu?.email) {
-      setDirectorEmail(approvers.senmu.email)
-    }
-    if (approvers.shacho?.email) {
-      setPresidentEmail(approvers.shacho.email)
-    }
-  }, [approvers])
+  }, [approvers, lwMappings])
 
   const fetchCaseData = async () => {
     if (!caseId) {
@@ -323,10 +351,34 @@ export default function CaseApprovalPage() {
       if (!historyError && historyData) {
         setApprovalHistory(historyData)
       }
+
+      const mapRes = await fetch('/api/lineworks/staff-mappings', { cache: 'no-store' })
+      const mapData = await mapRes.json().catch(() => ({}))
+      const mappings: LwMapping[] =
+        mapRes.ok && mapData.ok
+          ? (mapData.mappings || []).map((m: LwMapping) => ({
+              staff_name: String(m.staff_name || '').trim(),
+              lineworks_user_id: String(m.lineworks_user_id || '').trim(),
+            }))
+          : []
+      setLwMappings(mappings)
+
+      const mgrLw = resolveLwIdForStaff(sectionHead?.name, mappings)
+      if (mgrLw) setManagerLineWorksId(mgrLw)
+      const dirLw = resolveLwIdForStaff(senmu?.name, mappings)
+      if (dirLw) setDirectorLineWorksId(dirLw)
+      const preLw = resolveLwIdForStaff(shacho?.name, mappings)
+      if (preLw) setPresidentLineWorksId(preLw)
+      const appLw = resolveLwIdForStaff(applicant?.name, mappings)
+      if (appLw) {
+        setRejectLineWorksIdManager(appLw)
+        setRejectLineWorksIdDirector(appLw)
+        setRejectLineWorksIdPresident(appLw)
+      }
     }
   }
 
-  // ★ 承認のみ（メール送信なし）
+  // ★ 承認のみ（LINE WORKS 通知なし）
   const handleApproveOnly = async (role: string) => {
     // 申請不要モードでは申請者以外の承認を遮断
     if (role !== 'staff' && caseData?.skip_higher_approval) {
@@ -381,7 +433,7 @@ export default function CaseApprovalPage() {
       console.error('承認エラー:', error)
       alert('承認に失敗しました')
     } else {
-      setMsg('承認しました（メール送信なし）')
+      setMsg('承認しました（通知なし）')
       await recordApprovalHistory(role, '承認')
       fetchCaseData()
       setTimeout(() => setMsg(null), 2000)
@@ -403,7 +455,7 @@ export default function CaseApprovalPage() {
     }
   }
 
-  // ★ 承認してメール送信
+  // ★ 承認して LINE WORKS 通知
   const handleApprove = async (role: string) => {
     // 申請不要モードでは申請者以外の承認を遮断
     if (role !== 'staff' && caseData?.skip_higher_approval) {
@@ -417,12 +469,12 @@ export default function CaseApprovalPage() {
 
     const now = new Date().toISOString()
     let updateData: any = {}
-    let nextApproverEmail = ''
+    let nextApproverLineWorksId = ''
 
     switch (role) {
       case 'staff':
-        if (!managerEmail) {
-          alert('所長のメールアドレスを入力してください')
+        if (!managerLineWorksId) {
+          alert('所長の LINE WORKS ID を入力してください')
           return
         }
         // 通常承認→上位承認を有効にするため skip_higher_approval を false にする（カラムがある場合のみ）
@@ -430,7 +482,7 @@ export default function CaseApprovalPage() {
         if (canSkipHigherApproval) {
           updateData.skip_higher_approval = false
         }
-        nextApproverEmail = managerEmail
+        nextApproverLineWorksId = managerLineWorksId
         break
 
       case 'manager':
@@ -438,12 +490,12 @@ export default function CaseApprovalPage() {
           alert('申請者の承認が必要です')
           return
         }
-        if (!directorEmail) {
-          alert('専務のメールアドレスを入力してください')
+        if (!directorLineWorksId) {
+          alert('専務の LINE WORKS ID を入力してください')
           return
         }
         updateData = { approve_manager: now }
-        nextApproverEmail = directorEmail
+        nextApproverLineWorksId = directorLineWorksId
         break
 
       case 'director':
@@ -451,12 +503,12 @@ export default function CaseApprovalPage() {
           alert('所長の承認が必要です')
           return
         }
-        if (!presidentEmail) {
-          alert('社長のメールアドレスを入力してください')
+        if (!presidentLineWorksId) {
+          alert('社長の LINE WORKS ID を入力してください')
           return
         }
         updateData = { approve_director: now }
-        nextApproverEmail = presidentEmail
+        nextApproverLineWorksId = presidentLineWorksId
         break
 
       case 'president':
@@ -481,8 +533,20 @@ export default function CaseApprovalPage() {
       await recordApprovalHistory(role, '承認して次へ送信')
       fetchCaseData()
 
-      if (nextApproverEmail) {
-        await sendApprovalEmail(nextApproverEmail, caseId)
+      if (nextApproverLineWorksId) {
+        let nextStaffName = ''
+        switch (role) {
+          case 'staff':
+            nextStaffName = approvers.sectionHead?.name || ''
+            break
+          case 'manager':
+            nextStaffName = approvers.senmu?.name || ''
+            break
+          case 'director':
+            nextStaffName = approvers.shacho?.name || ''
+            break
+        }
+        await sendApprovalNotify(nextApproverLineWorksId, nextStaffName)
       }
 
       setTimeout(() => setMsg(null), 2000)
@@ -559,23 +623,22 @@ export default function CaseApprovalPage() {
     }
   }
 
-  const handleReject = async (role: string, rejectEmail: string) => {
+  const handleReject = async (role: string, rejectLineWorksId: string, rejectReason: string) => {
     if (caseData?.skip_higher_approval) {
       alert('申請不要モードのため、差戻は無効です')
       return
     }
-    if (!rejectEmail) {
-      alert('差し戻し先のメールアドレスを入力してください')
+    if (!rejectLineWorksId) {
+      alert('差し戻し先の LINE WORKS ID を入力してください')
       return
     }
 
-    const roleNames: { [key: string]: string } = {
-      manager: '所長承認',
-      director: '専務承認',
-      president: '社長承認',
-    }
+    const trimmedReason = rejectReason.trim()
+    const confirmMessage = trimmedReason
+      ? `本当に差し戻しますか？\n承認がクリアされ、担当者へ LINE WORKS で差戻通知が送信されます。\n\n差戻理由:\n${trimmedReason}`
+      : '本当に差し戻しますか？\n承認がクリアされ、担当者へ LINE WORKS で差戻通知が送信されます。'
 
-    if (!confirm('本当に差し戻しますか？\n承認がクリアされ、差し戻しメールが送信されます。')) {
+    if (!confirm(confirmMessage)) {
       return
     }
 
@@ -603,40 +666,51 @@ export default function CaseApprovalPage() {
     if (error) {
       setMsg('差し戻しに失敗しました')
     } else {
-      await recordApprovalHistory(role, '差戻')
-      await sendRejectEmail(rejectEmail, caseId, roleNames[role])
-      setMsg('差し戻しました。差し戻しメールを送信しました。')
+      const historyAction = trimmedReason ? `差戻: ${trimmedReason}` : '差戻'
+
+      await recordApprovalHistory(role, historyAction)
+      await sendRejectNotify(rejectLineWorksId, approvers.applicant?.name || '', trimmedReason)
+      setMsg('差し戻しました。LINE WORKS で差戻通知を送信しました。')
+
+      if (role === 'manager') setRejectReasonManager('')
+      if (role === 'director') setRejectReasonDirector('')
+      if (role === 'president') setRejectReasonPresident('')
+
       fetchCaseData()
     }
 
     setTimeout(() => setMsg(null), 3000)
   }
 
-  const handleResendEmail = async (role: string) => {
+  const handleResendNotify = async (role: string) => {
     if (caseData?.skip_higher_approval) {
-      alert('申請不要モードのため、メール送信は無効です')
+      alert('申請不要モードのため、通知送信は無効です')
       return
     }
-    let email = ''
+    let lineWorksUserId = ''
+    let staffName = ''
 
     switch (role) {
       case 'manager':
-        email = managerEmail
+        lineWorksUserId = managerLineWorksId
+        staffName = approvers.sectionHead?.name || ''
         break
       case 'director':
-        email = directorEmail
+        lineWorksUserId = directorLineWorksId
+        staffName = approvers.senmu?.name || ''
         break
       case 'president':
-        email = presidentEmail
+        lineWorksUserId = presidentLineWorksId
+        staffName = approvers.shacho?.name || ''
         break
     }
 
-    if (!email) {
-      alert('メールアドレスを入力してください')
+    if (!lineWorksUserId) {
+      alert('LINE WORKS ID を入力してください')
       return
     }
 
-    await sendApprovalEmail(email, caseId, true)
+    await sendApprovalNotify(lineWorksUserId, staffName, true)
   }
 
   // ★ 承認取消処理
@@ -667,51 +741,58 @@ export default function CaseApprovalPage() {
     }
   }
 
-  const sendApprovalEmail = async (email: string, caseId: string, isResend: boolean = false) => {
+  const sendApprovalNotify = async (lineWorksUserId: string, staffName: string, isResend: boolean = false) => {
     try {
       const response = await fetch('/api/send-approval-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          lineWorksUserId,
+          staffName: staffName || undefined,
           caseId,
+          caseNo: caseData?.case_no ?? null,
           subject: caseData?.subject || '件名不明',
           approvedBy: currentUser?.name || '担当者',
-          nextApprover: '承認者',
         }),
       })
 
       const result = await response.json()
 
       if (!response.ok) {
-        alert('メール送信に失敗しました')
+        alert(`LINE WORKS通知に失敗しました: ${result.error || '不明なエラー'}`)
       } else {
-        const message = isResend ? '承認依頼メールを再送信しました' : '承認依頼メールを送信しました'
-        setMsg(`${message}: ${email}`)
+        const message = isResend ? '承認依頼を LINE WORKS に再送信しました' : '承認依頼を LINE WORKS に送信しました'
+        const recipient = result.staffName || staffName || lineWorksUserId
+        setMsg(`${message}: ${recipient}`)
         setTimeout(() => setMsg(null), 3000)
       }
     } catch (error) {
-      alert('メール送信中にエラーが発生しました')
+      alert('LINE WORKS 通知送信中にエラーが発生しました')
     }
   }
 
-  const sendRejectEmail = async (email: string, caseId: string, rejectedBy: string) => {
+  const sendRejectNotify = async (lineWorksUserId: string, staffName: string, rejectReason: string) => {
     try {
-      await fetch('/api/send-approval-email', {
+      const response = await fetch('/api/send-approval-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          lineWorksUserId,
+          staffName: staffName || undefined,
           caseId,
-          subject: `【差し戻し】${caseData?.subject || '件名不明'}`,
-          approvedBy: `${rejectedBy}により差し戻し`,
-          nextApprover: '担当者',
+          caseNo: caseData?.case_no ?? null,
+          subject: caseData?.subject || '件名不明',
           isReject: true,
-          rejectMessage: '承認依頼の案件について、差戻されました。',
+          rejectReason,
         }),
       })
+      const result = await response.json()
+      if (!response.ok) {
+        alert(`LINE WORKS通知に失敗しました: ${result.error || '不明なエラー'}`)
+      }
     } catch (error) {
-      console.error('差し戻しメール送信失敗:', error)
+      console.error('差戻 LINE WORKS 通知送信失敗:', error)
+      alert('LINE WORKS 通知送信中にエラーが発生しました')
     }
   }
 
@@ -824,7 +905,7 @@ export default function CaseApprovalPage() {
     return {
       label: { fontSize: 12, color: approved ? '#94a3b8' : '#666' },
       name: { fontWeight: 'bold', fontSize: 16, color: approved ? '#fff' : '#111827' },
-      email: { fontSize: 11, color: approved ? '#cbd5e1' : '#555' },
+      lineWorksId: { fontSize: 11, color: approved ? '#cbd5e1' : '#555' },
       approved: { fontSize: 11, color: approved ? '#93c5fd' : '#28a745' },
     }
   }
@@ -1073,7 +1154,8 @@ export default function CaseApprovalPage() {
               <div style={{ padding: '12px 20px', backgroundColor: '#334155', border: '2px solid #3b82f6', borderRadius: 8, minWidth: 160 }}>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>申請者</div>
                 <div style={{ fontWeight: 'bold', fontSize: 16, color: '#fff' }}>{approvers.applicant?.name ?? '-'}</div>
-                <div style={{ fontSize: 11, color: '#cbd5e1' }}>{approvers.applicant?.email ?? '-'}</div>
+                <div style={{ fontSize: 10, color: '#94a3b8' }}>LINE WORKS ID</div>
+                <div style={{ fontSize: 11, color: '#cbd5e1' }}>{lwIdLabel(approvers.applicant?.name)}</div>
                 {caseData?.oral_request_manager && !caseData?.approve_staff && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
               </div>
 
@@ -1083,7 +1165,8 @@ export default function CaseApprovalPage() {
                   <div style={getApproverCardStyle(!!caseData?.approve_manager, !!caseData?.oral_request_director)}>
                     <div style={getApproverTextColors(!!caseData?.approve_manager).label}>所長</div>
                     <div style={getApproverTextColors(!!caseData?.approve_manager).name}>{approvers.sectionHead.name}</div>
-                    <div style={getApproverTextColors(!!caseData?.approve_manager).email}>{approvers.sectionHead.email ?? '-'}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8' }}>LINE WORKS ID</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_manager).lineWorksId}>{lwIdLabel(approvers.sectionHead.name)}</div>
                     {caseData?.approve_manager && <div style={getApproverTextColors(!!caseData?.approve_manager).approved}>✓ 承認済</div>}
                     {caseData?.oral_request_director && !caseData?.approve_manager && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
                   </div>
@@ -1096,7 +1179,8 @@ export default function CaseApprovalPage() {
                   <div style={getApproverCardStyle(!!caseData?.approve_director, !!caseData?.oral_request_president)}>
                     <div style={getApproverTextColors(!!caseData?.approve_director).label}>専務</div>
                     <div style={getApproverTextColors(!!caseData?.approve_director).name}>{approvers.senmu.name}</div>
-                    <div style={getApproverTextColors(!!caseData?.approve_director).email}>{approvers.senmu.email ?? '-'}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8' }}>LINE WORKS ID</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_director).lineWorksId}>{lwIdLabel(approvers.senmu.name)}</div>
                     {caseData?.approve_director && <div style={getApproverTextColors(!!caseData?.approve_director).approved}>✓ 承認済</div>}
                     {caseData?.oral_request_president && !caseData?.approve_director && <div style={{ fontSize: 11, color: '#ff6b6b' }}>📞 口頭依頼済</div>}
                   </div>
@@ -1109,11 +1193,34 @@ export default function CaseApprovalPage() {
                   <div style={getApproverCardStyle(!!caseData?.approve_president, false)}>
                     <div style={getApproverTextColors(!!caseData?.approve_president).label}>社長</div>
                     <div style={getApproverTextColors(!!caseData?.approve_president).name}>{approvers.shacho.name}</div>
-                    <div style={getApproverTextColors(!!caseData?.approve_president).email}>{approvers.shacho.email ?? '-'}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8' }}>LINE WORKS ID</div>
+                    <div style={getApproverTextColors(!!caseData?.approve_president).lineWorksId}>{lwIdLabel(approvers.shacho.name)}</div>
                     {caseData?.approve_president && <div style={getApproverTextColors(!!caseData?.approve_president).approved}>✓ 承認済</div>}
                   </div>
                 </>
               )}
+            </div>
+
+            <div style={{ marginTop: 16, padding: 12, backgroundColor: '#0f172a', borderRadius: 8, border: '1px solid #334155' }}>
+              <strong style={{ color: '#cbd5e1', fontSize: 13 }}>担当者の承認経路（マスタ・LINE WORKS ID）</strong>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8', lineHeight: 1.9 }}>
+                <div>申請者: {approvers.applicant?.name || '—'} … {lwIdLabel(approvers.applicant?.name)}</div>
+                {approvers.sectionHead ? (
+                  <div>所長: {approvers.sectionHead.name} … {lwIdLabel(approvers.sectionHead.name)}</div>
+                ) : (
+                  <div>所長: 未設定</div>
+                )}
+                {approvers.senmu ? (
+                  <div>専務: {approvers.senmu.name} … {lwIdLabel(approvers.senmu.name)}</div>
+                ) : (
+                  <div>専務: 未設定</div>
+                )}
+                {approvers.shacho ? (
+                  <div>社長: {approvers.shacho.name} … {lwIdLabel(approvers.shacho.name)}</div>
+                ) : (
+                  <div>社長: 未設定</div>
+                )}
+              </div>
             </div>
 
             <div style={{ marginTop: 16, fontSize: 13 }}>
@@ -1171,7 +1278,7 @@ export default function CaseApprovalPage() {
             <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#0f172a', borderRadius: 4, border: '1px solid #334155' }}>
               <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>申請者承認</h4>
               <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
-                <strong style={{ color: '#cbd5e1' }}>申請者:</strong> {approvers.applicant?.name || '-'} ({approvers.applicant?.email || 'メールアドレスなし'})
+                <strong style={{ color: '#cbd5e1' }}>申請者:</strong> {approvers.applicant?.name || '-'}（{lwIdLabel(approvers.applicant?.name)}）
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                 <button
@@ -1196,10 +1303,10 @@ export default function CaseApprovalPage() {
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
-                  type="email"
-                  value={managerEmail}
-                  onChange={(e) => setManagerEmail(e.target.value)}
-                  placeholder="所長のメールアドレス"
+                  type="text"
+                  value={managerLineWorksId}
+                  onChange={(e) => setManagerLineWorksId(e.target.value)}
+                  placeholder="所長 LINE WORKS ID（ログインメール）"
                   className="input-inset"
                   style={{ flex: 1 }}
                   disabled={!!caseData?.approve_staff}
@@ -1215,15 +1322,15 @@ export default function CaseApprovalPage() {
               <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>所長承認</h4>
               {approvers.sectionHead && (
                 <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
-                  <strong style={{ color: '#cbd5e1' }}>所長:</strong> {approvers.sectionHead.name} ({approvers.sectionHead.email || 'メールアドレスなし'})
+                  <strong style={{ color: '#cbd5e1' }}>所長:</strong> {approvers.sectionHead.name}（{lwIdLabel(approvers.sectionHead.name)}）
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                 <input
-                  type="email"
-                  value={directorEmail}
-                  onChange={(e) => setDirectorEmail(e.target.value)}
-                  placeholder="専務のメールアドレス"
+                  type="text"
+                  value={directorLineWorksId}
+                  onChange={(e) => setDirectorLineWorksId(e.target.value)}
+                  placeholder="専務 LINE WORKS ID（ログインメール）"
                   className="input-inset"
                   style={{ flex: 1 }}
                   disabled={higherApprovalDisabled}
@@ -1231,26 +1338,22 @@ export default function CaseApprovalPage() {
                 <button onClick={() => handleApproveOnly('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
                 <button onClick={() => handleApprove('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
                 <button onClick={() => handleApproveWithOralRequest('manager')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_manager || !caseData?.approve_staff || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#6f42c1', color: '#fff' }}>📞 口頭で承認依頼</button>
-                <button onClick={() => handleResendEmail('manager')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
+                <button onClick={() => handleResendNotify('manager')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>💬 再通知</button>
                 <button onClick={() => openPrintPreview('manager')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               {approvers.senmu && (
                 <div style={{ marginTop: 4, fontSize: 12, color: '#28a745' }}>
-                  次の承認者: {approvers.senmu.name} ({approvers.senmu.email || 'メールアドレスなし'})
+                  次の承認者: {approvers.senmu.name}（{lwIdLabel(approvers.senmu.name)}）
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  type="email"
-                  value={rejectEmailManager}
-                  onChange={(e) => setRejectEmailManager(e.target.value)}
-                  placeholder="差戻先メールアドレス"
-                  className="input-inset"
-                  style={{ flex: 1 }}
-                  disabled={higherApprovalDisabled}
-                />
-                <button onClick={() => handleReject('manager', rejectEmailManager)} className="btn-3d" style={{ backgroundColor: '#ffc107' }} disabled={higherApprovalDisabled}>↩️ 差戻</button>
-              </div>
+              <RejectControls
+                lineWorksUserId={rejectLineWorksIdManager}
+                onLineWorksUserIdChange={setRejectLineWorksIdManager}
+                reason={rejectReasonManager}
+                onReasonChange={setRejectReasonManager}
+                onReject={() => handleReject('manager', rejectLineWorksIdManager, rejectReasonManager)}
+                disabled={higherApprovalDisabled}
+              />
             </div>
 
             {/* 専務承認 */}
@@ -1258,15 +1361,15 @@ export default function CaseApprovalPage() {
               <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>専務承認</h4>
               {approvers.senmu && (
                 <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
-                  <strong style={{ color: '#cbd5e1' }}>専務:</strong> {approvers.senmu.name} ({approvers.senmu.email || 'メールアドレスなし'})
+                  <strong style={{ color: '#cbd5e1' }}>専務:</strong> {approvers.senmu.name}（{lwIdLabel(approvers.senmu.name)}）
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                 <input
-                  type="email"
-                  value={presidentEmail}
-                  onChange={(e) => setPresidentEmail(e.target.value)}
-                  placeholder="社長のメールアドレス"
+                  type="text"
+                  value={presidentLineWorksId}
+                  onChange={(e) => setPresidentLineWorksId(e.target.value)}
+                  placeholder="社長 LINE WORKS ID（ログインメール）"
                   className="input-inset"
                   style={{ flex: 1 }}
                   disabled={higherApprovalDisabled}
@@ -1274,26 +1377,22 @@ export default function CaseApprovalPage() {
                 <button onClick={() => handleApproveOnly('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#dc3545', color: '#fff' }}>✓ 承認</button>
                 <button onClick={() => handleApprove('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#007bff', color: '#000' }}>✓ 承認して次へ送信</button>
                 <button onClick={() => handleApproveWithOralRequest('director')} className="btn-3d" disabled={higherApprovalDisabled || !!caseData?.approve_director || !caseData?.approve_manager || !!caseData?.skip_higher_approval} style={{ backgroundColor: '#6f42c1', color: '#fff' }}>📞 口頭で承認依頼</button>
-                <button onClick={() => handleResendEmail('director')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
+                <button onClick={() => handleResendNotify('director')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>💬 再通知</button>
                 <button onClick={() => openPrintPreview('director')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
               {approvers.shacho && (
                 <div style={{ marginTop: 4, fontSize: 12, color: '#28a745' }}>
-                  次の承認者: {approvers.shacho.name} ({approvers.shacho.email || 'メールアドレスなし'})
+                  次の承認者: {approvers.shacho.name}（{lwIdLabel(approvers.shacho.name)}）
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  type="email"
-                  value={rejectEmailDirector}
-                  onChange={(e) => setRejectEmailDirector(e.target.value)}
-                  placeholder="差戻先メールアドレス"
-                  className="input-inset"
-                  style={{ flex: 1 }}
-                  disabled={higherApprovalDisabled}
-                />
-                <button onClick={() => handleReject('director', rejectEmailDirector)} className="btn-3d" style={{ backgroundColor: '#ffc107' }} disabled={higherApprovalDisabled}>↩️ 差戻</button>
-              </div>
+              <RejectControls
+                lineWorksUserId={rejectLineWorksIdDirector}
+                onLineWorksUserIdChange={setRejectLineWorksIdDirector}
+                reason={rejectReasonDirector}
+                onReasonChange={setRejectReasonDirector}
+                onReject={() => handleReject('director', rejectLineWorksIdDirector, rejectReasonDirector)}
+                disabled={higherApprovalDisabled}
+              />
             </div>
 
             {/* 社長承認 */}
@@ -1301,30 +1400,81 @@ export default function CaseApprovalPage() {
               <h4 style={{ margin: '0 0 8px 0', color: '#cbd5e1' }}>社長承認</h4>
               {approvers.shacho && (
                 <div style={{ marginBottom: 8, fontSize: 13, color: '#94a3b8' }}>
-                  <strong style={{ color: '#cbd5e1' }}>社長:</strong> {approvers.shacho.name} ({approvers.shacho.email || 'メールアドレスなし'})
+                  <strong style={{ color: '#cbd5e1' }}>社長:</strong> {approvers.shacho.name}（{lwIdLabel(approvers.shacho.name)}）
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                 <button onClick={() => handleApproveOnly('president')} className="btn-3d btn-primary" disabled={higherApprovalDisabled || !!caseData?.approve_president || !caseData?.approve_director || !!caseData?.skip_higher_approval} style={{ flex: 1 }}>✓ 最終承認</button>
-                <button onClick={() => handleResendEmail('president')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>📧 再送信</button>
+                <button onClick={() => handleResendNotify('president')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>💬 再通知</button>
                 <button onClick={() => openPrintPreview('president')} className="btn-3d" disabled={higherApprovalDisabled} style={{ color: '#fff' }}>🖨️ 印刷</button>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  type="email"
-                  value={rejectEmailPresident}
-                  onChange={(e) => setRejectEmailPresident(e.target.value)}
-                  placeholder="差戻先メールアドレス"
-                  className="input-inset"
-                  style={{ flex: 1 }}
-                  disabled={higherApprovalDisabled}
-                />
-                <button onClick={() => handleReject('president', rejectEmailPresident)} className="btn-3d" style={{ backgroundColor: '#ffc107' }} disabled={higherApprovalDisabled}>↩️ 差戻</button>
-              </div>
+              <RejectControls
+                lineWorksUserId={rejectLineWorksIdPresident}
+                onLineWorksUserIdChange={setRejectLineWorksIdPresident}
+                reason={rejectReasonPresident}
+                onReasonChange={setRejectReasonPresident}
+                onReject={() => handleReject('president', rejectLineWorksIdPresident, rejectReasonPresident)}
+                disabled={higherApprovalDisabled}
+              />
             </div>
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function RejectControls({
+  lineWorksUserId,
+  onLineWorksUserIdChange,
+  reason,
+  onReasonChange,
+  onReject,
+  disabled = false,
+}: {
+  lineWorksUserId: string
+  onLineWorksUserIdChange: (value: string) => void
+  reason: string
+  onReasonChange: (value: string) => void
+  onReject: () => void
+  disabled?: boolean
+}) {
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          type="text"
+          value={lineWorksUserId}
+          onChange={(e) => onLineWorksUserIdChange(e.target.value)}
+          placeholder="差戻先 LINE WORKS ID（ログインメール）"
+          className="input-inset"
+          style={{ flex: 1 }}
+          disabled={disabled}
+        />
+        <button
+          onClick={onReject}
+          className="btn-3d"
+          style={{ backgroundColor: '#ffc107' }}
+          disabled={disabled}
+        >
+          ↩️ 差戻
+        </button>
+      </div>
+      <textarea
+        value={reason}
+        onChange={(e) => onReasonChange(e.target.value)}
+        placeholder="差戻理由（任意・LINE WORKS通知と承認履歴に記載されます）"
+        className="input-inset"
+        rows={2}
+        disabled={disabled}
+        style={{
+          width: '100%',
+          marginTop: 8,
+          resize: 'vertical',
+          minHeight: 56,
+          boxSizing: 'border-box',
+        }}
+      />
     </div>
   )
 }
