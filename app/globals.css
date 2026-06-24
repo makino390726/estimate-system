@@ -169,25 +169,28 @@ body {
   line-height: 1.15;
   white-space: nowrap;
   background: linear-gradient(
-    120deg,
-    #f8fafc 0%,
-    #e2e8f0 18%,
-    #38bdf8 42%,
-    #60a5fa 58%,
-    #c7d2fe 82%,
-    #f1f5f9 100%
+    90deg,
+    #f43f5e 0%,
+    #f97316 12%,
+    #eab308 24%,
+    #22c55e 36%,
+    #14b8a6 48%,
+    #3b82f6 60%,
+    #8b5cf6 72%,
+    #d946ef 84%,
+    #f43f5e 100%
   );
-  background-size: 200% auto;
+  background-size: 300% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.35));
-  animation: brand-shimmer 8s ease-in-out infinite;
+  filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.45));
+  animation: brand-rainbow 6s linear infinite;
 }
 
-@keyframes brand-shimmer {
-  0%, 100% { background-position: 0% center; }
-  50% { background-position: 100% center; }
+@keyframes brand-rainbow {
+  0% { background-position: 0% center; }
+  100% { background-position: 300% center; }
 }
 
 .brand-header-divider {
@@ -215,9 +218,20 @@ body {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #38bdf8;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+  background: #a78bfa;
+  box-shadow: 0 0 10px rgba(167, 139, 250, 0.9);
   flex-shrink: 0;
+  animation: brand-dot-rainbow 6s linear infinite;
+}
+
+@keyframes brand-dot-rainbow {
+  0% { background: #f43f5e; box-shadow: 0 0 10px rgba(244, 63, 94, 0.9); }
+  16% { background: #f97316; box-shadow: 0 0 10px rgba(249, 115, 22, 0.9); }
+  33% { background: #eab308; box-shadow: 0 0 10px rgba(234, 179, 8, 0.9); }
+  50% { background: #22c55e; box-shadow: 0 0 10px rgba(34, 197, 94, 0.9); }
+  66% { background: #3b82f6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.9); }
+  83% { background: #8b5cf6; box-shadow: 0 0 10px rgba(139, 92, 246, 0.9); }
+  100% { background: #f43f5e; box-shadow: 0 0 10px rgba(244, 63, 94, 0.9); }
 }
 
 .brand-header-ja {
