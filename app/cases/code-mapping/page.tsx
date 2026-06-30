@@ -107,78 +107,81 @@ export default function Page() {
   const [productSearchTerm, setProductSearchTerm] = useState('')
   const [showProductModal, setShowProductModal] = useState(false)
   const [selectedRowId, setSelectedRowId] = useState<number | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 50
+  const [productSearchLoading, setProductSearchLoading] = useState(false)
+  const [productSearchError, setProductSearchError] = useState('')
+  const [productSearchDone, setProductSearchDone] = useState(false)
+
+  function initialProductSearchTerm(row: UiRow | undefined): string {
+    if (!row) return ''
+    let name = (row.product_name || '').trim()
+    if (!name || name === '-' || name.startsWith('削除された商品')) return ''
+
+    const spec = (row.spec || '').trim()
+    if (spec) {
+      if (name.endsWith(spec)) {
+        name = name.slice(0, -spec.length).trim()
+      } else if (name.includes(` ${spec}`)) {
+        name = name.replace(` ${spec}`, '').trim()
+      }
+    }
+    return name
+  }
+
+  function buildSearchVariants(searchTerm: string): string[] {
+    const trimmed = searchTerm.trim()
+    if (!trimmed) return ['']
+
+    const variants = [trimmed]
+    const firstToken = trimmed.split(/[\s\u3000]+/)[0]?.trim()
+    if (firstToken && firstToken !== trimmed && firstToken.length >= 2) {
+      variants.push(firstToken)
+    }
+    return [...new Set(variants)]
+  }
+
+  async function fetchProductsFromApi(searchTerm: string): Promise<Product[]> {
+    const params = new URLSearchParams()
+    if (searchTerm.trim()) params.set('q', searchTerm.trim())
+    const res = await fetch(`/api/products/search?${params.toString()}`)
+    const json = await res.json()
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || '商品マスタの取得に失敗しました')
+    }
+    return (json.products || []) as Product[]
+  }
+
+  async function searchProducts(searchTerm: string) {
+    setProductSearchLoading(true)
+    setProductSearchError('')
+    setProductSearchDone(false)
+    try {
+      const variants = buildSearchVariants(searchTerm)
+      let rows: Product[] = []
+
+      for (const variant of variants) {
+        rows = await fetchProductsFromApi(variant)
+        if (rows.length > 0) break
+      }
+
+      setProducts(rows)
+      setProductSearchDone(true)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('商品検索エラー:', msg)
+      setProductSearchError(msg)
+      setMessage(`商品検索エラー: ${msg}`)
+      setProducts([])
+      setProductSearchDone(true)
+    } finally {
+      setProductSearchLoading(false)
+    }
+  }
 
   const summary = useMemo(() => {
     const total = details.length
     const changed = details.filter((r) => r.mapped_code.trim().length > 0 && r.mapped_code !== r.current_product_id).length
     return { total, changed }
   }, [details])
-
-  const paginatedProducts = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return products.slice(startIndex, endIndex)
-  }, [products, currentPage, itemsPerPage])
-
-  const totalPages = useMemo(() => {
-    return Math.ceil(products.length / itemsPerPage)
-  }, [products.length, itemsPerPage])
-
-  async function fetchProducts() {
-    try {
-      // 初期は最初の50件のみ読み込み（全件は不要）
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, unit')
-        .order('name')
-        .limit(50)
-
-      if (error) throw error
-
-      console.log('商品マスタ取得: 初期50件')
-      setProducts((data as Product[] | null) ?? [])
-    } catch (e: any) {
-      console.error('商品マスタ取得エラー:', e?.message ?? String(e))
-      setMessage(`商品マスタ取得エラー: ${e?.message ?? String(e)}`)
-    }
-  }
-
-  async function searchProducts(searchTerm: string) {
-    try {
-      if (!searchTerm.trim()) {
-        // 検索語が空の場合は最初の50件を表示
-        const { data, error } = await supabase
-          .from('products')
-          .select('id, name, unit')
-          .order('name')
-          .limit(50)
-
-        if (error) throw error
-        setProducts((data as Product[] | null) ?? [])
-        setCurrentPage(1)
-        return
-      }
-
-      // 検索語がある場合はサーバー側で絞り込み
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, name, unit')
-        .ilike('name', `%${searchTerm}%`)
-        .order('name')
-        .limit(5000)  // 最大5000件まで
-
-      if (error) throw error
-
-      console.log('商品検索結果:', data?.length || 0, '件')
-      setProducts((data as Product[] | null) ?? [])
-      setCurrentPage(1)
-    } catch (e: any) {
-      console.error('商品検索エラー:', e?.message ?? String(e))
-      setMessage(`商品検索エラー: ${e?.message ?? String(e)}`)
-    }
-  }
 
   async function fetchAllCases() {
     setMessage('')
@@ -299,18 +302,12 @@ export default function Page() {
   function handleOpenProductModal(detailId: number) {
     setSelectedRowId(detailId)
     const row = details.find(r => r.detailId === detailId)
-    // 現在の商品名を検索窓にセット（検索は実行しない）
-    let searchText = row?.product_name || ''
-    // 「-」で始まる場合や削除された商品の場合は空にする
-    if (searchText === '-' || searchText.startsWith('削除された商品')) {
-      searchText = ''
-    }
+    const searchText = initialProductSearchTerm(row)
     setProductSearchTerm(searchText)
-    setCurrentPage(1)
-    // 初期表示は最初の50件（検索は実行しない）
-    setProducts([])
-    fetchProducts()
+    setProductSearchError('')
+    setProductSearchDone(false)
     setShowProductModal(true)
+    void searchProducts(searchText)
   }
 
   function handleSearchChange(value: string) {
@@ -413,7 +410,6 @@ export default function Page() {
   }
 
   useEffect(() => {
-    fetchProducts()
     fetchAllCases()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -821,7 +817,7 @@ export default function Page() {
                   <button
                     onClick={() => {
                       setProductSearchTerm('')
-                      setCurrentPage(1)
+                      void searchProducts('')
                     }}
                     className="px-4 py-2 rounded-md font-bold"
                     style={{ background: 'rgba(255,255,255,0.12)', color: '#eaf1ff' }}
@@ -832,52 +828,27 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-2">
               <div className="text-sm" style={{ color: 'rgba(255,255,255,.75)' }}>
-                検索結果: {products.length}件
-                {products.length > 0 && (
-                  <span className="ml-2">
-                    （{((currentPage - 1) * itemsPerPage) + 1}〜{Math.min(currentPage * itemsPerPage, products.length)}件目を表示）
-                  </span>
-                )}
+                検索結果: {products.length}件{productSearchLoading ? '（読み込み中…）' : '（全件表示）'}
               </div>
-
-              {totalPages > 1 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1 rounded-md text-sm font-bold"
-                    style={{
-                      background: currentPage === 1 ? 'rgba(255,255,255,0.06)' : 'rgba(46,107,255,0.5)',
-                      color: currentPage === 1 ? 'rgba(255,255,255,0.3)' : '#eaf1ff',
-                      cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    ← 前
-                  </button>
-                  <span className="text-sm" style={{ color: '#eaf1ff' }}>
-                    {currentPage} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1 rounded-md text-sm font-bold"
-                    style={{
-                      background: currentPage === totalPages ? 'rgba(255,255,255,0.06)' : 'rgba(46,107,255,0.5)',
-                      color: currentPage === totalPages ? 'rgba(255,255,255,0.3)' : '#eaf1ff',
-                      cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    次 →
-                  </button>
-                </div>
-              )}
             </div>
 
-            {products.length === 0 && (
+            {productSearchLoading && (
+              <div className="mb-4 px-4 py-3 rounded-md text-sm" style={{ background: 'rgba(46,107,255,0.12)', color: '#93c5fd', border: '1px solid rgba(46,107,255,0.25)' }}>
+                商品マスタを読み込み中…
+              </div>
+            )}
+
+            {!productSearchLoading && productSearchError && (
+              <div className="mb-4 px-4 py-3 rounded-md text-sm" style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}>
+                ⚠️ 商品マスタの取得に失敗しました: {productSearchError}
+              </div>
+            )}
+
+            {!productSearchLoading && productSearchDone && !productSearchError && products.length === 0 && (
               <div className="mb-4 px-4 py-3 rounded-md text-sm" style={{ background: 'rgba(255,165,0,0.15)', color: '#ffa500', border: '1px solid rgba(255,165,0,0.3)' }}>
-                ⚠️ 商品マスタが読み込まれていません。ページを再読み込みしてください。
+                該当する商品が見つかりません。検索キーワードを変えてください。
               </div>
             )}
 
@@ -900,14 +871,14 @@ export default function Page() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedProducts.length === 0 && (
+                  {products.length === 0 && !productSearchLoading && (
                     <tr>
                       <td colSpan={4} className="px-4 py-6 text-sm text-center" style={{ color: 'rgba(255,255,255,.7)' }}>
                         該当する商品が見つかりません
                       </td>
                     </tr>
                   )}
-                  {paginatedProducts.map((p) => (
+                  {products.map((p) => (
                     <tr
                       key={p.id}
                       style={{
@@ -939,7 +910,7 @@ export default function Page() {
             </div>
 
             <div className="mt-4 px-4 py-3 rounded-md text-xs" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,.75)' }}>
-              💡 ヒント: 商品名の一部を入力すると絞り込まれます。1ページに{itemsPerPage}件ずつ表示されます。
+              💡 ヒント: 商品名の一部を入力すると絞り込まれます。検索結果は全件を一覧表示します（スクロールで確認）。
             </div>
           </div>
         </div>
