@@ -702,12 +702,14 @@ export default function DealRankPage() {
                                                     minHeight: 62,
                                                     resize: 'vertical',
                                                     borderRadius: 6,
-                                                    border: '1px solid #94a3b8',
+                                                    border: '1px solid #ca8a04',
                                                     padding: '6px 8px',
-                                                    backgroundColor: canEditComment(c.deal_rank) ? '#fff' : '#f1f5f9',
-                                                    color: canEditComment(c.deal_rank) ? '#0f172a' : '#64748b',
-                                                    caretColor: '#0f172a',
+                                                    backgroundColor: '#fef08a',
+                                                    color: '#000000',
+                                                    caretColor: '#000000',
+                                                    fontWeight: 700,
                                                     fontSize: 12,
+                                                    opacity: canEditComment(c.deal_rank) ? 1 : 0.85,
                                                 }}
                                             />
                                             <button
