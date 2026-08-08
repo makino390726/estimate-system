@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import Link from 'next/link'
 import { sortManufacturingPlanRows } from '@/lib/manufacturingPlanSort'
+import { escapeCsv } from '@/lib/caseDetailReport'
 
 type ManufacturingPlanRow = {
   id: string;
@@ -49,6 +50,13 @@ export default function PlanPage() {
     contentRef: tableRef,
     documentTitle: '見積・製造計画検討一覧表',
   });
+
+  const getCodeLabel = (row: ManufacturingPlanRow) => {
+    const codes = row.product_codes?.length ? row.product_codes : (row.is_unregistered ? [] : [row.id])
+    if (codes.length === 0) return '（未登録）'
+    if (codes.length === 1) return codes[0]
+    return `${codes[0]} 他${codes.length - 1}件`
+  }
 
   const fetchPlan = useCallback(async () => {
     setLoading(true);
@@ -98,6 +106,41 @@ export default function PlanPage() {
         })
     return sortManufacturingPlanRows(list)
   }, [rows, keyword])
+
+  const handleExportCsv = () => {
+    if (filteredRows.length === 0) {
+      alert('出力対象のデータがありません')
+      return
+    }
+
+    const header = ['商品コード', '商品名', '規格', '数量', '平均単価', '売上合計', '原価合計', '粗利合計', '未紐づけ']
+    const body = filteredRows.map((row) => [
+      getCodeLabel(row),
+      row.name ?? '',
+      row.spec || '',
+      row.total_quantity,
+      row.avg_unit_price ?? '',
+      row.amount,
+      row.cost_amount,
+      row.amount - row.cost_amount,
+      row.is_unregistered ? '未紐づけ' : '',
+    ])
+
+    const csvContent = [header, ...body]
+      .map((line) => line.map(escapeCsv).join(','))
+      .join('\r\n')
+
+    const fromLabel = fromDate || '指定なし'
+    const toLabel = toDate || '指定なし'
+    const bom = '\ufeff'
+    const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `見積製造計画検討一覧表_${fromLabel}_${toLabel}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   const runBulkLink = async (dryRun: boolean) => {
     setLinking(true);
@@ -287,6 +330,24 @@ export default function PlanPage() {
           PDFプレビュー
         </button>
 
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={loading || filteredRows.length === 0}
+          style={{
+            padding: '6px 16px',
+            borderRadius: 4,
+            border: '1px solid #16a34a',
+            backgroundColor: '#16a34a',
+            color: '#fff',
+            cursor: loading || filteredRows.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: loading || filteredRows.length === 0 ? 0.6 : 1,
+            fontWeight: 'bold',
+          }}
+        >
+          CSV出力
+        </button>
+
         {loading && <span>読み込み中…</span>}
       </div>
 
@@ -358,18 +419,10 @@ export default function PlanPage() {
 
           <tbody>
             {filteredRows.map((row) => {
-              const codes = row.product_codes?.length ? row.product_codes : (row.is_unregistered ? [] : [row.id])
-              const codeLabel =
-                codes.length === 0
-                  ? '（未登録）'
-                  : codes.length === 1
-                    ? codes[0]
-                    : `${codes[0]} 他${codes.length - 1}件`
-
               return (
               <tr key={`${row.id}-${row.name}-${row.spec}`}>
                 <td style={{ border: '1px solid #ccc', padding: 4 }}>
-                  {codeLabel}
+                  {getCodeLabel(row)}
                 </td>
                 <td style={{ border: '1px solid #ccc', padding: 4, width: 200, maxWidth: 200 }}>
                   {row.name}
