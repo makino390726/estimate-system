@@ -171,23 +171,6 @@ export default function MasterSelectorPage() {
             </div>
           </div>
 
-          {/* 承認・ルール */}
-          <div className="selector-card">
-            <div className="selector-card-header">
-              <FiFileText className="icon" />
-              <h2>承認・ルール</h2>
-            </div>
-            <p>案件の承認依頼、決済ルールの確認・管理が行えます。</p>
-            <div className="selector-card-buttons">
-              <Link href="/cases/approval" className="selector-button primary">
-                承認依頼
-              </Link>
-              <Link href="/settlement-rules" className="selector-button primary">
-                決済ルール
-              </Link>
-            </div>
-          </div>
-
           {/* 注文書作成・確認 */}
           <div className="selector-card">
             <div className="selector-card-header">
@@ -287,13 +270,30 @@ export default function MasterSelectorPage() {
               <FiTrendingUp className="icon" />
               <h2>実績関係出力</h2>
             </div>
-            <p>各担当者別実績表を、期間、担当者別に出力、製造計画書は受注案件の商品をPDFで出力できます。</p>
+            <p>担当者別の営業実績表を期間指定で出力し、受注案件の商品から製造計画一覧を作成できます。</p>
             <div className="selector-card-buttons">
+              <Link href="/plan/staff_performance" className="selector-button primary">
+                担当者別実績表
+              </Link>
               <Link href="/plan" className="selector-button primary">
                 製造計画一覧
               </Link>
-              <Link href="/plan/staff_performance" className="selector-button primary">
-                担当者別実績表
+            </div>
+          </div>
+
+          {/* 年度計画 */}
+          <div className="selector-card">
+            <div className="selector-card-header">
+              <FiTrendingUp className="icon" />
+              <h2>年度計画</h2>
+            </div>
+            <p>担当者ごとに機種・台数・金額・確度で当初計画を作成し、成約に対する進捗率を確認できます。</p>
+            <div className="selector-card-buttons">
+              <Link href="/plan/annual/sheet" className="selector-button primary">
+                年度計画シート
+              </Link>
+              <Link href="/plan/annual" className="selector-button primary">
+                年度計画進捗
               </Link>
             </div>
           </div>
