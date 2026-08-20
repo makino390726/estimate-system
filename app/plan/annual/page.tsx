@@ -1,18 +1,22 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import {
   fetchAllLinesForPlans,
   fetchAllPlansForYear,
-  fetchOrderedAmountByStaff,
+  fetchClosedAmountByStaff,
   fetchPlanStaffs,
+  fetchSalesActualSummary,
   formatPlanDbError,
+  importSalesActualExcel,
   lineTotals,
+  splitPlanTotals,
   type AnnualPlan,
   type AnnualPlanLine,
+  type SalesActualSummary,
   type StaffOption,
 } from '@/lib/annualPlanClient'
 import {
@@ -21,7 +25,18 @@ import {
   fiscalYearLabel,
   fiscalYearOptions,
 } from '@/lib/annualPlanFiscal'
-import { PLAN_CATEGORIES, displayPlanCategory } from '@/lib/annualPlanCategories'
+import {
+  AMOUNT_ONLY_CATEGORIES,
+  CHANGE_KIND_LABEL,
+  LUMP_MACHINE_CODE,
+  PLAN_CATEGORIES,
+  PROGRESS_CATEGORIES,
+  displayPlanCategory,
+  isProductionPlanCategory,
+  lineChangeKind,
+  progressCategoryFor,
+  progressCategoryLabel,
+} from '@/lib/annualPlanCategories'
 import {
   planBtn,
   planInput,
@@ -46,53 +61,91 @@ function pctNum(n: number, d: number) {
   return Math.round((n / d) * 100)
 }
 
-function UsageMeter(props: { closed: number; plan: number; elapsed: number }) {
+function DualMeter(props: { closed: number; excel: number; plan: number; elapsed: number }) {
   const closedPct = Math.min(pctNum(props.closed, props.plan), 100)
+  const excelPct = Math.min(pctNum(props.excel, props.plan), 100)
   const elapsed = Math.min(Math.max(props.elapsed, 0), 100)
+  const marker = (
+    <div
+      title={`経過 ${elapsed}%`}
+      style={{
+        position: 'absolute',
+        left: `${elapsed}%`,
+        top: 0,
+        bottom: 0,
+        width: 2,
+        background: '#38bdf8',
+        transform: 'translateX(-1px)',
+      }}
+    />
+  )
   return (
     <div style={{ ...planPanel, padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span>見積成約 {pct(props.closed, props.plan)} / Excel {pct(props.excel, props.plan)} / 経過 {elapsed}%</span>
         <span>
-          成約 {pct(props.closed, props.plan)} / 経過 {elapsed}%
-        </span>
-        <span>
-          {yen(props.closed)} / {yen(props.plan)}
+          {yen(props.closed)} / {yen(props.excel)} / 中間計画 {yen(props.plan)}
         </span>
       </div>
-      <div
-        style={{
-          position: 'relative',
-          height: 18,
-          background: '#1e293b',
-          borderRadius: 4,
-          overflow: 'hidden',
-          border: '1px solid #334155',
-        }}
-      >
-        <div style={{ width: `${closedPct}%`, height: '100%', background: '#22c55e' }} />
-        <div
-          title={`経過 ${elapsed}%`}
-          style={{
-            position: 'absolute',
-            left: `${elapsed}%`,
-            top: 0,
-            bottom: 0,
-            width: 2,
-            background: '#38bdf8',
-            transform: 'translateX(-1px)',
-          }}
-        />
+      <div style={{ position: 'relative', height: 14, background: '#1e293b', borderRadius: 4, overflow: 'hidden', border: '1px solid #334155', marginBottom: 6 }}>
+        <div style={{ width: `${closedPct}%`, height: '100%', background: '#64748b' }} />
+        {marker}
+      </div>
+      <div style={{ position: 'relative', height: 14, background: '#1e293b', borderRadius: 4, overflow: 'hidden', border: '1px solid #334155' }}>
+        <div style={{ width: `${excelPct}%`, height: '100%', background: '#22c55e' }} />
+        {marker}
       </div>
       <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, ...planMuted }}>
         <span>
+          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#64748b', marginRight: 6 }} />
+          上段 見積成約（受注・注文・完了）
+        </span>
+        <span>
           <span style={{ display: 'inline-block', width: 10, height: 10, background: '#22c55e', marginRight: 6 }} />
-          成約額
+          下段 Excel税抜
         </span>
         <span>
           <span style={{ display: 'inline-block', width: 10, height: 10, background: '#38bdf8', marginRight: 6 }} />
           年度の経過
         </span>
       </div>
+    </div>
+  )
+}
+
+function ProgressBars(props: {
+  title: string
+  caption: string
+  rows: Array<{ label: string; plan: number; closed: number; excel: number }>
+}) {
+  const max = Math.max(...props.rows.map((r) => Math.max(r.plan, r.closed, r.excel)), 1)
+  return (
+    <div style={{ ...planPanel, padding: 16 }}>
+      <h2 style={{ margin: '0 0 12px', fontSize: 16, color: '#f8fafc' }}>{props.title}</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {props.rows.map((r) => (
+          <div key={r.label}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4, fontSize: 13 }}>
+              <span>{r.label}</span>
+              <span style={planMuted}>
+                計画 {yen(r.plan)} · 見積 {yen(r.closed)} · Excel {yen(r.excel)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${(r.plan / max) * 100}%`, height: '100%', background: '#94a3b8' }} />
+              </div>
+              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${(r.closed / max) * 100}%`, height: '100%', background: '#64748b' }} />
+              </div>
+              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${(r.excel / max) * 100}%`, height: '100%', background: '#22c55e' }} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p style={{ ...planMuted, fontSize: 12, margin: '10px 0 0' }}>{props.caption}</p>
     </div>
   )
 }
@@ -127,16 +180,6 @@ function GroupedBars(props: {
         ))}
       </div>
       <p style={{ ...planMuted, fontSize: 12, margin: '10px 0 0' }}>{props.caption}</p>
-      <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12, ...planMuted }}>
-        <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#94a3b8', marginRight: 6 }} />
-          計画額
-        </span>
-        <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#38bdf8', marginRight: 6 }} />
-          確度見込（●100% ▲50% □0%）
-        </span>
-      </div>
     </div>
   )
 }
@@ -150,7 +193,7 @@ function qtyByConfidence(lines: AnnualPlanLine[]) {
 }
 
 function machineKey(line: AnnualPlanLine) {
-  return `${displayPlanCategory(line.category)}::${line.machine_code}::${line.machine_name || ''}`
+  return `${displayPlanCategory(line.category)}::${lineChangeKind(line)}::${line.machine_code}::${line.machine_name || ''}`
 }
 
 function AnnualDashboardContent() {
@@ -162,34 +205,76 @@ function AnnualDashboardContent() {
   const [staffs, setStaffs] = useState<StaffOption[]>([])
   const [plans, setPlans] = useState<AnnualPlan[]>([])
   const [lines, setLines] = useState<AnnualPlanLine[]>([])
-  const [ordered, setOrdered] = useState<Map<string, { amount: number; count: number }>>(new Map())
+  const [closedByStaff, setClosedByStaff] = useState<Map<string, { amount: number; count: number }>>(new Map())
+  const [sales, setSales] = useState<SalesActualSummary>({
+    byStaff: {},
+    byCategory: {},
+    unmatchedAmount: 0,
+    totalAmount: 0,
+    import: null,
+  })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [machineCategory, setMachineCategory] = useState('すべて')
+  const [importing, setImporting] = useState(false)
+  const [importMessage, setImportMessage] = useState('')
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [staffList, planList, closed] = await Promise.all([
+        fetchPlanStaffs(),
+        fetchAllPlansForYear(fiscalYear),
+        fetchClosedAmountByStaff(fiscalYear),
+      ])
+      setStaffs(staffList)
+      setPlans(planList)
+      setClosedByStaff(closed)
+      const lineList = await fetchAllLinesForPlans(planList.map((p) => p.id))
+      setLines(lineList)
+      try {
+        setSales(await fetchSalesActualSummary(fiscalYear))
+      } catch (e) {
+        setSales({
+          byStaff: {},
+          byCategory: {},
+          unmatchedAmount: 0,
+          totalAmount: 0,
+          import: null,
+        })
+        const message = e instanceof Error ? e.message : String(e)
+        if (!/売上実績テーブル/i.test(message)) setError(formatPlanDbError(message))
+      }
+    } catch (e) {
+      setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
+      setPlans([])
+      setLines([])
+    } finally {
+      setLoading(false)
+    }
+  }, [fiscalYear])
 
   useEffect(() => {
-    void (async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const [staffList, planList] = await Promise.all([
-          fetchPlanStaffs(),
-          fetchAllPlansForYear(fiscalYear),
-        ])
-        setStaffs(staffList)
-        setPlans(planList)
-        const lineList = await fetchAllLinesForPlans(planList.map((p) => p.id))
-        setLines(lineList)
-        setOrdered(await fetchOrderedAmountByStaff(fiscalYear))
-      } catch (e) {
-        setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
-        setPlans([])
-        setLines([])
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [fiscalYear])
+    void loadDashboard()
+  }, [loadDashboard])
+
+  const handleImport = async (file: File | undefined) => {
+    if (!file) return
+    setImporting(true)
+    setImportMessage('')
+    try {
+      const result = await importSalesActualExcel(fiscalYear, file)
+      setImportMessage(
+        `取込完了 ${result.inserted.toLocaleString('ja-JP')}行（担当未割当 ${result.unmatched_staff}件 / スキップ ${result.skipped_count}件）`,
+      )
+      setSales(await fetchSalesActualSummary(fiscalYear))
+    } catch (e) {
+      setImportMessage(formatPlanDbError(e instanceof Error ? e.message : String(e)))
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const planByStaff = useMemo(() => {
     const map = new Map<string, { plan: AnnualPlan; lines: AnnualPlanLine[] }>()
@@ -206,17 +291,24 @@ function AnnualDashboardContent() {
   }, [plans, lines])
 
   const companyLines = lines
-  const companyTotals = lineTotals(companyLines)
-  const companyClosed = [...ordered.values()].reduce((s, r) => s + r.amount, 0)
+  const companySplit = splitPlanTotals(companyLines)
+  const companyTotals = companySplit.current
+  const companyInitial = companySplit.initial
+  const companyClosed = [...closedByStaff.values()].reduce((s, r) => s + r.amount, 0)
+  const companyExcel = sales.totalAmount
   const elapsed = fiscalElapsedPct(new Date(), fiscalYear)
-  const companyConf = qtyByConfidence(lines)
+
+  const factoryPlanAmount = lines
+    .filter((l) => isProductionPlanCategory(l.category))
+    .reduce((s, l) => s + Number(l.amount || 0), 0)
 
   const categoryRows = useMemo(() => {
-    return PLAN_CATEGORIES.map((cat) => {
-      const catLines = lines.filter((l) => displayPlanCategory(l.category) === cat)
-      return { cat, lines: catLines, totals: lineTotals(catLines), conf: qtyByConfidence(catLines) }
-    }).filter((r) => r.totals.amount > 0 || r.totals.qty > 0)
-  }, [lines])
+    return PROGRESS_CATEGORIES.map((cat) => {
+      const catLines = lines.filter((l) => progressCategoryFor(l.category) === cat)
+      const excel = sales.byCategory[cat] || 0
+      return { cat, lines: catLines, totals: splitPlanTotals(catLines), conf: qtyByConfidence(catLines), excel }
+    }).filter((r) => r.totals.current.amount > 0 || r.totals.current.qty > 0 || r.excel > 0)
+  }, [lines, sales.byCategory])
 
   const machineRows = useMemo(() => {
     const map = new Map<string, AnnualPlanLine[]>()
@@ -232,6 +324,7 @@ function AnnualDashboardContent() {
         return {
           key,
           category: displayPlanCategory(first.category),
+          changeKind: lineChangeKind(first),
           code: first.machine_code,
           name: first.machine_name || '',
           lines: group,
@@ -239,7 +332,11 @@ function AnnualDashboardContent() {
           conf: qtyByConfidence(group),
         }
       })
-      .filter((r) => machineCategory === 'すべて' || r.category === machineCategory)
+      .filter((r) => {
+        if (machineCategory === 'すべて') return true
+        if (machineCategory === '生産品') return isProductionPlanCategory(r.category)
+        return r.category === machineCategory
+      })
       .sort((a, b) => {
         const cat = a.category.localeCompare(b.category, 'ja')
         if (cat !== 0) return cat
@@ -285,12 +382,40 @@ function AnnualDashboardContent() {
 
       {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
+      <section style={planPanel}>
+        <h2 style={{ marginTop: 0, fontSize: 16, color: '#f8fafc' }}>売上Excel取込</h2>
+        <p style={{ ...planMuted, marginTop: 0 }}>
+          毎月の累計ファイル（例: 売上(2025.9～2026.7).xlsx）を選ぶと、この年度の実績を置き換えます。石油・その他資材は資材に合算します。
+        </p>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            disabled={importing}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              e.target.value = ''
+              void handleImport(file)
+            }}
+          />
+          {importing && <span style={planMuted}>取込中…</span>}
+          {sales.import?.imported_at && (
+            <span style={planMuted}>
+              最終取込 {sales.import.file_name}（{sales.import.row_count.toLocaleString('ja-JP')}行）
+            </span>
+          )}
+        </div>
+        {importMessage && <p style={{ marginBottom: 0, color: importMessage.startsWith('取込完了') ? '#86efac' : '#fca5a5' }}>{importMessage}</p>}
+      </section>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 12, marginBottom: 20 }}>
         {[
-          ['計画額', yen(companyTotals.amount)],
-          ['成約額（○・作成日）', yen(companyClosed)],
-          ['売上達成率', pct(companyClosed, companyTotals.amount)],
-          ['粗利計画', yen(companyTotals.gp)],
+          ['当初計画', yen(companyInitial.amount)],
+          ['中間計画', yen(companyTotals.amount)],
+          ['見積成約（受注・注文・完了）', yen(companyClosed)],
+          ['Excel実績（税抜）', yen(companyExcel)],
+          ['見積達成率（対中間）', pct(companyClosed, companyTotals.amount)],
+          ['Excel達成率（対中間）', pct(companyExcel, companyTotals.amount)],
         ].map(([label, value]) => (
           <div key={label} style={planPanel}>
             <div style={{ fontSize: 12, ...planMuted }}>{label}</div>
@@ -299,29 +424,38 @@ function AnnualDashboardContent() {
         ))}
       </div>
       <p style={{ ...planMuted, fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-        成約は見込み区分○で、見積作成日が年度内の案件です。成約日・カテゴリ紐づけは次の改修です。
+        上段は見積ステータスが受注・注文・完了（作成日が年度内）。下段は取込んだ売上Excelの税抜。二つは足しません。
+        達成率の分母は中間計画（当初＋中間変更）。対当初 {pct(companyExcel, companyInitial.amount)}。粗利計画 {yen(companyTotals.gp)}
+        {sales.unmatchedAmount > 0 ? ` · 担当未割当のExcel ${yen(sales.unmatchedAmount)}` : ''}
       </p>
 
-      <UsageMeter closed={companyClosed} plan={companyTotals.amount} elapsed={elapsed} />
+      <DualMeter closed={companyClosed} excel={companyExcel} plan={companyTotals.amount} elapsed={elapsed} />
 
-      {categoryRows.length > 0 && (
-        <GroupedBars
-          title="カテゴリ別 計画額と確度見込"
-          caption={`${fiscalYearLabel(fiscalYear)} · 横は金額。成約のカテゴリ別は見積紐づけ後に追加します。`}
-          rows={categoryRows.map((r) => ({
-            label: r.cat,
-            plan: r.totals.amount,
-            weighted: r.totals.weighted,
-          }))}
-        />
-      )}
+      <ProgressBars
+        title="科目別 計画 / 見積成約 / Excel"
+        caption={`${fiscalYearLabel(fiscalYear)} · 計画バーは中間計画。生産品（システム）は暖房機・食品乾燥機・たばこ乾燥機等の合算。対比はExcel科目「生産品」。プレハブ冷蔵庫等の仕入品は工事。見積成約はカテゴリ未分割のため生産品行に全額を表示。資材は石油・その他資材を含む。`}
+        rows={[
+          {
+            label: '生産品（システム）',
+            plan: factoryPlanAmount,
+            closed: companyClosed,
+            excel: sales.byCategory['生産品'] || 0,
+          },
+          ...AMOUNT_ONLY_CATEGORIES.map((cat) => ({
+            label: cat,
+            plan: categoryRows.find((r) => r.cat === cat)?.totals.current.amount || 0,
+            closed: 0,
+            excel: sales.byCategory[cat] || 0,
+          })),
+        ].filter((r) => r.plan > 0 || r.closed > 0 || r.excel > 0)}
+      />
 
       <h2 style={{ fontSize: 16, color: '#f8fafc' }}>担当者別</h2>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['担当者', '状態', '計画額', '粗利計画', '成約額', '達成率', ''].map((h) => (
+              {['担当者', '状態', '当初', '中間計画', '見積成約', '見積達成', 'Excel実績', 'Excel達成', ''].map((h) => (
                 <th key={h || 'actions'} style={planTh}>
                   {h}
                 </th>
@@ -331,16 +465,19 @@ function AnnualDashboardContent() {
           <tbody>
             {staffs.map((staff) => {
               const row = planByStaff.get(staff.id)
-              const t = lineTotals(row?.lines || [])
-              const closed = ordered.get(staff.id)?.amount || 0
+              const t = splitPlanTotals(row?.lines || [])
+              const closed = closedByStaff.get(staff.id)?.amount || 0
+              const excel = sales.byStaff[staff.id] || 0
               return (
                 <tr key={staff.id}>
                   <td style={planTd}>{staff.name}</td>
                   <td style={planTd}>{row?.plan.status === 'confirmed' ? '確定' : row ? '下書き' : '未作成'}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.amount)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.gp)}</td>
+                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.initial.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.current.amount)}</td>
                   <td style={{ ...planTd, textAlign: 'right' }}>{yen(closed)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(closed, t.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(closed, t.current.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(excel)}</td>
+                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, t.current.amount)}</td>
                   <td style={planTd}>
                     <Link href={`/plan/annual/sheet?fy=${fiscalYear}&staff=${encodeURIComponent(staff.id)}`} style={{ color: '#7dd3fc' }}>
                       シート
@@ -353,12 +490,15 @@ function AnnualDashboardContent() {
         </table>
       </div>
 
-      <h2 style={{ fontSize: 16, marginTop: 24, color: '#f8fafc' }}>カテゴリ別</h2>
+      <h2 style={{ fontSize: 16, marginTop: 24, color: '#f8fafc', marginBottom: 4 }}>カテゴリ別</h2>
+      <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
+        暖房機・食品乾燥機・たばこ乾燥機等は生産品（システム）に合算し、Excel科目「生産品」と対比します。プレハブ冷蔵庫等の仕入品は工事です。計画額は中間計画、当初は担当確定＋経営上乗せです。
+      </p>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['カテゴリ', '台数', '●', '▲', '□', '計画額', '粗利', '確度見込', '構成比'].map((h) => (
+              {['カテゴリ', '台数', '当初', '中間計画', 'Excel実績', 'Excel達成', '確度見込', '構成比'].map((h) => (
                 <th key={h} style={{ ...planTh, textAlign: h === 'カテゴリ' ? 'left' : 'right' }}>
                   {h}
                 </th>
@@ -368,33 +508,34 @@ function AnnualDashboardContent() {
           <tbody>
             {categoryRows.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={8} style={{ ...planTd, color: '#94a3b8' }}>
                   計画行がありません。
                 </td>
               </tr>
             )}
             {categoryRows.map((r) => (
               <tr key={r.cat}>
-                <td style={planTd}>{r.cat}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{r.totals.qty.toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{r.conf.high.toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{r.conf.mid.toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{r.conf.low.toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.amount)}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.gp)}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.weighted)}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.totals.amount, companyTotals.amount)}</td>
+                <td style={planTd}>
+                  {progressCategoryLabel(r.cat)}
+                  {r.cat === '生産品' ? ' / 生産品（Excel）' : ''}
+                </td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{r.totals.current.qty > 0 ? r.totals.current.qty.toLocaleString('ja-JP') : '—'}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.initial.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.current.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.excel)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.excel, r.totals.current.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.current.weighted)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.totals.current.amount, companyTotals.amount)}</td>
               </tr>
             ))}
             {categoryRows.length > 0 && (
               <tr>
                 <td style={{ ...planTd, fontWeight: 700 }}>合計</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{companyTotals.qty.toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{companyConf.high.toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{companyConf.mid.toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{companyConf.low.toLocaleString('ja-JP')}</td>
+                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyInitial.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyTotals.amount)}</td>
-                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyTotals.gp)}</td>
+                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyExcel)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{pct(companyExcel, companyTotals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(companyTotals.weighted)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>100%</td>
               </tr>
@@ -413,6 +554,7 @@ function AnnualDashboardContent() {
             style={{ ...planInput, width: 'auto', minWidth: 160 }}
           >
             <option value="すべて">すべて</option>
+            <option value="生産品">生産品</option>
             {PLAN_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -427,7 +569,7 @@ function AnnualDashboardContent() {
           title="機種別 計画額と確度見込"
           caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。`}
           rows={machineRows.slice(0, 20).map((r) => ({
-            label: r.name && r.name !== r.code ? `${r.code} ${r.name}` : r.code,
+            label: `${CHANGE_KIND_LABEL[r.changeKind]} ${r.code === LUMP_MACHINE_CODE ? r.name || '（品名なし）' : r.name && r.name !== r.code ? `${r.code} ${r.name}` : r.code}`,
             plan: r.totals.amount,
             weighted: r.totals.weighted,
           }))}
@@ -437,8 +579,8 @@ function AnnualDashboardContent() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['カテゴリ', '機種', '台数', '●', '▲', '□', '計画額', '粗利', '確度見込'].map((h) => (
-                <th key={h} style={{ ...planTh, textAlign: h === 'カテゴリ' || h === '機種' ? 'left' : 'right' }}>
+              {['区分', 'カテゴリ', '機種', '台数', '●', '▲', '□', '計画額', '粗利', '確度見込'].map((h) => (
+                <th key={h} style={{ ...planTh, textAlign: h === 'カテゴリ' || h === '機種' || h === '区分' ? 'left' : 'right' }}>
                   {h}
                 </th>
               ))}
@@ -447,17 +589,17 @@ function AnnualDashboardContent() {
           <tbody>
             {machineRows.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={10} style={{ ...planTd, color: '#94a3b8' }}>
                   計画行がありません。
                 </td>
               </tr>
             )}
             {machineRows.map((r) => (
               <tr key={r.key}>
+                <td style={planTd}>{CHANGE_KIND_LABEL[r.changeKind]}</td>
                 <td style={planTd}>{r.category}</td>
                 <td style={planTd}>
-                  {r.code}
-                  {r.name && r.name !== r.code ? ` ${r.name}` : ''}
+                  {r.code === LUMP_MACHINE_CODE ? r.name || '（品名なし）' : `${r.code}${r.name && r.name !== r.code ? ` ${r.name}` : ''}`}
                 </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{r.totals.qty.toLocaleString('ja-JP')}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{r.conf.high.toLocaleString('ja-JP')}</td>
@@ -470,7 +612,7 @@ function AnnualDashboardContent() {
             ))}
             {machineRows.length > 0 && (
               <tr>
-                <td style={{ ...planTd, fontWeight: 700 }} colSpan={2}>
+                <td style={{ ...planTd, fontWeight: 700 }} colSpan={3}>
                   合計
                 </td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{machineTotals.totals.qty.toLocaleString('ja-JP')}</td>

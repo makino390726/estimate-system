@@ -287,7 +287,7 @@ export default function MasterSelectorPage() {
               <FiTrendingUp className="icon" />
               <h2>年度計画</h2>
             </div>
-            <p>担当者ごとに機種・台数・金額・確度で当初計画を作成し、成約に対する進捗率を確認できます。</p>
+            <p>担当者ごとに当初計画を作成し、見積成約と売上Excel実績の二段で進捗を確認できます。</p>
             <div className="selector-card-buttons">
               <Link href="/plan/annual/sheet" className="selector-button primary">
                 年度計画シート
