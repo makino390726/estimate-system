@@ -86,15 +86,18 @@ export function factoryCategoryFor(planCategory: string): string | null {
 }
 
 export function displayPlanCategory(category: string): string {
-  return factoryCategoryFor(category) ?? category
+  if (isAmountOnlyPlanCategory(category)) return category
+  const factory = factoryCategoryFor(category)
+  if (!factory) return category
+  return `生産品（${factory}）`
 }
 
 /** 進捗・Excel対比用。暖房機・食品乾燥機・たばこ乾燥機等は生産品 */
 export const PROGRESS_CATEGORIES = ['生産品', ...AMOUNT_ONLY_CATEGORIES] as const
 
 export function progressCategoryFor(category: string): string {
-  const displayed = displayPlanCategory(category)
-  if (isAmountOnlyPlanCategory(displayed)) return displayed
+  const raw = String(category || '').trim()
+  if (isAmountOnlyPlanCategory(raw)) return raw
   return '生産品'
 }
 
@@ -103,7 +106,7 @@ export function isProductionPlanCategory(category: string): boolean {
 }
 
 export function progressCategoryLabel(category: string): string {
-  return progressCategoryFor(category) === '生産品' ? '生産品（システム）' : progressCategoryFor(category)
+  return progressCategoryFor(category)
 }
 
 /** Excel 科目 → 計画上の実績バケツ。石油・その他資材は資材 */
@@ -116,8 +119,7 @@ export function excelPlanCategoryFor(kamoku: string): string | null {
 
 /** 計画カテゴリ → Excel 実績の集計キー */
 export function planCategoryToExcelBucket(category: string): string {
-  if (isAmountOnlyPlanCategory(displayPlanCategory(category))) return displayPlanCategory(category)
-  return '生産品'
+  return progressCategoryFor(category)
 }
 
 export function productIdPrefixesForCategory(category: string): string[] {
@@ -146,12 +148,12 @@ export type PlanChangeKind = 'initial' | 'interim'
 
 export const CHANGE_KIND_LABEL: Record<PlanChangeKind, string> = {
   initial: '当初',
-  interim: '中間',
+  interim: '中間修正',
 }
 
 export const CHANGE_KIND_OPTIONS: Array<{ value: PlanChangeKind; label: string; hint: string }> = [
   { value: 'initial', label: '当初計画の変更', hint: '経営の上乗せ・当初の訂正' },
-  { value: 'interim', label: '中間計画の変更', hint: '確定後の途中見直し' },
+  { value: 'interim', label: '中間計画の変更', hint: '確定後の途中見直し。同じ品名は中間の数量・金額が中間計画になります' },
 ]
 
 export function lineChangeKind(line: { change_kind?: string | null }): PlanChangeKind {

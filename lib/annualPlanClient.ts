@@ -3,8 +3,11 @@ import { EXCLUDED_STAFF_IDS } from '@/lib/staffPerformanceSummary'
 import {
   CLOSED_CASE_STATUSES,
   LUMP_MACHINE_CODE,
+  PROGRESS_CATEGORIES,
   defaultGrossProfit,
+  displayPlanCategory,
   lineChangeKind,
+  progressCategoryFor,
   type PlanChangeKind,
   type PlanConfidence,
 } from '@/lib/annualPlanCategories'
@@ -38,7 +41,11 @@ export type AnnualPlanLine = {
 export type StaffOption = { id: string; name: string }
 
 export async function fetchPlanStaffs(): Promise<StaffOption[]> {
-  const { data, error } = await supabase.from('staffs').select('id, name').order('name')
+  const { data, error } = await supabase
+    .from('staffs')
+    .select('id, name, is_sales_staff')
+    .eq('is_sales_staff', true)
+    .order('name')
   if (error) throw new Error(error.message)
   return (data || [])
     .map((row) => ({ id: String(row.id), name: String(row.name || '') }))
@@ -96,6 +103,7 @@ export async function addPlanLine(input: {
   confidence: PlanConfidence
   gross_profit?: number
   change_kind?: PlanChangeKind
+  reason?: string
 }): Promise<AnnualPlanLine> {
   const machineCode = String(input.machine_code || '').trim() || LUMP_MACHINE_CODE
   const changeKind: PlanChangeKind = input.change_kind === 'interim' ? 'interim' : 'initial'
@@ -121,6 +129,7 @@ export async function addPlanLine(input: {
     plan_id: input.planId,
     line_id: data.id,
     action: 'add',
+    reason: input.reason || null,
     new_payload: data,
     actor_name: 'web',
   })
@@ -170,6 +179,45 @@ export async function updateLineChangeKind(
     new_payload: { change_kind: changeKind },
     actor_name: 'web',
   })
+  return data as AnnualPlanLine
+}
+
+export async function updatePlanLineQtyAmount(
+  planId: string,
+  line: AnnualPlanLine,
+  qty: number,
+  amount: number,
+  reason?: string,
+): Promise<AnnualPlanLine> {
+  const nextAmount = Math.round(Number(amount) || 0)
+  const nextQty = Number.isFinite(qty) && qty > 0 ? qty : 0
+  const lineId = String(line.id)
+  const { data, error } = await supabase
+    .from('annual_staff_plan_lines')
+    .update({
+      qty: nextQty,
+      amount: nextAmount,
+      gross_profit: defaultGrossProfit(nextAmount),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', lineId)
+    .select('*')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('中間修正の保存に失敗しました。行が見つかりません。')
+
+  const { error: logError } = await supabase.from('annual_staff_plan_changes').insert({
+    plan_id: planId,
+    line_id: lineId,
+    action: 'revise',
+    reason: reason || null,
+    old_payload: { qty: line.qty, amount: line.amount, gross_profit: line.gross_profit },
+    new_payload: { qty: nextQty, amount: nextAmount, gross_profit: defaultGrossProfit(nextAmount) },
+    actor_name: 'web',
+  })
+  if (logError) {
+    console.warn('annual plan revise log:', logError.message)
+  }
   return data as AnnualPlanLine
 }
 
@@ -260,6 +308,7 @@ export async function fetchClosedAmountByStaff(
 export type SalesActualSummary = {
   byStaff: Record<string, number>
   byCategory: Record<string, number>
+  byStaffCategory: Record<string, Record<string, number>>
   unmatchedAmount: number
   totalAmount: number
   import: {
@@ -281,10 +330,22 @@ export async function fetchSalesActualSummary(fiscalYear: number): Promise<Sales
   return {
     byStaff: json.byStaff || {},
     byCategory: json.byCategory || {},
+    byStaffCategory: json.byStaffCategory || {},
     unmatchedAmount: Number(json.unmatchedAmount || 0),
     totalAmount: Number(json.totalAmount || 0),
     import: json.import || null,
   }
+}
+
+export async function fetchItemMonthProgress(fiscalYear: number, staffId: string) {
+  const res = await fetch(
+    `/api/plan/annual/item-progress?fy=${fiscalYear}&staff=${encodeURIComponent(staffId)}`,
+  )
+  const json = await res.json()
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error || '品名別月次進捗の取得に失敗しました')
+  }
+  return json as import('@/lib/annualPlanItemProgress').ItemMonthProgressResult & { ok?: boolean }
 }
 
 export async function importSalesActualExcel(fiscalYear: number, file: File) {
@@ -300,10 +361,14 @@ export async function importSalesActualExcel(fiscalYear: number, file: File) {
     inserted: number
     unmatched_staff: number
     skipped_count: number
+    amount_ex_tax_total?: number
   }
 }
 
 export function formatPlanDbError(message: string): string {
+  if (/is_sales_staff/i.test(message)) {
+    return `営業担当者フラグがありません。見積システムの Supabase で add_staff_is_sales.sql を実行してください。詳細: ${message}`
+  }
   if (/change_kind/i.test(message)) {
     return `計画行の区分列がありません。見積システムの Supabase で create_annual_plan_line_change_kind.sql を実行してください。詳細: ${message}`
   }
@@ -332,12 +397,52 @@ export function lineTotals(lines: AnnualPlanLine[]) {
   }
 }
 
+export function planLineItemKey(line: Pick<AnnualPlanLine, 'category' | 'machine_code' | 'machine_name'>) {
+  const code = String(line.machine_code || '').trim() || LUMP_MACHINE_CODE
+  const name = String(line.machine_name || '').trim()
+  return `${displayPlanCategory(line.category)}::${code}::${name}`
+}
+
+/** 中間修正がある品名は、中間計画では当初行の代わりに中間行を使う */
+export function currentPlanLines(lines: AnnualPlanLine[]): AnnualPlanLine[] {
+  const interimLines = lines.filter((l) => lineChangeKind(l) === 'interim')
+  const superseded = new Set(interimLines.map(planLineItemKey))
+  return [
+    ...lines.filter((l) => lineChangeKind(l) === 'initial' && !superseded.has(planLineItemKey(l))),
+    ...interimLines,
+  ]
+}
+
 export function splitPlanTotals(lines: AnnualPlanLine[]) {
   const initialLines = lines.filter((l) => lineChangeKind(l) === 'initial')
   const interimLines = lines.filter((l) => lineChangeKind(l) === 'interim')
   return {
     initial: lineTotals(initialLines),
     interim: lineTotals(interimLines),
-    current: lineTotals(lines),
+    current: lineTotals(currentPlanLines(lines)),
+  }
+}
+
+export function initialLineTotalsByCategory(lines: AnnualPlanLine[]) {
+  const initialLines = lines.filter((l) => lineChangeKind(l) === 'initial')
+  const currentLines = currentPlanLines(lines)
+  const rows = PROGRESS_CATEGORIES.map((cat) => {
+    const initial = lineTotals(initialLines.filter((l) => progressCategoryFor(l.category) === cat))
+    const current = lineTotals(currentLines.filter((l) => progressCategoryFor(l.category) === cat))
+    const hasInterim = lines.some(
+      (l) => lineChangeKind(l) === 'interim' && progressCategoryFor(l.category) === cat,
+    )
+    return {
+      cat,
+      label: cat === '生産品' ? '生産品' : cat,
+      initial,
+      current,
+      hasInterim,
+    }
+  })
+  return {
+    rows,
+    grandInitial: lineTotals(initialLines),
+    grandCurrent: lineTotals(currentLines),
   }
 }

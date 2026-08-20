@@ -6,6 +6,7 @@ export const runtime = 'nodejs'
 export type SalesActualSummary = {
   byStaff: Record<string, number>
   byCategory: Record<string, number>
+  byStaffCategory: Record<string, Record<string, number>>
   unmatchedAmount: number
   totalAmount: number
   import: {
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
 
     const byStaff: Record<string, number> = {}
     const byCategory: Record<string, number> = {}
+    const byStaffCategory: Record<string, Record<string, number>> = {}
     let unmatchedAmount = 0
     let totalAmount = 0
     const pageSize = 1000
@@ -50,19 +52,24 @@ export async function GET(request: Request) {
     while (true) {
       const { data, error } = await sb
         .from('annual_sales_actual_lines')
-        .select('staff_id, plan_category, amount_ex_tax')
+        .select('id, staff_id, plan_category, amount_ex_tax')
         .eq('fiscal_year', fiscalYear)
-        .gt('amount_ex_tax', 0)
+        .order('id', { ascending: true })
         .range(offset, offset + pageSize - 1)
       if (error) throw new Error(error.message)
       const rows = data || []
       for (const row of rows) {
         const amount = Number(row.amount_ex_tax || 0)
-        if (!(amount > 0)) continue
+        if (amount === 0) continue
         totalAmount += amount
-        add(byCategory, String(row.plan_category || ''), amount)
-        if (row.staff_id) add(byStaff, String(row.staff_id), amount)
-        else unmatchedAmount += amount
+        const category = String(row.plan_category || '')
+        add(byCategory, category, amount)
+        if (row.staff_id) {
+          const staffId = String(row.staff_id)
+          add(byStaff, staffId, amount)
+          if (!byStaffCategory[staffId]) byStaffCategory[staffId] = {}
+          add(byStaffCategory[staffId], category, amount)
+        } else unmatchedAmount += amount
       }
       if (rows.length < pageSize) break
       offset += pageSize
@@ -71,6 +78,7 @@ export async function GET(request: Request) {
     const summary: SalesActualSummary = {
       byStaff,
       byCategory,
+      byStaffCategory,
       unmatchedAmount,
       totalAmount,
       import: latest

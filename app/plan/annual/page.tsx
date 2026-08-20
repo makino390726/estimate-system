@@ -14,6 +14,8 @@ import {
   importSalesActualExcel,
   lineTotals,
   splitPlanTotals,
+  currentPlanLines,
+  fetchItemMonthProgress,
   type AnnualPlan,
   type AnnualPlanLine,
   type SalesActualSummary,
@@ -26,10 +28,10 @@ import {
   fiscalYearOptions,
 } from '@/lib/annualPlanFiscal'
 import {
+  FACTORY_PRODUCT_CATEGORIES,
   AMOUNT_ONLY_CATEGORIES,
   CHANGE_KIND_LABEL,
   LUMP_MACHINE_CODE,
-  PLAN_CATEGORIES,
   PROGRESS_CATEGORIES,
   displayPlanCategory,
   isProductionPlanCategory,
@@ -46,6 +48,9 @@ import {
   planTd,
   planTh,
 } from '@/lib/annualPlanUi'
+import { AnnualItemMonthProgress } from '@/components/AnnualItemMonthProgress'
+import { AnnualInitialLineTotals } from '@/components/AnnualInitialLineTotals'
+import type { ItemMonthProgressResult } from '@/lib/annualPlanItemProgress'
 
 function yen(v: number) {
   return `${Math.round(v).toLocaleString('ja-JP')} 円`
@@ -84,7 +89,7 @@ function DualMeter(props: { closed: number; excel: number; plan: number; elapsed
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
         <span>見積成約 {pct(props.closed, props.plan)} / Excel {pct(props.excel, props.plan)} / 経過 {elapsed}%</span>
         <span>
-          {yen(props.closed)} / {yen(props.excel)} / 中間計画 {yen(props.plan)}
+          {yen(props.closed)} / {yen(props.excel)} / 当初計画 {yen(props.plan)}
         </span>
       </div>
       <div style={{ position: 'relative', height: 14, background: '#1e293b', borderRadius: 4, overflow: 'hidden', border: '1px solid #334155', marginBottom: 6 }}>
@@ -209,6 +214,7 @@ function AnnualDashboardContent() {
   const [sales, setSales] = useState<SalesActualSummary>({
     byStaff: {},
     byCategory: {},
+    byStaffCategory: {},
     unmatchedAmount: 0,
     totalAmount: 0,
     import: null,
@@ -218,6 +224,9 @@ function AnnualDashboardContent() {
   const [machineCategory, setMachineCategory] = useState('すべて')
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
+  const [itemStaffId, setItemStaffId] = useState(() => searchParams.get('staff') || '')
+  const [itemProgress, setItemProgress] = useState<ItemMonthProgressResult | null>(null)
+  const [itemProgressLoading, setItemProgressLoading] = useState(false)
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -228,10 +237,12 @@ function AnnualDashboardContent() {
         fetchAllPlansForYear(fiscalYear),
         fetchClosedAmountByStaff(fiscalYear),
       ])
+      const salesStaffIds = new Set(staffList.map((s) => s.id))
+      const salesPlans = planList.filter((p) => salesStaffIds.has(String(p.staff_id)))
       setStaffs(staffList)
-      setPlans(planList)
+      setPlans(salesPlans)
       setClosedByStaff(closed)
-      const lineList = await fetchAllLinesForPlans(planList.map((p) => p.id))
+      const lineList = await fetchAllLinesForPlans(salesPlans.map((p) => p.id))
       setLines(lineList)
       try {
         setSales(await fetchSalesActualSummary(fiscalYear))
@@ -239,6 +250,7 @@ function AnnualDashboardContent() {
         setSales({
           byStaff: {},
           byCategory: {},
+          byStaffCategory: {},
           unmatchedAmount: 0,
           totalAmount: 0,
           import: null,
@@ -259,6 +271,36 @@ function AnnualDashboardContent() {
     void loadDashboard()
   }, [loadDashboard])
 
+  useEffect(() => {
+    if (staffs.length === 0) {
+      if (itemStaffId) setItemStaffId('')
+      return
+    }
+    if (!staffs.some((s) => s.id === itemStaffId)) setItemStaffId(staffs[0].id)
+  }, [itemStaffId, staffs])
+
+  useEffect(() => {
+    if (!itemStaffId) {
+      setItemProgress(null)
+      return
+    }
+    let cancelled = false
+    setItemProgressLoading(true)
+    void (async () => {
+      try {
+        const next = await fetchItemMonthProgress(fiscalYear, itemStaffId)
+        if (!cancelled) setItemProgress(next)
+      } catch {
+        if (!cancelled) setItemProgress(null)
+      } finally {
+        if (!cancelled) setItemProgressLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [fiscalYear, itemStaffId, sales.import?.imported_at, lines])
+
   const handleImport = async (file: File | undefined) => {
     if (!file) return
     setImporting(true)
@@ -266,7 +308,7 @@ function AnnualDashboardContent() {
     try {
       const result = await importSalesActualExcel(fiscalYear, file)
       setImportMessage(
-        `取込完了 ${result.inserted.toLocaleString('ja-JP')}行（担当未割当 ${result.unmatched_staff}件 / スキップ ${result.skipped_count}件）`,
+        `取込完了 ${result.inserted.toLocaleString('ja-JP')}行 · 税抜合計 ${Math.round(Number(result.amount_ex_tax_total || 0)).toLocaleString('ja-JP')}円（担当未割当 ${result.unmatched_staff}件 / スキップ ${result.skipped_count}件）`,
       )
       setSales(await fetchSalesActualSummary(fiscalYear))
     } catch (e) {
@@ -294,11 +336,13 @@ function AnnualDashboardContent() {
   const companySplit = splitPlanTotals(companyLines)
   const companyTotals = companySplit.current
   const companyInitial = companySplit.initial
-  const companyClosed = [...closedByStaff.values()].reduce((s, r) => s + r.amount, 0)
+  const companyClosed = [...closedByStaff.entries()]
+    .filter(([staffId]) => staffs.some((s) => s.id === staffId))
+    .reduce((s, [, r]) => s + r.amount, 0)
   const companyExcel = sales.totalAmount
   const elapsed = fiscalElapsedPct(new Date(), fiscalYear)
 
-  const factoryPlanAmount = lines
+  const factoryPlanAmount = currentPlanLines(lines)
     .filter((l) => isProductionPlanCategory(l.category))
     .reduce((s, l) => s + Number(l.amount || 0), 0)
 
@@ -306,7 +350,7 @@ function AnnualDashboardContent() {
     return PROGRESS_CATEGORIES.map((cat) => {
       const catLines = lines.filter((l) => progressCategoryFor(l.category) === cat)
       const excel = sales.byCategory[cat] || 0
-      return { cat, lines: catLines, totals: splitPlanTotals(catLines), conf: qtyByConfidence(catLines), excel }
+      return { cat, lines: catLines, totals: splitPlanTotals(catLines), conf: qtyByConfidence(currentPlanLines(catLines)), excel }
     }).filter((r) => r.totals.current.amount > 0 || r.totals.current.qty > 0 || r.excel > 0)
   }, [lines, sales.byCategory])
 
@@ -334,8 +378,8 @@ function AnnualDashboardContent() {
       })
       .filter((r) => {
         if (machineCategory === 'すべて') return true
-        if (machineCategory === '生産品') return isProductionPlanCategory(r.category)
-        return r.category === machineCategory
+        if (machineCategory === '生産品') return isProductionPlanCategory(r.lines[0]?.category || r.category)
+        return r.category === displayPlanCategory(machineCategory) || r.category === machineCategory
       })
       .sort((a, b) => {
         const cat = a.category.localeCompare(b.category, 'ja')
@@ -381,6 +425,15 @@ function AnnualDashboardContent() {
       </div>
 
       {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+      {!loading && staffs.length === 0 && !error && (
+        <p style={{ color: '#fde68a' }}>
+          営業担当者が未設定です。
+          <Link href="/staffs" style={{ color: '#7dd3fc', marginLeft: 8 }}>
+            担当者マスタ
+          </Link>
+          で「営業担当者」にチェックを入れてください。
+        </p>
+      )}
 
       <section style={planPanel}>
         <h2 style={{ marginTop: 0, fontSize: 16, color: '#f8fafc' }}>売上Excel取込</h2>
@@ -414,8 +467,8 @@ function AnnualDashboardContent() {
           ['中間計画', yen(companyTotals.amount)],
           ['見積成約（受注・注文・完了）', yen(companyClosed)],
           ['Excel実績（税抜）', yen(companyExcel)],
-          ['見積達成率（対中間）', pct(companyClosed, companyTotals.amount)],
-          ['Excel達成率（対中間）', pct(companyExcel, companyTotals.amount)],
+          ['見積達成率（対当初）', pct(companyClosed, companyInitial.amount)],
+          ['Excel達成率（対当初）', pct(companyExcel, companyInitial.amount)],
         ].map(([label, value]) => (
           <div key={label} style={planPanel}>
             <div style={{ fontSize: 12, ...planMuted }}>{label}</div>
@@ -425,18 +478,22 @@ function AnnualDashboardContent() {
       </div>
       <p style={{ ...planMuted, fontSize: 12, marginTop: -8, marginBottom: 16 }}>
         上段は見積ステータスが受注・注文・完了（作成日が年度内）。下段は取込んだ売上Excelの税抜。二つは足しません。
-        達成率の分母は中間計画（当初＋中間変更）。対当初 {pct(companyExcel, companyInitial.amount)}。粗利計画 {yen(companyTotals.gp)}
+        達成率の分母は当初計画。対中間 {pct(companyExcel, companyTotals.amount)}。粗利計画 {yen(companyTotals.gp)}
         {sales.unmatchedAmount > 0 ? ` · 担当未割当のExcel ${yen(sales.unmatchedAmount)}` : ''}
       </p>
 
-      <DualMeter closed={companyClosed} excel={companyExcel} plan={companyTotals.amount} elapsed={elapsed} />
+      <DualMeter closed={companyClosed} excel={companyExcel} plan={companyInitial.amount} elapsed={elapsed} />
+
+      <div style={{ ...planPanel, padding: 16, marginBottom: 20 }}>
+        <AnnualInitialLineTotals title="当初計画 行計（全体）" lines={lines} excelByCategory={sales.byCategory} />
+      </div>
 
       <ProgressBars
         title="科目別 計画 / 見積成約 / Excel"
-        caption={`${fiscalYearLabel(fiscalYear)} · 計画バーは中間計画。生産品（システム）は暖房機・食品乾燥機・たばこ乾燥機等の合算。対比はExcel科目「生産品」。プレハブ冷蔵庫等の仕入品は工事。見積成約はカテゴリ未分割のため生産品行に全額を表示。資材は石油・その他資材を含む。`}
+        caption={`${fiscalYearLabel(fiscalYear)} · 計画バーは中間計画。生産品は暖房機・たばこ乾燥機・食品乾燥機等の合算で、Excel科目「生産品」と対比します。プレハブ冷蔵庫等の仕入品は工事。見積成約はカテゴリ未分割のため生産品行に全額を表示。資材は石油・その他資材を含む。`}
         rows={[
           {
-            label: '生産品（システム）',
+            label: '生産品',
             plan: factoryPlanAmount,
             closed: companyClosed,
             excel: sales.byCategory['生産品'] || 0,
@@ -455,7 +512,7 @@ function AnnualDashboardContent() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['担当者', '状態', '当初', '中間計画', '見積成約', '見積達成', 'Excel実績', 'Excel達成', ''].map((h) => (
+              {['担当者', '状態', '当初', '中間計画', '見積成約', '見積対当初', 'Excel実績', 'Excel対当初', ''].map((h) => (
                 <th key={h || 'actions'} style={planTh}>
                   {h}
                 </th>
@@ -475,10 +532,13 @@ function AnnualDashboardContent() {
                   <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.initial.amount)}</td>
                   <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.current.amount)}</td>
                   <td style={{ ...planTd, textAlign: 'right' }}>{yen(closed)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(closed, t.current.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(closed, t.initial.amount)}</td>
                   <td style={{ ...planTd, textAlign: 'right' }}>{yen(excel)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, t.current.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, t.initial.amount)}</td>
                   <td style={planTd}>
+                    <button type="button" onClick={() => setItemStaffId(staff.id)} style={{ ...planBtn, padding: '4px 8px', marginRight: 8 }}>
+                      月次
+                    </button>
                     <Link href={`/plan/annual/sheet?fy=${fiscalYear}&staff=${encodeURIComponent(staff.id)}`} style={{ color: '#7dd3fc' }}>
                       シート
                     </Link>
@@ -490,15 +550,44 @@ function AnnualDashboardContent() {
         </table>
       </div>
 
+      <div style={{ marginTop: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+          <label style={planMuted}>
+            担当者{' '}
+            <select
+              value={itemStaffId}
+              onChange={(e) => setItemStaffId(e.target.value)}
+              style={{ ...planInput, width: 'auto', minWidth: 160 }}
+            >
+              {staffs.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <AnnualItemMonthProgress
+          data={itemProgress}
+          loading={itemProgressLoading}
+          caption="選択した担当者の品名に対し、Excel売上の請求月から売れた台数と残りを表示します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。計画に無い売上はExcel科目別に税抜で出ます。"
+        />
+        <AnnualInitialLineTotals
+          title={`当初計画 行計（${staffs.find((s) => s.id === itemStaffId)?.name || '担当者'}）`}
+          lines={planByStaff.get(itemStaffId)?.lines || []}
+          excelByCategory={sales.byStaffCategory[itemStaffId] || {}}
+        />
+      </div>
+
       <h2 style={{ fontSize: 16, marginTop: 24, color: '#f8fafc', marginBottom: 4 }}>カテゴリ別</h2>
       <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
-        暖房機・食品乾燥機・たばこ乾燥機等は生産品（システム）に合算し、Excel科目「生産品」と対比します。プレハブ冷蔵庫等の仕入品は工事です。計画額は中間計画、当初は担当確定＋経営上乗せです。
+        暖房機・たばこ乾燥機・食品乾燥機等は生産品にまとめ、Excel科目「生産品」と対比します。プレハブ冷蔵庫等の仕入品は工事です。計画額は中間計画、当初は担当確定＋経営上乗せです。
       </p>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['カテゴリ', '台数', '当初', '中間計画', 'Excel実績', 'Excel達成', '確度見込', '構成比'].map((h) => (
+              {['カテゴリ', '台数', '当初', 'Excel実績', '対当初', '中間計画', '対中間', '確度見込', '構成比'].map((h) => (
                 <th key={h} style={{ ...planTh, textAlign: h === 'カテゴリ' ? 'left' : 'right' }}>
                   {h}
                 </th>
@@ -508,21 +597,19 @@ function AnnualDashboardContent() {
           <tbody>
             {categoryRows.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={9} style={{ ...planTd, color: '#94a3b8' }}>
                   計画行がありません。
                 </td>
               </tr>
             )}
             {categoryRows.map((r) => (
               <tr key={r.cat}>
-                <td style={planTd}>
-                  {progressCategoryLabel(r.cat)}
-                  {r.cat === '生産品' ? ' / 生産品（Excel）' : ''}
-                </td>
+                <td style={planTd}>{progressCategoryLabel(r.cat)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{r.totals.current.qty > 0 ? r.totals.current.qty.toLocaleString('ja-JP') : '—'}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.initial.amount)}</td>
-                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.current.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.excel)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.excel, r.totals.initial.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.current.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.excel, r.totals.current.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.current.weighted)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.totals.current.amount, companyTotals.amount)}</td>
@@ -533,8 +620,9 @@ function AnnualDashboardContent() {
                 <td style={{ ...planTd, fontWeight: 700 }}>合計</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{companyTotals.qty.toLocaleString('ja-JP')}</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyInitial.amount)}</td>
-                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyTotals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyExcel)}</td>
+                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(companyExcel, companyInitial.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyTotals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{pct(companyExcel, companyTotals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(companyTotals.weighted)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>100%</td>
@@ -554,12 +642,21 @@ function AnnualDashboardContent() {
             style={{ ...planInput, width: 'auto', minWidth: 160 }}
           >
             <option value="すべて">すべて</option>
-            <option value="生産品">生産品</option>
-            {PLAN_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
+            <optgroup label="生産品">
+              <option value="生産品">生産品（すべて）</option>
+              {FACTORY_PRODUCT_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {displayPlanCategory(c)}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="その他科目">
+              {AMOUNT_ONLY_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
         <span style={planMuted}>{machineRows.length} 機種</span>

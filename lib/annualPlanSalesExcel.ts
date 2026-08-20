@@ -25,6 +25,8 @@ export type ParseSalesActualResult = {
   rows: ParsedSalesActualRow[]
   skipped: { source_row: number; reason: string }[]
   kamoku_counts: Record<string, number>
+  amount_ex_tax_total: number
+  amount_inc_tax_total: number
 }
 
 const HEADER_ALIASES: Record<keyof Pick<
@@ -54,14 +56,15 @@ const HEADER_ALIASES: Record<keyof Pick<
   staff_name_raw: ['担当', '担当者'],
   qty: ['数量'],
   unit_price: ['単価'],
-  amount_ex_tax: ['税抜金額', '税抜'],
-  amount_inc_tax: ['税込金額', '税込'],
+  amount_ex_tax: ['税抜金額', '税抜き金額', '税抜額', '本体金額', '税抜'],
+  amount_inc_tax: ['税込金額', '税込み金額', '税込額', '税込'],
 }
 
 function normalizeHeader(value: unknown): string {
   return String(value || '')
-    .replace(/[\s　]/g, '')
-    .replace(/[()（）]/g, '')
+    .replace(/[\s　\n\r\t]/g, '')
+    .replace(/[()（）\[\]［］]/g, '')
+    .replace(/円/g, '')
     .toLowerCase()
 }
 
@@ -109,6 +112,32 @@ function colIndex(headers: Map<string, number>, aliases: string[]): number {
   return -1
 }
 
+/** 税抜列。税込を含むヘッダは絶対に使わない */
+function findExTaxAmountCol(headers: Map<string, number>): number {
+  const exact = colIndex(headers, HEADER_ALIASES.amount_ex_tax)
+  if (exact >= 0) {
+    const key = [...headers.entries()].find(([, i]) => i === exact)?.[0] || ''
+    if (!key.includes('税込')) return exact
+  }
+  for (const [key, idx] of headers.entries()) {
+    if (key.includes('税込')) continue
+    if (key.includes('税抜') || key.includes('税抜き') || key.includes('本体金額') || key.includes('本体額')) {
+      return idx
+    }
+  }
+  return -1
+}
+
+function findIncTaxAmountCol(headers: Map<string, number>, exCol: number): number {
+  const exact = colIndex(headers, HEADER_ALIASES.amount_inc_tax)
+  if (exact >= 0 && exact !== exCol) return exact
+  for (const [key, idx] of headers.entries()) {
+    if (idx === exCol) continue
+    if (key.includes('税込') || key.includes('税込み')) return idx
+  }
+  return -1
+}
+
 function pickSheet(wb: XLSX.WorkBook): { name: string; rows: unknown[][] } | null {
   for (const name of wb.SheetNames) {
     const ws = wb.Sheets[name]
@@ -135,11 +164,12 @@ export function parseSalesActualWorkbook(
   const wb = XLSX.read(buffer, { type: 'array', cellDates: true })
   const sheet = pickSheet(wb)
   if (!sheet) {
-    return { sheet_name: '', rows: [], skipped: [{ source_row: 0, reason: 'シートがありません' }], kamoku_counts: {} }
+    return { sheet_name: '', rows: [], skipped: [{ source_row: 0, reason: 'シートがありません' }], kamoku_counts: {}, amount_ex_tax_total: 0, amount_inc_tax_total: 0 }
   }
 
   const headerRow = sheet.rows[0] || []
   const headers = headerIndexMap(headerRow)
+  const amountExCol = findExTaxAmountCol(headers)
   const idx = {
     slip_no: colIndex(headers, HEADER_ALIASES.slip_no),
     billed_on: colIndex(headers, HEADER_ALIASES.billed_on),
@@ -152,8 +182,8 @@ export function parseSalesActualWorkbook(
     staff_name_raw: colIndex(headers, HEADER_ALIASES.staff_name_raw),
     qty: colIndex(headers, HEADER_ALIASES.qty),
     unit_price: colIndex(headers, HEADER_ALIASES.unit_price),
-    amount_ex_tax: colIndex(headers, HEADER_ALIASES.amount_ex_tax),
-    amount_inc_tax: colIndex(headers, HEADER_ALIASES.amount_inc_tax),
+    amount_ex_tax: amountExCol,
+    amount_inc_tax: findIncTaxAmountCol(headers, amountExCol),
   }
 
   if (idx.kamoku < 0 || idx.amount_ex_tax < 0) {
@@ -162,6 +192,8 @@ export function parseSalesActualWorkbook(
       rows: [],
       skipped: [{ source_row: 1, reason: 'ヘッダに「科目」または「税抜金額」がありません' }],
       kamoku_counts: {},
+      amount_ex_tax_total: 0,
+      amount_inc_tax_total: 0,
     }
   }
 
@@ -190,6 +222,7 @@ export function parseSalesActualWorkbook(
     }
 
     const amount_ex_tax = parseNumber(idx.amount_ex_tax >= 0 ? line[idx.amount_ex_tax] : 0)
+    const amount_inc_tax = parseNumber(idx.amount_inc_tax >= 0 ? line[idx.amount_inc_tax] : 0)
     kamoku_counts[kamoku] = (kamoku_counts[kamoku] || 0) + 1
     rows.push({
       slip_no: String(idx.slip_no >= 0 ? line[idx.slip_no] : '').trim(),
@@ -205,12 +238,19 @@ export function parseSalesActualWorkbook(
       qty: parseNumber(idx.qty >= 0 ? line[idx.qty] : 0),
       unit_price: parseNumber(idx.unit_price >= 0 ? line[idx.unit_price] : 0),
       amount_ex_tax,
-      amount_inc_tax: parseNumber(idx.amount_inc_tax >= 0 ? line[idx.amount_inc_tax] : 0),
+      amount_inc_tax,
       source_row,
     })
   }
 
-  return { sheet_name: sheet.name, rows, skipped, kamoku_counts }
+  return {
+    sheet_name: sheet.name,
+    rows,
+    skipped,
+    kamoku_counts,
+    amount_ex_tax_total: rows.reduce((s, r) => s + Number(r.amount_ex_tax || 0), 0),
+    amount_inc_tax_total: rows.reduce((s, r) => s + Number(r.amount_inc_tax || 0), 0),
+  }
 }
 
 export function inferFiscalYearFromRows(rows: ParsedSalesActualRow[]): number | null {

@@ -63,6 +63,8 @@ export async function POST(req: Request) {
       skipped_count: parsed.skipped.length,
       skipped_sample: parsed.skipped.slice(0, 15),
       kamoku_counts: parsed.kamoku_counts,
+      amount_ex_tax_total: parsed.amount_ex_tax_total,
+      amount_inc_tax_total: parsed.amount_inc_tax_total,
     })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)

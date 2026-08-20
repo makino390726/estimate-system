@@ -25,6 +25,7 @@ type Staff = {
   approver_senmu_id: string | null
   approver_shacho_id: string | null
   is_repair_office_notify?: boolean
+  is_sales_staff?: boolean
   created_at?: string
   updated_at?: string
 }
@@ -37,6 +38,7 @@ export default function StaffsPage() {
   const [msg, setMsg] = useState<string | null>(null)
   const [stampFile, setStampFile] = useState<File | null>(null)
   const [isRepairOfficeNotify, setIsRepairOfficeNotify] = useState(false)
+  const [isSalesStaff, setIsSalesStaff] = useState(false)
   const [officeBranchIds, setOfficeBranchIds] = useState<string[]>([])
   const [branchOtherHolder, setBranchOtherHolder] = useState<{ staffId: string; staffName: string } | null>(
     null,
@@ -158,6 +160,7 @@ export default function StaffsPage() {
 
   const resetOfficeNotifyForm = () => {
     setIsRepairOfficeNotify(false)
+    setIsSalesStaff(false)
     setOfficeBranchIds([])
   }
 
@@ -226,6 +229,7 @@ export default function StaffsPage() {
     setStampFile(null)
     setLineWorksUserId(lwIdForStaffName(staff.name))
     setIsRepairOfficeNotify(Boolean(staff.is_repair_office_notify))
+    setIsSalesStaff(Boolean(staff.is_sales_staff))
     await loadOfficeBranchesForStaff(staff.id)
     setIsEditing(true)
   }
@@ -369,6 +373,7 @@ export default function StaffsPage() {
         approver_senmu_id: normalizeId(formData.approver_senmu_id),
         approver_shacho_id: normalizeId(formData.approver_shacho_id),
         is_repair_office_notify: isRepairOfficeNotify,
+        is_sales_staff: isSalesStaff,
       }
 
       const { data, error } = await supabase
@@ -378,7 +383,10 @@ export default function StaffsPage() {
         .select()
 
       if (error) {
-        setMsg(`更新に失敗しました: ${error.message || '詳細はコンソールを確認'}`)
+        const hint = /is_sales_staff/i.test(error.message || '')
+          ? '営業担当者列がありません。見積システムの Supabase で add_staff_is_sales.sql を実行してください。'
+          : `更新に失敗しました: ${error.message || '詳細はコンソールを確認'}`
+        setMsg(hint)
         console.error('更新エラー:', error)
       } else {
         const branchErr = await syncOfficeNotifyBranches(
@@ -415,6 +423,7 @@ export default function StaffsPage() {
         approver_senmu_id: normalizeId(formData.approver_senmu_id),
         approver_shacho_id: normalizeId(formData.approver_shacho_id),
         is_repair_office_notify: isRepairOfficeNotify,
+        is_sales_staff: isSalesStaff,
       }
 
       const { data, error } = await supabase
@@ -423,7 +432,10 @@ export default function StaffsPage() {
         .select()
 
       if (error) {
-        setMsg(`登録に失敗しました: ${error.message || '詳細はコンソールを確認'}`)
+        const hint = /is_sales_staff/i.test(error.message || '')
+          ? '営業担当者列がありません。見積システムの Supabase で add_staff_is_sales.sql を実行してください。'
+          : `登録に失敗しました: ${error.message || '詳細はコンソールを確認'}`
+        setMsg(hint)
         console.error('登録エラー:', error)
         return
       }
@@ -610,6 +622,9 @@ export default function StaffsPage() {
                   <div style={{ fontSize: 12, color: '#cbd5e1' }}>{staff.furigana}</div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>
                     {staff.department || '部署未設定'}
+                    {staff.is_sales_staff ? (
+                      <span style={{ marginLeft: 6, color: '#7dd3fc' }}>営業</span>
+                    ) : null}
                     {staff.is_repair_office_notify ? (
                       <span style={{ marginLeft: 6, color: '#fbbf24' }}>事務</span>
                     ) : null}
@@ -733,6 +748,35 @@ export default function StaffsPage() {
                   />
                   <p style={{ fontSize: 11, color: '#94a3b8', margin: '8px 0 0 0' }}>
                     保存すると <Link href="/lineworks-staff-notify" style={{ color: '#38bdf8' }}>LINE WORKS 連携画面</Link> の登録一覧にも反映されます（見積承認・修理通知の送信先）。
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    borderTop: '1px solid #334155',
+                    paddingTop: 16,
+                    marginTop: 4,
+                  }}
+                >
+                  <h3 style={{ marginTop: 0, fontSize: 16, color: '#cbd5e1' }}>年度計画</h3>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: 'pointer',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSalesStaff}
+                      onChange={(e) => setIsSalesStaff(e.target.checked)}
+                    />
+                    <span style={{ fontWeight: 'bold', color: '#e2e8f0' }}>営業担当者</span>
+                  </label>
+                  <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+                    ON の担当者だけが、年度計画シート・進捗の担当者リストに表示されます。
                   </p>
                 </div>
 
