@@ -31,9 +31,10 @@ import {
   FACTORY_PRODUCT_CATEGORIES,
   AMOUNT_ONLY_CATEGORIES,
   CHANGE_KIND_LABEL,
-  LUMP_MACHINE_CODE,
+  OTHER_CODE_RANGE_CAPTION,
   PROGRESS_CATEGORIES,
   displayPlanCategory,
+  formatPlanMachineLabel,
   isProductionPlanCategory,
   lineChangeKind,
   progressCategoryFor,
@@ -570,7 +571,7 @@ function AnnualDashboardContent() {
         <AnnualItemMonthProgress
           data={itemProgress}
           loading={itemProgressLoading}
-          caption="選択した担当者の品名に対し、Excel売上の請求月から売れた台数と残りを表示します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。計画に無い売上はExcel科目別に税抜で出ます。"
+          caption={`選択した担当者の品名に対し、Excel売上の請求月から売れた台数と残りを表示します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。${OTHER_CODE_RANGE_CAPTION} 計画に無い売上はExcel科目別に税抜で出ます。`}
         />
         <AnnualInitialLineTotals
           title={`当初計画 行計（${staffs.find((s) => s.id === itemStaffId)?.name || '担当者'}）`}
@@ -666,7 +667,7 @@ function AnnualDashboardContent() {
           title="機種別 計画額と確度見込"
           caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。`}
           rows={machineRows.slice(0, 20).map((r) => ({
-            label: `${CHANGE_KIND_LABEL[r.changeKind]} ${r.code === LUMP_MACHINE_CODE ? r.name || '（品名なし）' : r.name && r.name !== r.code ? `${r.code} ${r.name}` : r.code}`,
+            label: `${CHANGE_KIND_LABEL[r.changeKind]} ${formatPlanMachineLabel(r.code, r.name)}`,
             plan: r.totals.amount,
             weighted: r.totals.weighted,
           }))}
@@ -696,7 +697,7 @@ function AnnualDashboardContent() {
                 <td style={planTd}>{CHANGE_KIND_LABEL[r.changeKind]}</td>
                 <td style={planTd}>{r.category}</td>
                 <td style={planTd}>
-                  {r.code === LUMP_MACHINE_CODE ? r.name || '（品名なし）' : `${r.code}${r.name && r.name !== r.code ? ` ${r.name}` : ''}`}
+                  {formatPlanMachineLabel(r.code, r.name)}
                 </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{r.totals.qty.toLocaleString('ja-JP')}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{r.conf.high.toLocaleString('ja-JP')}</td>

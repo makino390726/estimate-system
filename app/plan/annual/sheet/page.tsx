@@ -10,9 +10,12 @@ import {
   CONFIDENCE_OPTIONS,
   AMOUNT_ONLY_CATEGORIES,
   FACTORY_PRODUCT_CATEGORIES,
+  OTHER_CODE_RANGE_CAPTION,
+  OTHER_MACHINE_CODE,
   PLAN_CATEGORIES,
   displayPlanCategory,
   isAmountOnlyPlanCategory,
+  isOtherMachineCode,
   lineChangeKind,
   type PlanChangeKind,
   type PlanConfidence,
@@ -104,19 +107,27 @@ function AnnualPlanSheetContent() {
   const [interimEdits, setInterimEdits] = useState<Record<string, { qty: string; amount: string }>>({})
   const [saveHint, setSaveHint] = useState<{ id: string; text: string; ok: boolean } | null>(null)
 
+  const [otherName, setOtherName] = useState('')
+  const [otherDraft, setOtherDraft] = useState('')
+  const [otherModalOpen, setOtherModalOpen] = useState(false)
+  const [machineCodeBeforeOther, setMachineCodeBeforeOther] = useState('')
+
   const amountOnly = isAmountOnlyPlanCategory(category)
-  const pickedMasterProduct = Boolean(pickedProduct) || (amountOnly && Boolean(machineCode))
-  const lumpMode = amountOnly && !pickedMasterProduct
+  const otherMode = !pickedProduct && isOtherMachineCode(machineCode)
+  const freeAmountMode = amountOnly && !pickedProduct && !otherMode && !machineCode
+  const lumpMode = freeAmountMode
   const confirmed = plan?.status === 'confirmed'
   const totals = useMemo(() => splitPlanTotals(lines), [lines])
   const selectedMachine = pickedProduct || machines.find((m) => m.code === machineCode) || null
   const qtyNum = Number(qty)
   const unitNum = Number(unitPrice)
   const calcAmount = qtyNum > 0 && unitNum > 0 ? Math.round(qtyNum * unitNum) : 0
-  const amountNum = lumpMode ? Number(amount) : calcAmount
-  const baseCanAdd = lumpMode
-    ? Boolean(staffId && category && amountNum > 0)
-    : Boolean(staffId && category && selectedMachine && qtyNum > 0 && calcAmount > 0)
+  const amountNum = lumpMode || otherMode ? Number(amount) : calcAmount
+  const baseCanAdd = otherMode
+    ? Boolean(staffId && category && otherName.trim() && amountNum > 0)
+    : lumpMode
+      ? Boolean(staffId && category && amountNum > 0)
+      : Boolean(staffId && category && selectedMachine && qtyNum > 0 && calcAmount > 0)
   const canAdd = baseCanAdd && (!confirmed || Boolean(changeKind)) && !saving
 
   const loadPlan = useCallback(async () => {
@@ -204,6 +215,10 @@ function AnnualPlanSheetContent() {
       setProductPage(1)
       setProductTotal(0)
       setProductTotalPages(1)
+      setOtherName('')
+      setOtherDraft('')
+      setOtherModalOpen(false)
+      setMachineCodeBeforeOther('')
       try {
         const res = await fetch(`/api/plan/annual/machines?category=${encodeURIComponent(category)}`)
         const json = await res.json()
@@ -235,10 +250,10 @@ function AnnualPlanSheetContent() {
   }, [category])
 
   useEffect(() => {
-    if (lumpMode) return
+    if (lumpMode || otherMode) return
     const price = pickedProduct?.retailPrice ?? machines.find((m) => m.code === machineCode)?.retailPrice ?? null
     setUnitPrice(price ? String(price) : '')
-  }, [lumpMode, machineCode, pickedProduct, machines])
+  }, [lumpMode, otherMode, machineCode, pickedProduct, machines])
 
   useEffect(() => {
     const q = productQuery.trim()
@@ -304,17 +319,23 @@ function AnnualPlanSheetContent() {
 
   const handleAdd = async () => {
     if (!plan || !canAdd) return
-    if (!lumpMode && !selectedMachine) return
+    if (!lumpMode && !otherMode && !selectedMachine) return
     setSaving(true)
     setError('')
     try {
       const line = await addPlanLine({
         planId: plan.id,
         category,
-        machine_code: selectedMachine?.code,
-        machine_name: selectedMachine?.name || null,
-        machine_source: lumpMode || pickedMasterProduct ? 'product' : selectedMachine?.source || 'factory',
-        qty: lumpMode ? (qtyNum > 0 ? qtyNum : 0) : qtyNum,
+        machine_code: otherMode ? OTHER_MACHINE_CODE : selectedMachine?.code,
+        machine_name: otherMode ? otherName.trim() : selectedMachine?.name || null,
+        machine_source: otherMode
+          ? amountOnly
+            ? 'product'
+            : 'factory'
+          : lumpMode || pickedProduct
+            ? 'product'
+            : selectedMachine?.source || 'factory',
+        qty: lumpMode || otherMode ? (qtyNum > 0 ? qtyNum : 0) : qtyNum,
         amount: amountNum,
         confidence,
         change_kind: confirmed ? changeKind || 'interim' : 'initial',
@@ -327,9 +348,10 @@ function AnnualPlanSheetContent() {
       setProductPage(1)
       setProductTotal(0)
       setProductTotalPages(1)
-      if (lumpMode || amountOnly) {
+      if (lumpMode || otherMode || amountOnly) {
         setQty('')
         setMachineCode('')
+        setOtherName('')
       } else {
         setQty('1')
       }
@@ -520,7 +542,7 @@ function AnnualPlanSheetContent() {
       </div>
 
       <p style={{ ...planMuted, marginTop: 0 }}>
-        {fiscalYearLabel(fiscalYear)}。生産品（暖房機・たばこ乾燥機など）は機種マスタから選ぶと定価×数量です。機種登録がないものは商品マスタを検索し、定価があれば定価×数量、なければ単価を手入力します。肥料・農薬・資材・工事は品名なしなら金額のみ、商品を選んだときは定価×数量です。
+        {fiscalYearLabel(fiscalYear)}。生産品（暖房機・たばこ乾燥機など）は機種マスタから選ぶと定価×数量です。「その他」を選ぶと品名を入力でき、Excel実績は機種指定分を除いた商品CD範囲で集計します。肥料・農薬・資材・工事も同様です。
         {confirmed
           ? ' 確定後の「中間へ」は、当初の行を残したまま中間修正計画を作ります。中間修正の行で数量・金額を変更してください。同じ品名は中間計画では中間修正の数量・金額に置き換わります。上のフォームから追加する場合は「当初計画の変更」か「中間計画の変更」を選んでください。'
           : ' 下書きの行は確定時に当初計画になります。'}
@@ -591,12 +613,23 @@ function AnnualPlanSheetContent() {
             </select>
           </label>
           <label style={{ color: '#e2e8f0' }}>
-            2. 機種マスタ{amountOnly ? '（任意）' : pickedProduct ? '（商品マスタを使用中）' : '（必須）'} {machines.length}件
+            2. 機種マスタ{amountOnly ? '（任意）' : pickedProduct ? '（商品マスタを使用中）' : otherMode ? '（その他）' : '（必須）'} {machines.length}件
             <select
               value={pickedProduct ? '' : machineCode}
               onChange={(e) => {
                 const next = e.target.value
                 setPickedProduct(null)
+                if (isOtherMachineCode(next)) {
+                  setMachineCodeBeforeOther(machineCode)
+                  setMachineCode(OTHER_MACHINE_CODE)
+                  setOtherDraft(otherName)
+                  setOtherModalOpen(true)
+                  setUnitPrice('')
+                  setAmount('')
+                  setQty((q) => (Number(q) > 0 ? q : amountOnly ? '' : '1'))
+                  return
+                }
+                setOtherName('')
                 setMachineCode(next)
                 if (next) {
                   setQty((q) => (Number(q) > 0 ? q : '1'))
@@ -609,13 +642,29 @@ function AnnualPlanSheetContent() {
               style={inputStyle}
             >
               {(amountOnly || pickedProduct) && <option value="">（指定なし）</option>}
-              {!amountOnly && !pickedProduct && machines.length === 0 && <option value="">機種がありません</option>}
+              {!amountOnly && !pickedProduct && machines.length === 0 && !otherMode && <option value="">機種がありません</option>}
+              <option value={OTHER_MACHINE_CODE}>その他（品名を入力）</option>
               {machines.map((m) => (
                 <option key={`${m.source}-${m.code}`} value={m.code}>
                   {m.code} {m.name && m.name !== m.code ? ` ${m.name}` : ''}
                 </option>
               ))}
             </select>
+            {otherMode && otherName && (
+              <p style={{ ...planMuted, margin: '6px 0 0' }}>
+                品名: {otherName}{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtherDraft(otherName)
+                    setOtherModalOpen(true)
+                  }}
+                  style={{ ...planBtn, padding: '2px 8px' }}
+                >
+                  変更
+                </button>
+              </p>
+            )}
           </label>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={{ color: '#e2e8f0', display: 'block' }}>
@@ -670,6 +719,7 @@ function AnnualPlanSheetContent() {
                       onClick={() => {
                         setPickedProduct(p)
                         setMachineCode('')
+                        setOtherName('')
                         setProductHits([])
                         setProductPage(1)
                         setQty((q) => (Number(q) > 0 ? q : '1'))
@@ -753,18 +803,18 @@ function AnnualPlanSheetContent() {
             )}
           </div>
           <label style={{ color: '#e2e8f0' }}>
-            3. {lumpMode ? '数量（任意）' : '計画台数（必須）'}
+            3. {lumpMode || otherMode ? '数量（任意）' : '計画台数（必須）'}
             <input
               type="number"
               min={0}
               step={1}
               value={qty}
               onChange={(e) => setQty(e.target.value)}
-              placeholder={lumpMode ? '空欄可' : ''}
+              placeholder={lumpMode || otherMode ? '空欄可' : ''}
               style={inputStyle}
             />
           </label>
-          {lumpMode ? (
+          {lumpMode || otherMode ? (
             <label style={{ color: '#e2e8f0' }}>
               4. 計画額（円・必須）
               <input type="number" min={0} step={1} value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} />
@@ -784,10 +834,13 @@ function AnnualPlanSheetContent() {
             </label>
           )}
         </div>
-        {!lumpMode && (
+        {!lumpMode && !otherMode && (
           <p style={{ ...planMuted, marginBottom: 0 }}>
             計画額 {calcAmount.toLocaleString('ja-JP')} 円（数量 × {hasListPrice ? '定価' : '単価'}。金額は自動計算）
           </p>
+        )}
+        {otherMode && (
+          <p style={{ ...planMuted, marginBottom: 0 }}>{OTHER_CODE_RANGE_CAPTION}</p>
         )}
         {lumpMode && (
           <p style={{ ...planMuted, marginBottom: 0 }}>品名なしのため、粗利は計画額の18%です。</p>
@@ -981,6 +1034,73 @@ function AnnualPlanSheetContent() {
           emptyText="計画の品名がありません。上で行を追加すると、ここに月次の残台数が出ます。"
         />
       </div>
+
+      {otherModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.72)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+            padding: 16,
+          }}
+        >
+          <div style={{ ...planPanel, width: '100%', maxWidth: 420, margin: 0 }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 16, color: '#f8fafc' }}>その他の品名</h3>
+            <p style={{ ...planMuted, marginTop: 0, fontSize: 12 }}>{OTHER_CODE_RANGE_CAPTION}</p>
+            <input
+              autoFocus
+              value={otherDraft}
+              onChange={(e) => setOtherDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const name = otherDraft.trim()
+                  if (!name) return
+                  setOtherName(name)
+                  setOtherModalOpen(false)
+                }
+                if (e.key === 'Escape') {
+                  setOtherModalOpen(false)
+                  if (!otherName.trim()) {
+                    setMachineCode(machineCodeBeforeOther)
+                  }
+                }
+              }}
+              placeholder="品名を入力"
+              style={inputStyle}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOtherModalOpen(false)
+                  if (!otherName.trim()) setMachineCode(machineCodeBeforeOther)
+                }}
+                style={planBtn}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={!otherDraft.trim()}
+                onClick={() => {
+                  const name = otherDraft.trim()
+                  if (!name) return
+                  setOtherName(name)
+                  setOtherModalOpen(false)
+                }}
+                style={{ ...planBtn, background: '#2563eb', color: '#fff', borderColor: '#1d4ed8', opacity: otherDraft.trim() ? 1 : 0.5 }}
+              >
+                確定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

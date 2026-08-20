@@ -1,4 +1,15 @@
-import { LUMP_MACHINE_CODE, PROGRESS_CATEGORIES, displayPlanCategory, lineChangeKind, progressCategoryFor } from '@/lib/annualPlanCategories'
+import {
+  LUMP_MACHINE_CODE,
+  OTHER_MACHINE_CODE,
+  PROGRESS_CATEGORIES,
+  displayPlanCategory,
+  formatPlanMachineLabel,
+  isOtherMachineCode,
+  lineChangeKind,
+  normalizeProductCode,
+  otherProgressCategoryForProductCode,
+  progressCategoryFor,
+} from '@/lib/annualPlanCategories'
 import { fiscalMonthIndex, fiscalMonthSlots, type FiscalMonthSlot } from '@/lib/annualPlanFiscal'
 
 export type PlanLineForItemProgress = {
@@ -11,14 +22,7 @@ export type PlanLineForItemProgress = {
 }
 
 function displayLineLabel(line: PlanLineForItemProgress): string {
-  if (line.machine_code === LUMP_MACHINE_CODE) {
-    return String(line.machine_name || '').trim() || '（品名なし）'
-  }
-  const code = String(line.machine_code || '').trim()
-  const name = String(line.machine_name || '').trim()
-  if (!code) return name || '—'
-  if (name && name !== code) return `${code} ${name}`
-  return code || name || '—'
+  return formatPlanMachineLabel(String(line.machine_code || '').trim() || LUMP_MACHINE_CODE, line.machine_name)
 }
 
 export type SalesActualItemRow = {
@@ -89,18 +93,32 @@ export function normalizeItemText(value: string): string {
 }
 
 function tokensForPlan(line: PlanLineForItemProgress, extraCodes: string[]): string[] {
+  if (isOtherMachineCode(line.machine_code) || line.machine_code === LUMP_MACHINE_CODE) return []
   const raw = [line.machine_code, line.machine_name || '', ...extraCodes]
     .map((v) => normalizeItemText(v))
-    .filter((v) => v && v !== LUMP_MACHINE_CODE)
+    .filter((v) => v && v !== LUMP_MACHINE_CODE && v !== OTHER_MACHINE_CODE && v !== 'その他')
   return [...new Set(raw)]
 }
 
-function matchScore(actual: SalesActualItemRow, tokens: string[]): number {
+function reservedCodesForPlan(line: PlanLineForItemProgress, extraCodes: string[]): string[] {
+  if (isOtherMachineCode(line.machine_code) || line.machine_code === LUMP_MACHINE_CODE) return []
+  const raw = [line.machine_code, ...extraCodes].map((v) => normalizeProductCode(v)).filter((v) => v.length >= 4)
+  return [...new Set(raw)]
+}
+
+function matchScore(actual: SalesActualItemRow, tokens: string[], reservedCodes: string[]): number {
   const code = normalizeItemText(actual.product_code || '')
+  const codeNum = normalizeProductCode(actual.product_code || '')
   const name = normalizeItemText(actual.product_name || '')
+  if (codeNum && reservedCodes.includes(codeNum)) return 1000 + codeNum.length
   let best = 0
   for (const token of tokens) {
     if (!token) continue
+    const tokenNum = normalizeProductCode(token)
+    if (codeNum && tokenNum && codeNum === tokenNum) {
+      best = Math.max(best, 100 + tokenNum.length)
+      continue
+    }
     if (code && (code === token || code.includes(token) || token.includes(code))) {
       best = Math.max(best, 100 + token.length)
       continue
@@ -131,6 +149,9 @@ export function buildItemMonthProgress(
     currentAmount: number
     revised: boolean
     tokens: string[]
+    reservedCodes: string[]
+    isOther: boolean
+    progressCat: string
   }
   const grouped = new Map<string, Group>()
 
@@ -151,6 +172,7 @@ export function buildItemMonthProgress(
         prev.planAmount += Number(line.amount || 0)
       }
       prev.tokens = [...new Set([...prev.tokens, ...tokensForPlan(line, extra)])]
+      prev.reservedCodes = [...new Set([...prev.reservedCodes, ...reservedCodesForPlan(line, extra)])]
     } else {
       const qty = Number(line.qty || 0)
       const amount = Number(line.amount || 0)
@@ -166,6 +188,9 @@ export function buildItemMonthProgress(
         currentAmount: kind === 'interim' ? amount : 0,
         revised: kind === 'interim',
         tokens: tokensForPlan(line, extra),
+        reservedCodes: reservedCodesForPlan(line, extra),
+        isOther: isOtherMachineCode(code),
+        progressCat: progressCategoryFor(line.category),
       })
     }
   }
@@ -200,6 +225,7 @@ export function buildItemMonthProgress(
 
   const unmatched = { qty: zeros(12), amount: zeros(12), qtyTotal: 0, amountTotal: 0 }
   const unmatchedMap = new Map<string, UnmatchedCategoryMonth>()
+  const reservedAll = new Set(groups.flatMap((g) => g.reservedCodes))
 
   for (const actual of actuals) {
     const month = actual.billed_on ? fiscalMonthIndex(actual.billed_on, fiscalYear) : null
@@ -211,7 +237,8 @@ export function buildItemMonthProgress(
     let bestIdx = -1
     let bestScore = 0
     for (let i = 0; i < groups.length; i++) {
-      const score = matchScore(actual, groups[i].tokens)
+      if (groups[i].isOther) continue
+      const score = matchScore(actual, groups[i].tokens, groups[i].reservedCodes)
       if (score > bestScore) {
         bestScore = score
         bestIdx = i
@@ -219,6 +246,20 @@ export function buildItemMonthProgress(
     }
 
     if (bestIdx < 0 || bestScore < 42) {
+      const codeNum = normalizeProductCode(actual.product_code || '')
+      const otherBucket = otherProgressCategoryForProductCode(actual.product_code || '')
+      const otherIdx =
+        otherBucket && !(codeNum && reservedAll.has(codeNum))
+          ? groups.findIndex((g) => g.isOther && g.progressCat === otherBucket)
+          : -1
+      if (otherIdx >= 0) {
+        const otherRow = rows[otherIdx]
+        otherRow.soldQty[month] += qty
+        otherRow.soldAmount[month] += amount
+        otherRow.soldQtyTotal += qty
+        otherRow.soldAmountTotal += amount
+        continue
+      }
       unmatched.qty[month] += qty
       unmatched.amount[month] += amount
       unmatched.qtyTotal += qty

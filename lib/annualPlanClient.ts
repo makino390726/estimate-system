@@ -6,6 +6,7 @@ import {
   PROGRESS_CATEGORIES,
   defaultGrossProfit,
   displayPlanCategory,
+  formatPlanMachineLabel,
   lineChangeKind,
   progressCategoryFor,
   type PlanChangeKind,
@@ -82,14 +83,7 @@ export async function fetchPlanLines(planId: string): Promise<AnnualPlanLine[]> 
 }
 
 export function displayPlanLineMachine(line: Pick<AnnualPlanLine, 'machine_code' | 'machine_name'>): string {
-  if (line.machine_code === LUMP_MACHINE_CODE) {
-    return String(line.machine_name || '').trim() || '—'
-  }
-  const code = String(line.machine_code || '').trim()
-  const name = String(line.machine_name || '').trim()
-  if (!code) return name || '—'
-  if (name && name !== code) return `${code} ${name}`
-  return code || name || '—'
+  return formatPlanMachineLabel(String(line.machine_code || '').trim(), line.machine_name)
 }
 
 export async function addPlanLine(input: {

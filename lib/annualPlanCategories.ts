@@ -32,6 +32,50 @@ export const CONFIDENCE_OPTIONS: Array<{ value: PlanConfidence; label: string }>
 /** 品名なしの金額行。machine_code は NOT NULL のため固定キーを入れる */
 export const LUMP_MACHINE_CODE = 'lump'
 
+/** 機種マスタの「その他」。品名は手入力。Excel は商品CD範囲で集計する */
+export const OTHER_MACHINE_CODE = 'other'
+
+export function isOtherMachineCode(code: string | null | undefined): boolean {
+  const c = String(code || '').trim()
+  return c === OTHER_MACHINE_CODE || c === 'その他'
+}
+
+/** 先頭の 000 と記号を除いた商品CD（数字のみ） */
+export function normalizeProductCode(value: string): string {
+  const digits = String(value || '')
+    .normalize('NFKC')
+    .replace(/[\s　]/g, '')
+    .replace(/\D/g, '')
+  return digits.replace(/^0+/, '')
+}
+
+/**
+ * その他行に載せる Excel の科目。頭の 000 を除いた数字で分ける。
+ * 生産品 1000000–3999999、肥料 4000000–49999999（先頭4）、農薬 5、資材 6、工事 7–8。
+ * 機種指定された商品CDは呼び出し側で除外する。
+ */
+export function otherProgressCategoryForProductCode(productCode: string): string | null {
+  const code = normalizeProductCode(productCode)
+  if (!code) return null
+  const n = Number(code)
+  if (!Number.isFinite(n)) return null
+  if (n >= 1_000_000 && n <= 3_999_999) return '生産品'
+  if (code.startsWith('4') && n >= 4_000_000 && n <= 49_999_999) return '肥料'
+  if (n >= 5_000_000 && n <= 5_999_999) return '農薬'
+  if (n >= 6_000_000 && n <= 6_999_999) return '資材'
+  if (n >= 7_000_000 && n <= 8_999_999) return '工事'
+  const d = code[0]
+  if (d === '1' || d === '2' || d === '3') return '生産品'
+  if (d === '4') return '肥料'
+  if (d === '5') return '農薬'
+  if (d === '6') return '資材'
+  if (d === '7' || d === '8') return '工事'
+  return null
+}
+
+export const OTHER_CODE_RANGE_CAPTION =
+  'その他は商品CD（先頭000無視）で分ける。生産品1000000～3999999、肥料4000000～49999999、農薬5000000～5999999、資材6000000～6999999、工事7000000～8999999。機種指定した商品は除く。'
+
 export const CLOSED_CASE_STATUSES = ['受注', '注文', '完了'] as const
 
 /** 旧紙分類 → factory-materials の product_category（既存行の互換） */
@@ -158,4 +202,14 @@ export const CHANGE_KIND_OPTIONS: Array<{ value: PlanChangeKind; label: string; 
 
 export function lineChangeKind(line: { change_kind?: string | null }): PlanChangeKind {
   return line.change_kind === 'interim' ? 'interim' : 'initial'
+}
+
+export function formatPlanMachineLabel(code: string, name?: string | null): string {
+  const trimmedName = String(name || '').trim()
+  if (isOtherMachineCode(code)) return trimmedName ? `その他（${trimmedName}）` : 'その他'
+  if (code === LUMP_MACHINE_CODE) return trimmedName || '—'
+  const trimmedCode = String(code || '').trim()
+  if (!trimmedCode) return trimmedName || '—'
+  if (trimmedName && trimmedName !== trimmedCode) return `${trimmedCode} ${trimmedName}`
+  return trimmedCode || trimmedName || '—'
 }
