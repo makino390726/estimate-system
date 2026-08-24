@@ -13,6 +13,7 @@ import {
   type PlanConfidence,
 } from '@/lib/annualPlanCategories'
 import { fiscalYearRange } from '@/lib/annualPlanFiscal'
+import { fetchSupabasePages } from '@/lib/supabasePagedFetch'
 
 export type AnnualPlan = {
   id: string
@@ -298,33 +299,41 @@ export async function fetchAllLinesForPlans(planIds: string[]): Promise<AnnualPl
 export async function fetchClosedAmountByStaff(
   fiscalYear: number,
 ): Promise<Map<string, { amount: number; count: number }>> {
-  const { from, to } = fiscalYearRange(fiscalYear)
+  const { from: dateFrom, to: dateTo } = fiscalYearRange(fiscalYear)
+  const rows = await fetchSupabasePages<{ staff_id: string | null; total_amount: number | null }>({
+    count: async () => {
+      const { count, error } = await supabase
+        .from('cases')
+        .select('case_id', { count: 'exact', head: true })
+        .in('status', [...CLOSED_CASE_STATUSES])
+        .gte('created_date', `${dateFrom}T00:00:00`)
+        .lte('created_date', `${dateTo}T23:59:59.999`)
+      if (error) throw new Error(error.message)
+      return count || 0
+    },
+    page: async (from, to) => {
+      const { data, error } = await supabase
+        .from('cases')
+        .select('staff_id, total_amount')
+        .in('status', [...CLOSED_CASE_STATUSES])
+        .gte('created_date', `${dateFrom}T00:00:00`)
+        .lte('created_date', `${dateTo}T23:59:59.999`)
+        .order('case_id', { ascending: true })
+        .range(from, to)
+      if (error) throw new Error(error.message)
+      return data || []
+    },
+  })
+
   const stats = new Map<string, { amount: number; count: number }>()
-  const pageSize = 1000
-  let offset = 0
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('cases')
-      .select('staff_id, total_amount')
-      .in('status', [...CLOSED_CASE_STATUSES])
-      .gte('created_date', `${from}T00:00:00`)
-      .lte('created_date', `${to}T23:59:59.999`)
-      .range(offset, offset + pageSize - 1)
-    if (error) throw new Error(error.message)
-    const rows = data || []
-    for (const row of rows) {
-      const staffId = String(row.staff_id ?? '')
-      if (!staffId) continue
-      const prev = stats.get(staffId) || { amount: 0, count: 0 }
-      prev.amount += Number(row.total_amount || 0)
-      prev.count += 1
-      stats.set(staffId, prev)
-    }
-    if (rows.length < pageSize) break
-    offset += pageSize
+  for (const row of rows) {
+    const staffId = String(row.staff_id ?? '')
+    if (!staffId) continue
+    const prev = stats.get(staffId) || { amount: 0, count: 0 }
+    prev.amount += Number(row.total_amount || 0)
+    prev.count += 1
+    stats.set(staffId, prev)
   }
-
   return stats
 }
 

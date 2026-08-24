@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
-import { fetchStaffsForExcelMatch, rematchUnmatchedSalesActualStaff } from '@/lib/annualPlanSalesImport'
+import { fetchStaffsForExcelMatch } from '@/lib/annualPlanSalesImport'
 import { resolveExcelStaffId } from '@/lib/annualPlanStaffMatch'
+import { readAnnualPlanCache, writeAnnualPlanCache } from '@/lib/annualPlanQueryCache'
+import { fetchSupabasePages } from '@/lib/supabasePagedFetch'
 
 export const runtime = 'nodejs'
 
@@ -33,13 +35,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'fy が不正です' }, { status: 400 })
     }
 
+    const cacheKey = `sales-actuals:${fiscalYear}`
+    const cached = readAnnualPlanCache<SalesActualSummary>(cacheKey)
+    if (cached) return NextResponse.json({ ok: true, ...cached })
+
     const sb = getSupabaseAdmin()
     const staffs = await fetchStaffsForExcelMatch(sb)
-    try {
-      await rematchUnmatchedSalesActualStaff(sb, fiscalYear, staffs)
-    } catch (e) {
-      console.error('annual sales rematch:', e)
-    }
 
     const { data: latest, error: latestError } = await sb
       .from('annual_sales_actual_imports')
@@ -50,40 +51,52 @@ export async function GET(request: Request) {
       .maybeSingle()
     if (latestError) throw new Error(latestError.message)
 
+    const rows = await fetchSupabasePages<{
+      staff_id: string | null
+      staff_name_raw: string | null
+      plan_category: string | null
+      amount_ex_tax: number | null
+    }>({
+      count: async () => {
+        const { count, error } = await sb
+          .from('annual_sales_actual_lines')
+          .select('id', { count: 'exact', head: true })
+          .eq('fiscal_year', fiscalYear)
+        if (error) throw new Error(error.message)
+        return count || 0
+      },
+      page: async (from, to) => {
+        const { data, error } = await sb
+          .from('annual_sales_actual_lines')
+          .select('staff_id, staff_name_raw, plan_category, amount_ex_tax')
+          .eq('fiscal_year', fiscalYear)
+          .order('id', { ascending: true })
+          .range(from, to)
+        if (error) throw new Error(error.message)
+        return data || []
+      },
+    })
+
     const byStaff: Record<string, number> = {}
     const byCategory: Record<string, number> = {}
     const byStaffCategory: Record<string, Record<string, number>> = {}
     let unmatchedAmount = 0
     let totalAmount = 0
-    const pageSize = 1000
-    let offset = 0
 
-    while (true) {
-      const { data, error } = await sb
-        .from('annual_sales_actual_lines')
-        .select('id, staff_id, staff_name_raw, plan_category, amount_ex_tax')
-        .eq('fiscal_year', fiscalYear)
-        .order('id', { ascending: true })
-        .range(offset, offset + pageSize - 1)
-      if (error) throw new Error(error.message)
-      const rows = data || []
-      for (const row of rows) {
-        const amount = Number(row.amount_ex_tax || 0)
-        if (amount === 0) continue
-        totalAmount += amount
-        const category = String(row.plan_category || '')
-        add(byCategory, category, amount)
-        const staffId = row.staff_id
-          ? String(row.staff_id)
-          : resolveExcelStaffId(String(row.staff_name_raw || ''), staffs)
-        if (staffId) {
-          add(byStaff, staffId, amount)
-          if (!byStaffCategory[staffId]) byStaffCategory[staffId] = {}
-          add(byStaffCategory[staffId], category, amount)
-        } else unmatchedAmount += amount
-      }
-      if (rows.length < pageSize) break
-      offset += pageSize
+    for (const row of rows) {
+      const amount = Number(row.amount_ex_tax || 0)
+      if (amount === 0) continue
+      totalAmount += amount
+      const category = String(row.plan_category || '')
+      add(byCategory, category, amount)
+      const staffId = row.staff_id
+        ? String(row.staff_id)
+        : resolveExcelStaffId(String(row.staff_name_raw || ''), staffs)
+      if (staffId) {
+        add(byStaff, staffId, amount)
+        if (!byStaffCategory[staffId]) byStaffCategory[staffId] = {}
+        add(byStaffCategory[staffId], category, amount)
+      } else unmatchedAmount += amount
     }
 
     const summary: SalesActualSummary = {
@@ -104,6 +117,7 @@ export async function GET(request: Request) {
         : null,
     }
 
+    writeAnnualPlanCache(cacheKey, summary)
     return NextResponse.json({ ok: true, ...summary })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)

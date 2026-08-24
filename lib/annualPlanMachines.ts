@@ -77,8 +77,8 @@ async function attachRetailPrices(machines: PlanMachine[]): Promise<PlanMachine[
   }))
 }
 
-async function fetchFactoryModels(factoryCategory: string): Promise<PlanMachine[]> {
-  const cacheKey = `factory:${factoryCategory}`
+async function fetchFactoryModels(factoryCategory: string, includePrices = true): Promise<PlanMachine[]> {
+  const cacheKey = `factory:${factoryCategory}:${includePrices ? 'prices' : 'codes'}`
   const cached = modelCache.get(cacheKey)
   if (cached && Date.now() - cached.at < MODEL_CACHE_MS) return cached.machines
 
@@ -105,7 +105,7 @@ async function fetchFactoryModels(factoryCategory: string): Promise<PlanMachine[
     machines = mapFactoryRows(Array.isArray(data) ? data : [])
   }
 
-  machines = await attachRetailPrices(machines)
+  if (includePrices) machines = await attachRetailPrices(machines)
   modelCache.set(cacheKey, { at: Date.now(), machines })
   return machines
 }
@@ -164,12 +164,16 @@ async function fetchProductMachines(category: string): Promise<PlanMachine[]> {
   return machines
 }
 
-export async function fetchPlanMachines(category: string): Promise<{
+export async function fetchPlanMachines(
+  category: string,
+  options?: { includePrices?: boolean },
+): Promise<{
   machines: PlanMachine[]
   source: 'factory' | 'product'
   factoryCategory: string | null
   warning: string | null
 }> {
+  const includePrices = options?.includePrices !== false
   if (isAmountOnlyPlanCategory(category)) {
     const machines = await fetchProductMachines(category)
     return {
@@ -182,7 +186,7 @@ export async function fetchPlanMachines(category: string): Promise<{
 
   const factoryCategory = factoryCategoryFor(category) || 'その他'
   try {
-    const machines = await fetchFactoryModels(factoryCategory)
+    const machines = await fetchFactoryModels(factoryCategory, includePrices)
     return {
       machines,
       source: 'factory',

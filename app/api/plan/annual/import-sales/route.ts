@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getSupabaseAdmin, hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { parseSalesActualWorkbook } from '@/lib/annualPlanSalesExcel'
 import { fetchStaffsForExcelMatch, replaceSalesActualsForYear } from '@/lib/annualPlanSalesImport'
+import { clearAnnualPlanCaches } from '@/lib/annualPlanQueryCache'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -49,6 +50,8 @@ export async function POST(req: Request) {
       rows: parsed.rows,
       staffs,
     })
+
+    clearAnnualPlanCaches()
 
     return NextResponse.json({
       ok: true,

@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
@@ -161,19 +161,19 @@ function ProgressBars(props: {
 function GroupedBars(props: {
   title: string
   caption: string
-  rows: Array<{ label: string; plan: number; weighted: number }>
+  rows: Array<{ key?: string; label: string; plan: number; weighted: number; excel: number }>
 }) {
-  const max = Math.max(...props.rows.map((r) => Math.max(r.plan, r.weighted)), 1)
+  const max = Math.max(...props.rows.map((r) => Math.max(r.plan, r.weighted, r.excel)), 1)
   return (
     <div style={{ ...planPanel, padding: 16 }}>
       <h2 style={{ margin: '0 0 12px', fontSize: 16, color: '#f8fafc' }}>{props.title}</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {props.rows.map((r) => (
-          <div key={r.label}>
+          <div key={r.key || r.label}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4, fontSize: 13 }}>
               <span>{r.label}</span>
               <span style={planMuted}>
-                {yen(r.plan)} / 見込 {yen(r.weighted)}
+                計画 {yen(r.plan)} · 見込 {yen(r.weighted)} · Excel {yen(r.excel)}
               </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -183,11 +183,28 @@ function GroupedBars(props: {
               <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
                 <div style={{ width: `${(r.weighted / max) * 100}%`, height: '100%', background: '#38bdf8' }} />
               </div>
+              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${(r.excel / max) * 100}%`, height: '100%', background: '#22c55e' }} />
+              </div>
             </div>
           </div>
         ))}
       </div>
-      <p style={{ ...planMuted, fontSize: 12, margin: '10px 0 0' }}>{props.caption}</p>
+      <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 12, flexWrap: 'wrap', ...planMuted }}>
+        <span>
+          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#94a3b8', marginRight: 6 }} />
+          上段 計画額
+        </span>
+        <span>
+          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#38bdf8', marginRight: 6 }} />
+          中段 確度見込
+        </span>
+        <span>
+          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#22c55e', marginRight: 6 }} />
+          下段 Excel税抜
+        </span>
+      </div>
+      <p style={{ ...planMuted, fontSize: 12, margin: '8px 0 0' }}>{props.caption}</p>
     </div>
   )
 }
@@ -238,6 +255,9 @@ function AnnualDashboardContent() {
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [salesLoading, setSalesLoading] = useState(false)
+  const [machineExcelLoading, setMachineExcelLoading] = useState(false)
+  const loadIdRef = useRef(0)
   const [machineCategory, setMachineCategory] = useState('すべて')
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
@@ -248,46 +268,57 @@ function AnnualDashboardContent() {
   const [lineOfficeKey, setLineOfficeKey] = useState('all')
 
   const loadDashboard = useCallback(async () => {
+    const loadId = ++loadIdRef.current
+    const alive = () => loadId === loadIdRef.current
     setLoading(true)
+    setSalesLoading(true)
+    setMachineExcelLoading(true)
     setError('')
+    const emptySales: SalesActualSummary = {
+      byStaff: {},
+      byCategory: {},
+      byStaffCategory: {},
+      unmatchedAmount: 0,
+      totalAmount: 0,
+      import: null,
+    }
+    const salesPromise = fetchSalesActualSummary(fiscalYear).catch((e) => {
+      const message = e instanceof Error ? e.message : String(e)
+      if (!/売上実績テーブル/i.test(message) && alive()) setError(formatPlanDbError(message))
+      return emptySales
+    })
+    const companyPromise = fetchItemMonthProgress(fiscalYear, 'all').catch(() => null)
     try {
       const [staffList, planList, closed] = await Promise.all([
         fetchPlanStaffs(),
         fetchAllPlansForYear(fiscalYear),
         fetchClosedAmountByStaff(fiscalYear),
       ])
+      if (!alive()) return
       const salesStaffIds = new Set(staffList.map((s) => s.id))
       const salesPlans = planList.filter((p) => salesStaffIds.has(String(p.staff_id)))
       setStaffs(staffList)
       setPlans(salesPlans)
       setClosedByStaff(closed)
       const lineList = await fetchAllLinesForPlans(salesPlans.map((p) => p.id))
+      if (!alive()) return
       setLines(lineList)
-      try {
-        setSales(await fetchSalesActualSummary(fiscalYear))
-      } catch (e) {
-        setSales({
-          byStaff: {},
-          byCategory: {},
-          byStaffCategory: {},
-          unmatchedAmount: 0,
-          totalAmount: 0,
-          import: null,
-        })
-        const message = e instanceof Error ? e.message : String(e)
-        if (!/売上実績テーブル/i.test(message)) setError(formatPlanDbError(message))
-      }
-      try {
-        setCompanyItemProgress(await fetchItemMonthProgress(fiscalYear, 'all'))
-      } catch {
-        setCompanyItemProgress(null)
-      }
+      setLoading(false)
+      const [salesResult, companyResult] = await Promise.all([salesPromise, companyPromise])
+      if (!alive()) return
+      setSales(salesResult)
+      setCompanyItemProgress(companyResult)
     } catch (e) {
+      if (!alive()) return
       setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
       setPlans([])
       setLines([])
     } finally {
-      setLoading(false)
+      if (alive()) {
+        setLoading(false)
+        setSalesLoading(false)
+        setMachineExcelLoading(false)
+      }
     }
   }, [fiscalYear])
 
@@ -323,7 +354,7 @@ function AnnualDashboardContent() {
     return () => {
       cancelled = true
     }
-  }, [fiscalYear, itemStaffId, sales.import?.imported_at, lines])
+  }, [fiscalYear, itemStaffId, sales.import?.imported_at])
 
   const handleImport = async (file: File | undefined) => {
     if (!file) return
@@ -518,7 +549,10 @@ function AnnualDashboardContent() {
             )}
           </select>
         </label>
-        <span style={planMuted}>経過 {elapsed}%{loading ? ' …集計中' : ''}</span>
+        <span style={planMuted}>
+          経過 {elapsed}%
+          {loading ? ' …計画読込中' : salesLoading || machineExcelLoading || itemProgressLoading ? ' …実績読込中' : ''}
+        </span>
       </div>
 
       {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
@@ -888,12 +922,14 @@ function AnnualDashboardContent() {
       </div>
       {machineRows.length > 0 && (
         <GroupedBars
-          title="機種別 計画額と確度見込"
-          caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。Excel実績は税抜で、計画の品名・商品CDと突合します。`}
+          title="機種別 計画額・確度見込・Excel実績"
+          caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。Excel実績は税抜で、計画の品名・商品CDと突合します。棒の長さは表示中の最大額に対する比率です。`}
           rows={machineRows.slice(0, 20).map((r) => ({
+            key: r.key,
             label: `${CHANGE_KIND_LABEL[r.changeKind]} ${formatPlanMachineLabel(r.code, r.name)}`,
             plan: r.totals.amount,
             weighted: r.totals.weighted,
+            excel: machineExcelOf(r),
           }))}
         />
       )}
