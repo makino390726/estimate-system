@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { fetchStaffsForExcelMatch, rematchUnmatchedSalesActualStaff } from '@/lib/annualPlanSalesImport'
+import { resolveExcelStaffId } from '@/lib/annualPlanStaffMatch'
 
 export const runtime = 'nodejs'
 
@@ -32,6 +34,13 @@ export async function GET(request: Request) {
     }
 
     const sb = getSupabaseAdmin()
+    const staffs = await fetchStaffsForExcelMatch(sb)
+    try {
+      await rematchUnmatchedSalesActualStaff(sb, fiscalYear, staffs)
+    } catch (e) {
+      console.error('annual sales rematch:', e)
+    }
+
     const { data: latest, error: latestError } = await sb
       .from('annual_sales_actual_imports')
       .select('id, file_name, sheet_name, row_count, skipped_count, unmatched_staff_count, imported_at')
@@ -52,7 +61,7 @@ export async function GET(request: Request) {
     while (true) {
       const { data, error } = await sb
         .from('annual_sales_actual_lines')
-        .select('id, staff_id, plan_category, amount_ex_tax')
+        .select('id, staff_id, staff_name_raw, plan_category, amount_ex_tax')
         .eq('fiscal_year', fiscalYear)
         .order('id', { ascending: true })
         .range(offset, offset + pageSize - 1)
@@ -64,8 +73,10 @@ export async function GET(request: Request) {
         totalAmount += amount
         const category = String(row.plan_category || '')
         add(byCategory, category, amount)
-        if (row.staff_id) {
-          const staffId = String(row.staff_id)
+        const staffId = row.staff_id
+          ? String(row.staff_id)
+          : resolveExcelStaffId(String(row.staff_name_raw || ''), staffs)
+        if (staffId) {
           add(byStaff, staffId, amount)
           if (!byStaffCategory[staffId]) byStaffCategory[staffId] = {}
           add(byStaffCategory[staffId], category, amount)

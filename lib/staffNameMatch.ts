@@ -1,10 +1,26 @@
-/** 担当者名照合用: 半角・全角スペース・NFKC 正規化 */
+/**
+ * 人名でよく使う異体字。﨑 (U+FA11) などは NFKC でも 崎 (U+5D0E) にならない。
+ * Excel「久木崎」とマスタ「久木﨑 公啓」を同じキーにするためここで寄せる。
+ */
+const STAFF_NAME_ITAIJI: Record<string, string> = {
+    '\uFA11': '\u5D0E', // 﨑 → 崎
+    '\u9AD9': '\u9AD8', // 髙 → 高
+    '\uFA10': '\u585A', // 塚 → 塚
+}
+
+function unifyStaffNameItaiji(value: string): string {
+    return value.replace(/[\uFA11\u9AD9\uFA10]/g, (ch) => STAFF_NAME_ITAIJI[ch] || ch)
+}
+
+/** 担当者名照合用: 半角・全角スペース・NFKC・人名異体字の正規化 */
 export function normalizeStaffNameKey(name: string): string {
-    return String(name || '')
-        .normalize('NFKC')
-        .replace(/[\u200B-\u200D\uFEFF]/g, '')
-        .trim()
-        .replace(/[\s\u3000\u00a0\u2000-\u200a\u202f\u205f]+/g, '')
+    return unifyStaffNameItaiji(
+        String(name || '')
+            .normalize('NFKC')
+            .replace(/[\u200B-\u200D\uFEFF]/g, '')
+            .trim()
+            .replace(/[\s\u3000\u00a0\u2000-\u200a\u202f\u205f]+/g, ''),
+    )
 }
 
 export type StaffNameRow = {

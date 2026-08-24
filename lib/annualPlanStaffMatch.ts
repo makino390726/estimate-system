@@ -8,7 +8,8 @@ function stripTrailingDigits(key: string): string {
 
 /**
  * Excel の担当（久木崎、屋比久２、田中　伸一）を staffs 行に解決する。
- * 完全一致 → 末尾数字除去 → 前方一致（候補1件、または最長）。
+ * 完全一致 → 末尾数字除去 → 前方一致（候補1件、または最短）。
+ * 﨑/崎などの人名異体字は normalizeStaffNameKey で揃える。
  */
 export function resolveExcelStaffId(
   rawName: string,

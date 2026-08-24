@@ -1,6 +1,87 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ParsedSalesActualRow } from '@/lib/annualPlanSalesExcel'
 import { resolveExcelStaffId, type PlanStaffMatch } from '@/lib/annualPlanStaffMatch'
+import { EXCLUDED_STAFF_IDS } from '@/lib/staffPerformanceSummary'
+
+export async function fetchStaffsForExcelMatch(sb: SupabaseClient): Promise<PlanStaffMatch[]> {
+  const { data, error } = await sb.from('staffs').select('id, name')
+  if (error) throw new Error(error.message)
+  return (data || [])
+    .map((row) => ({ id: String(row.id), name: String(row.name || '') }))
+    .filter((row) => row.name && !EXCLUDED_STAFF_IDS.includes(Number(row.id)))
+}
+
+/** 取込済みで staff_id が空の行を、現行の氏名照合で付け直す */
+export async function rematchUnmatchedSalesActualStaff(
+  sb: SupabaseClient,
+  fiscalYear: number,
+  staffs: PlanStaffMatch[],
+): Promise<{ updated: number; stillUnmatched: number }> {
+  const { count, error: countError } = await sb
+    .from('annual_sales_actual_lines')
+    .select('id', { count: 'exact', head: true })
+    .eq('fiscal_year', fiscalYear)
+    .is('staff_id', null)
+  if (countError) throw new Error(countError.message)
+  if (!count) return { updated: 0, stillUnmatched: 0 }
+
+  const pageSize = 1000
+  let offset = 0
+  const byRaw = new Map<string, string[]>()
+
+  while (true) {
+    const { data, error } = await sb
+      .from('annual_sales_actual_lines')
+      .select('id, staff_name_raw')
+      .eq('fiscal_year', fiscalYear)
+      .is('staff_id', null)
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1)
+    if (error) throw new Error(error.message)
+    const rows = data || []
+    for (const row of rows) {
+      const raw = String(row.staff_name_raw || '').trim()
+      if (!raw) continue
+      const ids = byRaw.get(raw) || []
+      ids.push(String(row.id))
+      byRaw.set(raw, ids)
+    }
+    if (rows.length < pageSize) break
+    offset += pageSize
+  }
+
+  let updated = 0
+  for (const [raw, ids] of byRaw) {
+    const staffId = resolveExcelStaffId(raw, staffs)
+    if (!staffId) continue
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200)
+      const { error } = await sb
+        .from('annual_sales_actual_lines')
+        .update({ staff_id: staffId })
+        .in('id', chunk)
+      if (error) throw new Error(error.message)
+      updated += chunk.length
+    }
+  }
+
+  const stillUnmatched = [...byRaw.values()].reduce((n, ids) => n + ids.length, 0) - updated
+  const { data: latest } = await sb
+    .from('annual_sales_actual_imports')
+    .select('id')
+    .eq('fiscal_year', fiscalYear)
+    .order('imported_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (latest?.id) {
+    await sb
+      .from('annual_sales_actual_imports')
+      .update({ unmatched_staff_count: stillUnmatched })
+      .eq('id', latest.id)
+  }
+
+  return { updated, stillUnmatched }
+}
 
 export type SalesActualImportResult = {
   import_id: string

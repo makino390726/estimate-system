@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin, hasSupabaseServiceRole } from '@/lib/supabaseAdmin'
 import { parseSalesActualWorkbook } from '@/lib/annualPlanSalesExcel'
-import { replaceSalesActualsForYear } from '@/lib/annualPlanSalesImport'
-import { EXCLUDED_STAFF_IDS } from '@/lib/staffPerformanceSummary'
+import { fetchStaffsForExcelMatch, replaceSalesActualsForYear } from '@/lib/annualPlanSalesImport'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -40,11 +39,7 @@ export async function POST(req: Request) {
     }
 
     const sb = getSupabaseAdmin()
-    const { data: staffRows, error: staffError } = await sb.from('staffs').select('id, name')
-    if (staffError) throw new Error(staffError.message)
-    const staffs = (staffRows || [])
-      .map((row) => ({ id: String(row.id), name: String(row.name || '') }))
-      .filter((row) => !EXCLUDED_STAFF_IDS.includes(Number(row.id)))
+    const staffs = await fetchStaffsForExcelMatch(sb)
 
     const result = await replaceSalesActualsForYear(sb, {
       fiscalYear,

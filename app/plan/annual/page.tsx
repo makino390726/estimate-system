@@ -31,6 +31,7 @@ import {
   FACTORY_PRODUCT_CATEGORIES,
   AMOUNT_ONLY_CATEGORIES,
   CHANGE_KIND_LABEL,
+  LUMP_MACHINE_CODE,
   OTHER_CODE_RANGE_CAPTION,
   PROGRESS_CATEGORIES,
   displayPlanCategory,
@@ -228,6 +229,7 @@ function AnnualDashboardContent() {
   const [itemStaffId, setItemStaffId] = useState(() => searchParams.get('staff') || '')
   const [itemProgress, setItemProgress] = useState<ItemMonthProgressResult | null>(null)
   const [itemProgressLoading, setItemProgressLoading] = useState(false)
+  const [companyItemProgress, setCompanyItemProgress] = useState<ItemMonthProgressResult | null>(null)
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -258,6 +260,11 @@ function AnnualDashboardContent() {
         })
         const message = e instanceof Error ? e.message : String(e)
         if (!/売上実績テーブル/i.test(message)) setError(formatPlanDbError(message))
+      }
+      try {
+        setCompanyItemProgress(await fetchItemMonthProgress(fiscalYear, 'all'))
+      } catch {
+        setCompanyItemProgress(null)
       }
     } catch (e) {
       setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
@@ -312,6 +319,11 @@ function AnnualDashboardContent() {
         `取込完了 ${result.inserted.toLocaleString('ja-JP')}行 · 税抜合計 ${Math.round(Number(result.amount_ex_tax_total || 0)).toLocaleString('ja-JP')}円（担当未割当 ${result.unmatched_staff}件 / スキップ ${result.skipped_count}件）`,
       )
       setSales(await fetchSalesActualSummary(fiscalYear))
+      try {
+        setCompanyItemProgress(await fetchItemMonthProgress(fiscalYear, 'all'))
+      } catch {
+        setCompanyItemProgress(null)
+      }
     } catch (e) {
       setImportMessage(formatPlanDbError(e instanceof Error ? e.message : String(e)))
     } finally {
@@ -355,6 +367,19 @@ function AnnualDashboardContent() {
     }).filter((r) => r.totals.current.amount > 0 || r.totals.current.qty > 0 || r.excel > 0)
   }, [lines, sales.byCategory])
 
+  const excelByMachine = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of companyItemProgress?.rows || []) {
+      map.set(row.key, Number(row.soldAmountTotal || 0))
+    }
+    return map
+  }, [companyItemProgress])
+
+  const machineExcelOf = (r: { category: string; code: string; name: string }) => {
+    const code = String(r.code || '').trim() || LUMP_MACHINE_CODE
+    return excelByMachine.get(`${r.category}::${code}::${r.name}`) || 0
+  }
+
   const machineRows = useMemo(() => {
     const map = new Map<string, AnnualPlanLine[]>()
     for (const line of lines) {
@@ -391,8 +416,17 @@ function AnnualDashboardContent() {
 
   const machineTotals = useMemo(() => {
     const groupedLines = machineRows.flatMap((r) => r.lines)
-    return { totals: lineTotals(groupedLines), conf: qtyByConfidence(groupedLines) }
-  }, [machineRows])
+    const seen = new Set<string>()
+    let excel = 0
+    for (const r of machineRows) {
+      const code = String(r.code || '').trim() || LUMP_MACHINE_CODE
+      const key = `${r.category}::${code}::${r.name}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      excel += machineExcelOf(r)
+    }
+    return { totals: lineTotals(groupedLines), conf: qtyByConfidence(groupedLines), excel }
+  }, [machineRows, excelByMachine])
 
   return (
     <div style={planPageStyle}>
@@ -665,7 +699,7 @@ function AnnualDashboardContent() {
       {machineRows.length > 0 && (
         <GroupedBars
           title="機種別 計画額と確度見込"
-          caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。`}
+          caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。Excel実績は税抜で、計画の品名・商品CDと突合します。`}
           rows={machineRows.slice(0, 20).map((r) => ({
             label: `${CHANGE_KIND_LABEL[r.changeKind]} ${formatPlanMachineLabel(r.code, r.name)}`,
             plan: r.totals.amount,
@@ -674,10 +708,10 @@ function AnnualDashboardContent() {
         />
       )}
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
           <thead>
             <tr>
-              {['区分', 'カテゴリ', '機種', '台数', '●', '▲', '□', '計画額', '粗利', '確度見込'].map((h) => (
+              {['区分', 'カテゴリ', '機種', '台数', '●', '▲', '□', '計画額', 'Excel実績', '対計画', '粗利', '確度見込'].map((h) => (
                 <th key={h} style={{ ...planTh, textAlign: h === 'カテゴリ' || h === '機種' || h === '区分' ? 'left' : 'right' }}>
                   {h}
                 </th>
@@ -687,12 +721,14 @@ function AnnualDashboardContent() {
           <tbody>
             {machineRows.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={12} style={{ ...planTd, color: '#94a3b8' }}>
                   計画行がありません。
                 </td>
               </tr>
             )}
-            {machineRows.map((r) => (
+            {machineRows.map((r) => {
+              const excel = machineExcelOf(r)
+              return (
               <tr key={r.key}>
                 <td style={planTd}>{CHANGE_KIND_LABEL[r.changeKind]}</td>
                 <td style={planTd}>{r.category}</td>
@@ -704,10 +740,13 @@ function AnnualDashboardContent() {
                 <td style={{ ...planTd, textAlign: 'right' }}>{r.conf.mid.toLocaleString('ja-JP')}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{r.conf.low.toLocaleString('ja-JP')}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{yen(excel)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, r.totals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.gp)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.weighted)}</td>
               </tr>
-            ))}
+              )
+            })}
             {machineRows.length > 0 && (
               <tr>
                 <td style={{ ...planTd, fontWeight: 700 }} colSpan={3}>
@@ -718,6 +757,8 @@ function AnnualDashboardContent() {
                 <td style={{ ...planTd, textAlign: 'right' }}>{machineTotals.conf.mid.toLocaleString('ja-JP')}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{machineTotals.conf.low.toLocaleString('ja-JP')}</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(machineTotals.totals.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(machineTotals.excel)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{pct(machineTotals.excel, machineTotals.totals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(machineTotals.totals.gp)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(machineTotals.totals.weighted)}</td>
               </tr>

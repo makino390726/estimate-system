@@ -2,46 +2,82 @@ import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { fetchPlanMachines } from '@/lib/annualPlanMachines'
 import { buildItemMonthProgress, type SalesActualItemRow } from '@/lib/annualPlanItemProgress'
+import { fetchStaffsForExcelMatch, rematchUnmatchedSalesActualStaff } from '@/lib/annualPlanSalesImport'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
     const fiscalYear = Number(url.searchParams.get('fy'))
     const staffId = String(url.searchParams.get('staff') || '').trim()
+    const allStaff = staffId === 'all'
     if (!Number.isFinite(fiscalYear) || fiscalYear < 2000) {
       return NextResponse.json({ ok: false, error: 'fy が不正です' }, { status: 400 })
     }
-    if (!staffId) {
+    if (!allStaff && !staffId) {
       return NextResponse.json({ ok: false, error: 'staff は必須です' }, { status: 400 })
     }
 
     const sb = getSupabaseAdmin()
-    const { data: plan, error: planError } = await sb
-      .from('annual_staff_plans')
-      .select('id')
-      .eq('fiscal_year', fiscalYear)
-      .eq('staff_id', staffId)
-      .maybeSingle()
-    if (planError) throw new Error(planError.message)
+    try {
+      const staffs = await fetchStaffsForExcelMatch(sb)
+      await rematchUnmatchedSalesActualStaff(sb, fiscalYear, staffs)
+    } catch (e) {
+      console.error('annual item-progress rematch:', e)
+    }
 
-    let lines: Array<{
+    type PlanLineRow = {
       category: string
       machine_code: string
       machine_name: string | null
       qty: number
       amount: number
       change_kind?: string | null
-    }> = []
-    if (plan?.id) {
-      const { data: lineRows, error: lineError } = await sb
-        .from('annual_staff_plan_lines')
-        .select('*')
-        .eq('plan_id', plan.id)
-        .order('created_at', { ascending: true })
-      if (lineError) throw new Error(lineError.message)
-      lines = (lineRows || []) as typeof lines
+    }
+    let lines: PlanLineRow[] = []
+    if (allStaff) {
+      const { data: plans, error: planError } = await sb
+        .from('annual_staff_plans')
+        .select('id')
+        .eq('fiscal_year', fiscalYear)
+      if (planError) throw new Error(planError.message)
+      const planIds = (plans || []).map((p) => String(p.id))
+      for (let i = 0; i < planIds.length; i += 100) {
+        const chunk = planIds.slice(i, i + 100)
+        let offset = 0
+        while (true) {
+          const { data: lineRows, error: lineError } = await sb
+            .from('annual_staff_plan_lines')
+            .select('category, machine_code, machine_name, qty, amount, change_kind')
+            .in('plan_id', chunk)
+            .order('id', { ascending: true })
+            .range(offset, offset + 999)
+          if (lineError) throw new Error(lineError.message)
+          const rows = (lineRows || []) as PlanLineRow[]
+          lines.push(...rows)
+          if (rows.length < 1000) break
+          offset += 1000
+        }
+      }
+    } else {
+      const { data: plan, error: planError } = await sb
+        .from('annual_staff_plans')
+        .select('id')
+        .eq('fiscal_year', fiscalYear)
+        .eq('staff_id', staffId)
+        .maybeSingle()
+      if (planError) throw new Error(planError.message)
+      if (plan?.id) {
+        const { data: lineRows, error: lineError } = await sb
+          .from('annual_staff_plan_lines')
+          .select('*')
+          .eq('plan_id', plan.id)
+          .order('created_at', { ascending: true })
+        if (lineError) throw new Error(lineError.message)
+        lines = (lineRows || []) as PlanLineRow[]
+      }
     }
 
     const extraCodesByMachine: Record<string, string[]> = {}
@@ -63,13 +99,12 @@ export async function GET(request: Request) {
     const pageSize = 1000
     let offset = 0
     while (true) {
-      const { data, error } = await sb
+      let query = sb
         .from('annual_sales_actual_lines')
         .select('id, billed_on, product_code, product_name, qty, amount_ex_tax, plan_category')
         .eq('fiscal_year', fiscalYear)
-        .eq('staff_id', staffId)
-        .order('id', { ascending: true })
-        .range(offset, offset + pageSize - 1)
+      if (!allStaff) query = query.eq('staff_id', staffId)
+      const { data, error } = await query.order('id', { ascending: true }).range(offset, offset + pageSize - 1)
       if (error) throw new Error(error.message)
       const rows = data || []
       for (const row of rows) {
