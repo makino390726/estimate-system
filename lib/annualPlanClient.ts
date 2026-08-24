@@ -39,18 +39,47 @@ export type AnnualPlanLine = {
   created_at: string
 }
 
-export type StaffOption = { id: string; name: string }
+export type StaffOption = {
+  id: string
+  name: string
+  department?: string | null
+  branch_id?: string | null
+}
 
 export async function fetchPlanStaffs(): Promise<StaffOption[]> {
-  const { data, error } = await supabase
+  const mapRows = (
+    rows: Array<{
+      id?: string | number | null
+      name?: string | null
+      department?: string | null
+      branch_id?: string | null
+    }>,
+  ): StaffOption[] =>
+    rows
+      .map((row) => ({
+        id: String(row.id),
+        name: String(row.name || ''),
+        department: row.department ? String(row.department) : null,
+        branch_id: row.branch_id ? String(row.branch_id) : null,
+      }))
+      .filter((row) => !EXCLUDED_STAFF_IDS.includes(Number(row.id)))
+
+  const full = await supabase
+    .from('staffs')
+    .select('id, name, is_sales_staff, department, branch_id')
+    .eq('is_sales_staff', true)
+    .order('name')
+  if (!full.error) return mapRows(full.data || [])
+
+  if (!/department|branch_id/i.test(full.error.message)) throw new Error(full.error.message)
+
+  const fallback = await supabase
     .from('staffs')
     .select('id, name, is_sales_staff')
     .eq('is_sales_staff', true)
     .order('name')
-  if (error) throw new Error(error.message)
-  return (data || [])
-    .map((row) => ({ id: String(row.id), name: String(row.name || '') }))
-    .filter((row) => !EXCLUDED_STAFF_IDS.includes(Number(row.id)))
+  if (fallback.error) throw new Error(fallback.error.message)
+  return mapRows(fallback.data || [])
 }
 
 export async function getOrCreatePlan(fiscalYear: number, staffId: string): Promise<AnnualPlan> {

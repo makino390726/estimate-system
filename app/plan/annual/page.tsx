@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
@@ -53,6 +53,7 @@ import {
 import { AnnualItemMonthProgress } from '@/components/AnnualItemMonthProgress'
 import { AnnualInitialLineTotals } from '@/components/AnnualInitialLineTotals'
 import type { ItemMonthProgressResult } from '@/lib/annualPlanItemProgress'
+import { compareSalesOfficeLabel, salesOfficeLabelFromStaff } from '@/lib/branches'
 
 function yen(v: number) {
   return `${Math.round(v).toLocaleString('ja-JP')} 円`
@@ -191,6 +192,20 @@ function GroupedBars(props: {
   )
 }
 
+function mergeStaffExcelByCategory(
+  staffIds: string[],
+  byStaffCategory: Record<string, Record<string, number>>,
+) {
+  const out: Record<string, number> = {}
+  for (const id of staffIds) {
+    const cats = byStaffCategory[id] || {}
+    for (const [cat, amt] of Object.entries(cats)) {
+      out[cat] = (out[cat] || 0) + Number(amt || 0)
+    }
+  }
+  return out
+}
+
 function qtyByConfidence(lines: AnnualPlanLine[]) {
   return {
     high: lines.filter((l) => l.confidence === 'high').reduce((s, r) => s + Number(r.qty || 0), 0),
@@ -230,6 +245,7 @@ function AnnualDashboardContent() {
   const [itemProgress, setItemProgress] = useState<ItemMonthProgressResult | null>(null)
   const [itemProgressLoading, setItemProgressLoading] = useState(false)
   const [companyItemProgress, setCompanyItemProgress] = useState<ItemMonthProgressResult | null>(null)
+  const [lineOfficeKey, setLineOfficeKey] = useState('all')
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -344,6 +360,52 @@ function AnnualDashboardContent() {
     }
     return map
   }, [plans, lines])
+
+  const officeRows = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string
+        label: string
+        staffs: StaffOption[]
+        initial: number
+        current: number
+        closed: number
+        excel: number
+      }
+    >()
+    for (const staff of staffs) {
+      const label = salesOfficeLabelFromStaff(staff)
+      const t = splitPlanTotals(planByStaff.get(staff.id)?.lines || [])
+      const prev = map.get(label) || {
+        key: label,
+        label,
+        staffs: [],
+        initial: 0,
+        current: 0,
+        closed: 0,
+        excel: 0,
+      }
+      prev.staffs.push(staff)
+      prev.initial += t.initial.amount
+      prev.current += t.current.amount
+      prev.closed += closedByStaff.get(staff.id)?.amount || 0
+      prev.excel += sales.byStaff[staff.id] || 0
+      map.set(label, prev)
+    }
+    return [...map.values()].sort((a, b) => compareSalesOfficeLabel(a.label, b.label))
+  }, [staffs, planByStaff, closedByStaff, sales.byStaff])
+
+  const selectedOffice = officeRows.find((o) => o.key === lineOfficeKey)
+  const officeLineLines = selectedOffice
+    ? selectedOffice.staffs.flatMap((s) => planByStaff.get(s.id)?.lines || [])
+    : lines
+  const officeLineExcel = selectedOffice
+    ? mergeStaffExcelByCategory(
+        selectedOffice.staffs.map((s) => s.id),
+        sales.byStaffCategory,
+      )
+    : sales.byCategory
 
   const companyLines = lines
   const companySplit = splitPlanTotals(companyLines)
@@ -519,8 +581,29 @@ function AnnualDashboardContent() {
 
       <DualMeter closed={companyClosed} excel={companyExcel} plan={companyInitial.amount} elapsed={elapsed} />
 
-      <div style={{ ...planPanel, padding: 16, marginBottom: 20 }}>
-        <AnnualInitialLineTotals title="当初計画 行計（全体）" lines={lines} excelByCategory={sales.byCategory} />
+      <div id="annual-line-totals" style={{ ...planPanel, padding: 16, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+          <label style={planMuted}>
+            集計単位{' '}
+            <select
+              value={officeRows.some((o) => o.key === lineOfficeKey) ? lineOfficeKey : 'all'}
+              onChange={(e) => setLineOfficeKey(e.target.value)}
+              style={{ ...planInput, width: 'auto', minWidth: 180 }}
+            >
+              <option value="all">全体</option>
+              {officeRows.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}（{o.staffs.length}名）
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <AnnualInitialLineTotals
+          title={`当初計画 行計（${selectedOffice ? selectedOffice.label : '全体'}）`}
+          lines={officeLineLines}
+          excelByCategory={officeLineExcel}
+        />
       </div>
 
       <ProgressBars
@@ -542,6 +625,92 @@ function AnnualDashboardContent() {
         ].filter((r) => r.plan > 0 || r.closed > 0 || r.excel > 0)}
       />
 
+      {officeRows.length > 0 && (
+        <>
+          <h2 style={{ fontSize: 16, color: '#f8fafc' }}>営業所別</h2>
+          <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
+            担当者マスタの部署で集計します。福岡営業所は西九州、東日本出張所は東日本にまとめます。
+          </p>
+          <ProgressBars
+            title="営業所別 計画 / 見積成約 / Excel"
+            caption={`${fiscalYearLabel(fiscalYear)} · 計画バーは当初計画。見積成約は受注・注文・完了。Excelは税抜。`}
+            rows={officeRows.map((o) => ({
+              label: o.label,
+              plan: o.initial,
+              closed: o.closed,
+              excel: o.excel,
+            }))}
+          />
+          <div style={{ overflowX: 'auto', marginBottom: 20 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+              <thead>
+                <tr>
+                  {['営業所', '人数', '当初', '中間計画', '見積成約', '見積対当初', 'Excel実績', 'Excel対当初', ''].map((h) => (
+                    <th key={h || 'office-actions'} style={planTh}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {officeRows.map((o) => (
+                  <tr key={o.key}>
+                    <td style={planTd}>{o.label}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{o.staffs.length.toLocaleString('ja-JP')}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.initial)}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.current)}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.closed)}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{pct(o.closed, o.initial)}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.excel)}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{pct(o.excel, o.initial)}</td>
+                    <td style={planTd}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLineOfficeKey(o.key)
+                          document.getElementById('annual-line-totals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }}
+                        style={{ ...planBtn, padding: '4px 8px' }}
+                      >
+                        行計
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td style={{ ...planTd, fontWeight: 700 }}>合計</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
+                    {staffs.length.toLocaleString('ja-JP')}
+                  </td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyInitial.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyTotals.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyClosed)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(companyClosed, companyInitial.amount)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
+                    {yen(officeRows.reduce((s, o) => s + o.excel, 0))}
+                  </td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
+                    {pct(officeRows.reduce((s, o) => s + o.excel, 0), companyInitial.amount)}
+                  </td>
+                  <td style={planTd}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLineOfficeKey('all')
+                        document.getElementById('annual-line-totals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      }}
+                      style={{ ...planBtn, padding: '4px 8px' }}
+                    >
+                      全体
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       <h2 style={{ fontSize: 16, color: '#f8fafc' }}>担当者別</h2>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
@@ -555,32 +724,53 @@ function AnnualDashboardContent() {
             </tr>
           </thead>
           <tbody>
-            {staffs.map((staff) => {
-              const row = planByStaff.get(staff.id)
-              const t = splitPlanTotals(row?.lines || [])
-              const closed = closedByStaff.get(staff.id)?.amount || 0
-              const excel = sales.byStaff[staff.id] || 0
-              return (
-                <tr key={staff.id}>
-                  <td style={planTd}>{staff.name}</td>
-                  <td style={planTd}>{row?.plan.status === 'confirmed' ? '確定' : row ? '下書き' : '未作成'}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.initial.amount)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.current.amount)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(closed)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(closed, t.initial.amount)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{yen(excel)}</td>
-                  <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, t.initial.amount)}</td>
-                  <td style={planTd}>
-                    <button type="button" onClick={() => setItemStaffId(staff.id)} style={{ ...planBtn, padding: '4px 8px', marginRight: 8 }}>
-                      月次
-                    </button>
-                    <Link href={`/plan/annual/sheet?fy=${fiscalYear}&staff=${encodeURIComponent(staff.id)}`} style={{ color: '#7dd3fc' }}>
-                      シート
-                    </Link>
+            {officeRows.map((office) => (
+              <Fragment key={office.key}>
+                <tr>
+                  <td colSpan={9} style={{ ...planTd, fontWeight: 700, background: '#1e293b' }}>
+                    {office.label}
+                    <span style={{ ...planMuted, fontWeight: 400, marginLeft: 8 }}>{office.staffs.length}名</span>
                   </td>
                 </tr>
-              )
-            })}
+                {office.staffs.map((staff) => {
+                  const row = planByStaff.get(staff.id)
+                  const t = splitPlanTotals(row?.lines || [])
+                  const closed = closedByStaff.get(staff.id)?.amount || 0
+                  const excel = sales.byStaff[staff.id] || 0
+                  return (
+                    <tr key={staff.id}>
+                      <td style={planTd}>{staff.name}</td>
+                      <td style={planTd}>{row?.plan.status === 'confirmed' ? '確定' : row ? '下書き' : '未作成'}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.initial.amount)}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.current.amount)}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{yen(closed)}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{pct(closed, t.initial.amount)}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{yen(excel)}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, t.initial.amount)}</td>
+                      <td style={planTd}>
+                        <button type="button" onClick={() => setItemStaffId(staff.id)} style={{ ...planBtn, padding: '4px 8px', marginRight: 8 }}>
+                          月次
+                        </button>
+                        <Link href={`/plan/annual/sheet?fy=${fiscalYear}&staff=${encodeURIComponent(staff.id)}`} style={{ color: '#7dd3fc' }}>
+                          シート
+                        </Link>
+                      </td>
+                    </tr>
+                  )
+                })}
+                <tr>
+                  <td style={{ ...planTd, fontWeight: 700 }}>小計</td>
+                  <td style={planTd} />
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(office.initial)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(office.current)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(office.closed)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(office.closed, office.initial)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(office.excel)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(office.excel, office.initial)}</td>
+                  <td style={planTd} />
+                </tr>
+              </Fragment>
+            ))}
           </tbody>
         </table>
       </div>

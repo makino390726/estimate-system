@@ -81,3 +81,35 @@ export function getStaffDepartmentsForBranch(branchId: string | null | undefined
     }
     return aliases[branchId] || [getBranchName(branchId)]
 }
+
+const UNSET_SALES_OFFICE_LABEL = '部署未設定'
+
+/** 担当者マスタの部署・所属営業所から、年度計画の集計用営業所名を返す */
+export function salesOfficeLabelFromStaff(staff: {
+    department?: string | null
+    branch_id?: string | null
+}): string {
+    const dept = typeof staff.department === 'string' ? staff.department.trim() : ''
+    if (dept) {
+        for (const b of BRANCHES) {
+            const aliases = getStaffDepartmentsForBranch(b.id)
+            if (dept === b.name || aliases.includes(dept)) return b.name
+        }
+        return dept
+    }
+    const branchId = typeof staff.branch_id === 'string' ? staff.branch_id.trim() : ''
+    if (branchId && isSalesBranchId(branchId)) return getBranchName(branchId)
+    return UNSET_SALES_OFFICE_LABEL
+}
+
+export function compareSalesOfficeLabel(a: string, b: string): number {
+    const order = (label: string) => {
+        const i = BRANCHES.findIndex((x) => x.name === label)
+        if (i >= 0) return i
+        if (label === UNSET_SALES_OFFICE_LABEL) return 1000
+        return 100
+    }
+    const d = order(a) - order(b)
+    if (d !== 0) return d
+    return a.localeCompare(b, 'ja')
+}
