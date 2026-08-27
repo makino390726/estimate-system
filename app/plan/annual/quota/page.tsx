@@ -296,7 +296,7 @@ function AnnualQuotaContent() {
       </div>
 
       <p style={{ ...planMuted, marginTop: 0 }}>
-        {fiscalYearLabel(fiscalYear)}。会社目標は営業所×科目の金額です。担当者の積み上げとは別で、個人シートの行には書き戻りません。前年実績は既存の売上取込の参考値です。
+        {fiscalYearLabel(fiscalYear)}。会社目標は営業所×科目の金額です。管理部（購買）・企画部（SE・海外）も含みます。担当者の積み上げとは別で、個人シートの行には書き戻りません。前年実績は既存の売上取込の参考値です。
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>

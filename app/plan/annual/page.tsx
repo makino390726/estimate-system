@@ -697,7 +697,7 @@ function AnnualDashboardContent() {
         <>
           <h2 style={{ fontSize: 16, color: '#f8fafc' }}>営業所別</h2>
           <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
-            担当者マスタの部署で集計します。福岡営業所は西九州、東日本出張所は東日本にまとめます。
+            担当者マスタの部署で集計します。福岡営業所は西九州、東日本出張所は東日本にまとめます。管理部は管理部（購買）、企画部は企画部（SE・海外）です。
           </p>
           <ProgressBars
             title="営業所別 計画 / 見積成約 / Excel"

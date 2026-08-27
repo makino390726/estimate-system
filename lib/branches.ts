@@ -84,6 +84,21 @@ export function getStaffDepartmentsForBranch(branchId: string | null | undefined
 
 const UNSET_SALES_OFFICE_LABEL = '部署未設定'
 
+/** ノルマ・年度計画用。修理の営業所マスタ（BRANCHES）には含めない */
+export const QUOTA_ONLY_OFFICES = [
+    { id: 'quota_purchasing', name: '管理部（購買）' },
+    { id: 'quota_planning', name: '企画部（SE・海外）' },
+] as const
+
+function quotaOfficeAliases(id: (typeof QUOTA_ONLY_OFFICES)[number]['id']): string[] {
+    if (id === 'quota_purchasing') return ['管理部', '管理部（購買）', '購買']
+    return ['企画部', '企画部（SE・海外）', 'SE・海外']
+}
+
+function allQuotaOffices(): Array<{ id: string; name: string }> {
+    return [...BRANCHES, ...QUOTA_ONLY_OFFICES]
+}
+
 /** 担当者マスタの部署・所属営業所から、年度計画の集計用営業所名を返す */
 export function salesOfficeLabelFromStaff(staff: {
     department?: string | null
@@ -95,6 +110,9 @@ export function salesOfficeLabelFromStaff(staff: {
             const aliases = getStaffDepartmentsForBranch(b.id)
             if (dept === b.name || aliases.includes(dept)) return b.name
         }
+        for (const o of QUOTA_ONLY_OFFICES) {
+            if (quotaOfficeAliases(o.id).includes(dept)) return o.name
+        }
         return dept
     }
     const branchId = typeof staff.branch_id === 'string' ? staff.branch_id.trim() : ''
@@ -102,7 +120,7 @@ export function salesOfficeLabelFromStaff(staff: {
     return UNSET_SALES_OFFICE_LABEL
 }
 
-/** ノルマ保存キー。営業所マスタに無い部署は null（ノルマ対象外） */
+/** ノルマ保存キー。営業所マスタとノルマ専用部署以外は null */
 export function officeKeyFromStaff(staff: {
     department?: string | null
     branch_id?: string | null
@@ -111,13 +129,13 @@ export function officeKeyFromStaff(staff: {
 }
 
 export function officeKeyFromLabel(label: string): string | null {
-    const found = BRANCHES.find((b) => b.name === label)
+    const found = allQuotaOffices().find((b) => b.name === label)
     return found ? found.id : null
 }
 
 export function compareSalesOfficeLabel(a: string, b: string): number {
     const order = (label: string) => {
-        const i = BRANCHES.findIndex((x) => x.name === label)
+        const i = allQuotaOffices().findIndex((x) => x.name === label)
         if (i >= 0) return i
         if (label === UNSET_SALES_OFFICE_LABEL) return 1000
         return 100

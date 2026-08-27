@@ -82,6 +82,6 @@ CREATE POLICY annual_office_quota_allocations_all ON public.annual_office_quota_
 NOTIFY pgrst, 'reload schema';
 
 COMMENT ON TABLE public.annual_office_quota_years IS '年度の営業所ノルマヘッダ。担当者計画とは別';
-COMMENT ON TABLE public.annual_office_quota_lines IS '営業所×科目のノルマ金額。office_key は branches.ts の branch_id';
+COMMENT ON TABLE public.annual_office_quota_lines IS '営業所×科目のノルマ金額。office_key は branches.ts の営業所IDまたは quota_purchasing / quota_planning';
 COMMENT ON TABLE public.annual_office_quota_allocations IS '営業所ノルマの担当者配分（任意）。合計は営業所ノルマ以下';
-COMMENT ON COLUMN public.annual_office_quota_lines.office_key IS 'branch_1 など。表示名は営業所マスタ';
+COMMENT ON COLUMN public.annual_office_quota_lines.office_key IS 'branch_1 など。quota_purchasing=管理部（購買）、quota_planning=企画部（SE・海外）';

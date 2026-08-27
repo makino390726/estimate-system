@@ -1,10 +1,13 @@
 import { supabase } from '@/lib/supabaseClient'
 import { PROGRESS_CATEGORIES } from '@/lib/annualPlanCategories'
-import { BRANCHES } from '@/lib/branches'
+import { BRANCHES, QUOTA_ONLY_OFFICES } from '@/lib/branches'
 
 export const QUOTA_CATEGORIES = PROGRESS_CATEGORIES
 
-export const QUOTA_OFFICES = BRANCHES.map((b) => ({ key: b.id, label: b.name }))
+export const QUOTA_OFFICES = [...BRANCHES, ...QUOTA_ONLY_OFFICES].map((b) => ({
+  key: b.id,
+  label: b.name,
+}))
 
 export type OfficeQuotaStatus = 'draft' | 'confirmed'
 
