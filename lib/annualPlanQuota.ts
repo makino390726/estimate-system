@@ -46,6 +46,19 @@ export function parseQuotaAmount(value: string): number {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : NaN
 }
 
+export function formatQuotaAmount(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return Math.round(n).toLocaleString('ja-JP')
+}
+
+export function formatQuotaAmountInput(raw: string): string {
+  const t = String(raw || '')
+  if (!t.trim()) return ''
+  const n = parseQuotaAmount(t)
+  if (!Number.isFinite(n)) return t
+  return formatQuotaAmount(n)
+}
+
 export function emptyQuotaAmounts(): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {}
   for (const office of QUOTA_OFFICES) {
@@ -60,7 +73,7 @@ export function amountsFromLines(lines: OfficeQuotaLine[]): Record<string, Recor
   for (const line of lines) {
     if (!out[line.office_key]) continue
     const n = Math.round(Number(line.amount || 0))
-    out[line.office_key][line.plan_category] = n > 0 ? String(n) : ''
+    out[line.office_key][line.plan_category] = formatQuotaAmount(n)
   }
   return out
 }

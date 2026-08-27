@@ -22,6 +22,8 @@ import {
   confirmOfficeQuotas,
   emptyQuotaAmounts,
   fetchOfficeQuotas,
+  formatQuotaAmount,
+  formatQuotaAmountInput,
   officeQuotaTotal,
   parseQuotaAmount,
   QUOTA_CATEGORIES,
@@ -157,7 +159,7 @@ function AnnualQuotaContent() {
   useEffect(() => {
     const next: Record<string, string> = {}
     for (const a of bundle.allocations.filter((r) => r.office_key === openOffice)) {
-      next[a.staff_id] = String(a.amount)
+      next[a.staff_id] = formatQuotaAmount(a.amount)
     }
     setAllocEdits(next)
   }, [bundle.allocations, openOffice])
@@ -242,7 +244,7 @@ function AnnualQuotaContent() {
       total,
     )
     const next: Record<string, string> = {}
-    for (const row of suggested) next[row.staff_id] = String(row.amount)
+    for (const row of suggested) next[row.staff_id] = formatQuotaAmount(row.amount)
     setAllocEdits(next)
   }
 
@@ -326,7 +328,7 @@ function AnnualQuotaContent() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
             <thead>
               <tr>
-                {['営業所', ...QUOTA_CATEGORIES, 'ノルマ計', '前年実績', '積み上げ当初'].map((h) => (
+                {['営業所', ...QUOTA_CATEGORIES, 'ノルマ計', '前年実績', '本人計画額'].map((h) => (
                   <th key={h} style={{ ...planTh, textAlign: h === '営業所' ? 'left' : 'right' }}>
                     {h}
                   </th>
@@ -353,14 +355,19 @@ function AnnualQuotaContent() {
                         <input
                           value={amounts[office.key]?.[cat] || ''}
                           disabled={confirmed || saving}
-                          onChange={(e) => setCell(office.key, cat, e.target.value)}
-                          placeholder={priorByOfficeCat[office.key]?.[cat] ? String(Math.round(priorByOfficeCat[office.key][cat])) : ''}
+                          onChange={(e) => setCell(office.key, cat, formatQuotaAmountInput(e.target.value))}
+                          onBlur={(e) => setCell(office.key, cat, formatQuotaAmountInput(e.target.value))}
+                          placeholder={
+                            priorByOfficeCat[office.key]?.[cat]
+                              ? formatQuotaAmount(priorByOfficeCat[office.key][cat])
+                              : ''
+                          }
                           title={
                             priorByOfficeCat[office.key]?.[cat]
                               ? `前年実績 ${yen(priorByOfficeCat[office.key][cat])}`
                               : ''
                           }
-                          style={{ ...planInput, width: 110, textAlign: 'right' }}
+                          style={{ ...planInput, width: 128, textAlign: 'right' }}
                         />
                       </td>
                     ))}
@@ -400,7 +407,7 @@ function AnnualQuotaContent() {
           </table>
         </div>
         <p style={{ ...planMuted, fontSize: 12, marginBottom: 0 }}>
-          空欄は 0。プレースホルダは前年同科目の実績です。営業所名を押すと下で配分できます。
+          空欄は 0。プレースホルダは前年同科目の実績です。営業所名を押すと下で必達目標を設定できます。
         </p>
         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {!confirmed && (
@@ -433,20 +440,20 @@ function AnnualQuotaContent() {
 
       <section style={planPanel}>
         <h2 style={{ marginTop: 0, fontSize: 16, color: '#f8fafc' }}>
-          配分（任意） · {QUOTA_OFFICES.find((o) => o.key === openOffice)?.label}
+          必達目標（ノルマ）（任意） · {QUOTA_OFFICES.find((o) => o.key === openOffice)?.label}
         </h2>
         <p style={{ ...planMuted, marginTop: 0 }}>
-          ノルマの正は上の営業所計です。配分しなくても構いません。合計がノルマを超えると保存できません。
+          ノルマの正は上の営業所計です。必達目標は設定しなくても構いません。合計がノルマを超えると保存できません。
         </p>
         {officeStaffs.length === 0 ? (
           <p style={planMuted}>この営業所に営業担当者がいません。</p>
         ) : (
           <>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
                   <tr>
-                    {['担当者', '前年実績', '積み上げ当初', '配分'].map((h) => (
+                    {['担当者', '前年実績', '本人計画額', '必達目標（ノルマ）'].map((h) => (
                       <th key={h} style={{ ...planTh, textAlign: h === '担当者' ? 'left' : 'right' }}>
                         {h}
                       </th>
@@ -467,7 +474,12 @@ function AnnualQuotaContent() {
                         <input
                           value={allocEdits[staff.id] || ''}
                           disabled={confirmed || saving}
-                          onChange={(e) => setAllocEdits((prev) => ({ ...prev, [staff.id]: e.target.value }))}
+                          onChange={(e) =>
+                            setAllocEdits((prev) => ({ ...prev, [staff.id]: formatQuotaAmountInput(e.target.value) }))
+                          }
+                          onBlur={(e) =>
+                            setAllocEdits((prev) => ({ ...prev, [staff.id]: formatQuotaAmountInput(e.target.value) }))
+                          }
                           style={{ ...planInput, width: 140, textAlign: 'right' }}
                         />
                       </td>

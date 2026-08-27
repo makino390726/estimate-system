@@ -660,6 +660,16 @@ function AnnualPlanSheetContent() {
             ))}
           </select>
         </label>
+        <span style={{ alignSelf: 'center', color: '#e2e8f0', whiteSpace: 'nowrap' }}>
+          担当者必達額（ノルマ）{' '}
+          {staffAlloc && staffAlloc.amount > 0 ? (
+            <span style={{ color: '#f87171', fontWeight: 700 }}>
+              {staffAlloc.amount.toLocaleString('ja-JP')} 円
+            </span>
+          ) : (
+            <span style={planMuted}>未設定</span>
+          )}
+        </span>
         <span style={{ alignSelf: 'center', ...planMuted }}>
           {plan?.status === 'confirmed' ? '確定済（途中変更可）' : '下書き'}
           {loading ? ' …読込中' : ''}
@@ -668,15 +678,15 @@ function AnnualPlanSheetContent() {
 
       {staffAlloc && staffAlloc.amount > 0 ? (
         <AnnualQuotaHint
-          title="ノルマ配分（目安）"
+          title="必達目標（ノルマ）（目安）"
           quotaAmount={staffAlloc.amount}
           planAmount={totals.initial.amount}
-          caption="配分は会社目標の目安です。下の計画行には含まれません。"
+          caption="必達目標は会社目標の目安です。下の計画行には含まれません。"
         />
       ) : officeQuotaAmt > 0 ? (
         <p style={{ ...planMuted, marginTop: 0 }}>
-          営業所ノルマ {officeQuotaAmt.toLocaleString('ja-JP')} 円（未配分）。あなたの当初{' '}
-          {totals.initial.amount.toLocaleString('ja-JP')} 円。配分はノルマ画面で設定します。
+          営業所ノルマ {officeQuotaAmt.toLocaleString('ja-JP')} 円（必達目標は未設定）。あなたの当初{' '}
+          {totals.initial.amount.toLocaleString('ja-JP')} 円。必達目標はノルマ画面で設定します。
         </p>
       ) : null}
 

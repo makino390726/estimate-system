@@ -798,7 +798,7 @@ function AnnualDashboardContent() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['担当者', '状態', '配分', '当初', '中間計画', '見積成約', '見積対当初', 'Excel実績', 'Excel対当初', ''].map((h) => (
+              {['担当者', '状態', '必達目標（ノルマ）', '当初', '中間計画', '見積成約', '見積対当初', 'Excel実績', 'Excel対当初', ''].map((h) => (
                 <th key={h || 'actions'} style={planTh}>
                   {h}
                 </th>
