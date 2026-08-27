@@ -37,6 +37,7 @@ export type AnnualPlanLine = {
   gross_profit: number
   confidence: PlanConfidence
   change_kind?: PlanChangeKind | null
+  customer_name?: string | null
   created_at: string
 }
 
@@ -116,6 +117,11 @@ export function displayPlanLineMachine(line: Pick<AnnualPlanLine, 'machine_code'
   return formatPlanMachineLabel(String(line.machine_code || '').trim(), line.machine_name)
 }
 
+function normalizePlanRemarks(value: string | null | undefined): string | null {
+  const s = String(value || '').trim()
+  return s || null
+}
+
 export async function addPlanLine(input: {
   planId: string
   category: string
@@ -127,6 +133,7 @@ export async function addPlanLine(input: {
   confidence: PlanConfidence
   gross_profit?: number
   change_kind?: PlanChangeKind
+  customer_name?: string | null
   reason?: string
 }): Promise<AnnualPlanLine> {
   const machineCode = String(input.machine_code || '').trim() || LUMP_MACHINE_CODE
@@ -144,6 +151,7 @@ export async function addPlanLine(input: {
       gross_profit: input.gross_profit ?? defaultGrossProfit(input.amount),
       confidence: input.confidence,
       change_kind: changeKind,
+      customer_name: normalizePlanRemarks(input.customer_name),
     })
     .select('*')
     .single()
@@ -203,6 +211,41 @@ export async function updateLineChangeKind(
     new_payload: { change_kind: changeKind },
     actor_name: 'web',
   })
+  return data as AnnualPlanLine
+}
+
+export async function updatePlanLineCustomerName(
+  planId: string,
+  line: AnnualPlanLine,
+  customerName: string | null,
+): Promise<AnnualPlanLine> {
+  const next = normalizePlanRemarks(customerName)
+  const prev = normalizePlanRemarks(line.customer_name)
+  if (prev === next) return line
+  const lineId = String(line.id)
+  const { data, error } = await supabase
+    .from('annual_staff_plan_lines')
+    .update({
+      customer_name: next,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', lineId)
+    .select('*')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('備考の保存に失敗しました。行が見つかりません。')
+
+  const { error: logError } = await supabase.from('annual_staff_plan_changes').insert({
+    plan_id: planId,
+    line_id: lineId,
+    action: 'remark',
+    old_payload: { customer_name: prev },
+    new_payload: { customer_name: next },
+    actor_name: 'web',
+  })
+  if (logError) {
+    console.warn('annual plan remark log:', logError.message)
+  }
   return data as AnnualPlanLine
 }
 
@@ -409,6 +452,9 @@ export function formatPlanDbError(message: string): string {
     /schema cache/i.test(message) ||
     /does not exist/i.test(message)
   if (missing) {
+    if (/annual_office_quota/i.test(message) || /ノルマ/i.test(message)) {
+      return `営業所ノルマのテーブルが見つかりません。見積システムの Supabase で create_annual_office_quota_tables.sql を実行してください。詳細: ${message}`
+    }
     if (/annual_sales_actual/i.test(message) || /売上実績/i.test(message)) {
       return `売上実績テーブルが見つかりません。見積システムの Supabase で create_annual_sales_actual_tables.sql を実行してください。詳細: ${message}`
     }

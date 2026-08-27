@@ -287,13 +287,16 @@ export default function MasterSelectorPage() {
               <FiTrendingUp className="icon" />
               <h2>年度計画</h2>
             </div>
-            <p>担当者ごとに当初計画を作成し、見積成約と売上Excel実績の二段で進捗を確認できます。</p>
+            <p>担当者ごとに当初計画を作成し、営業所ノルマと見積成約・売上Excelで進捗を確認できます。</p>
             <div className="selector-card-buttons">
               <Link href="/plan/annual/sheet" className="selector-button primary">
                 年度計画シート
               </Link>
               <Link href="/plan/annual" className="selector-button primary">
                 年度計画進捗
+              </Link>
+              <Link href="/plan/annual/quota" className="selector-button primary">
+                営業所ノルマ
               </Link>
             </div>
           </div>

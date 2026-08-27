@@ -102,6 +102,19 @@ export function salesOfficeLabelFromStaff(staff: {
     return UNSET_SALES_OFFICE_LABEL
 }
 
+/** ノルマ保存キー。営業所マスタに無い部署は null（ノルマ対象外） */
+export function officeKeyFromStaff(staff: {
+    department?: string | null
+    branch_id?: string | null
+}): string | null {
+    return officeKeyFromLabel(salesOfficeLabelFromStaff(staff))
+}
+
+export function officeKeyFromLabel(label: string): string | null {
+    const found = BRANCHES.find((b) => b.name === label)
+    return found ? found.id : null
+}
+
 export function compareSalesOfficeLabel(a: string, b: string): number {
     const order = (label: string) => {
         const i = BRANCHES.findIndex((x) => x.name === label)

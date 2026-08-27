@@ -96,6 +96,7 @@ CREATE POLICY annual_staff_plan_changes_all ON public.annual_staff_plan_changes
 NOTIFY pgrst, 'reload schema';
 
 COMMENT ON TABLE public.annual_staff_plans IS '担当者×年度の当初計画ヘッダ。当初金額は確定時に凍結';
-COMMENT ON TABLE public.annual_staff_plan_lines IS '個人計画の1行（カテゴリ・機種・台数・金額・確度）';
+COMMENT ON TABLE public.annual_staff_plan_lines IS '個人計画の1行（カテゴリ・機種・台数・金額・確度・販売予定先）';
 COMMENT ON COLUMN public.annual_staff_plan_lines.machine_code IS 'factory-materials heater_models.model、または products.id';
+COMMENT ON COLUMN public.annual_staff_plan_lines.customer_name IS '備考（販売予定先）';
 COMMENT ON COLUMN public.annual_staff_plans.fiscal_year IS '年度の終了年。2027 = 2026/9/1–2027/8/31';

@@ -31,6 +31,7 @@ import {
   getOrCreatePlan,
   splitPlanTotals,
   updateLineChangeKind,
+  updatePlanLineCustomerName,
   updatePlanLineQtyAmount,
   planLineItemKey,
   fetchItemMonthProgress,
@@ -54,8 +55,16 @@ import {
   planTd,
   planTh,
 } from '@/lib/annualPlanUi'
-import { AnnualItemMonthProgress } from '@/components/AnnualItemMonthProgress'
+import { AnnualQuotaHint } from '@/components/AnnualQuotaHint'
 import { AnnualInitialLineTotals } from '@/components/AnnualInitialLineTotals'
+import { AnnualItemMonthProgress } from '@/components/AnnualItemMonthProgress'
+import { officeKeyFromStaff } from '@/lib/branches'
+import {
+  allocationForStaff,
+  fetchOfficeQuotas,
+  officeQuotaTotal,
+  type OfficeQuotaBundle,
+} from '@/lib/annualPlanQuota'
 import type { ItemMonthProgressResult } from '@/lib/annualPlanItemProgress'
 
 const PRODUCT_PAGE_SIZE = 20
@@ -101,11 +110,14 @@ function AnnualPlanSheetContent() {
   const [amount, setAmount] = useState('')
   const [confidence, setConfidence] = useState<PlanConfidence>('high')
   const [changeKind, setChangeKind] = useState<PlanChangeKind | null>(null)
+  const [customerName, setCustomerName] = useState('')
+  const [remarkEdits, setRemarkEdits] = useState<Record<string, string>>({})
   const [itemProgress, setItemProgress] = useState<ItemMonthProgressResult | null>(null)
   const [itemProgressLoading, setItemProgressLoading] = useState(false)
   const [excelByCategory, setExcelByCategory] = useState<Record<string, number>>({})
   const [interimEdits, setInterimEdits] = useState<Record<string, { qty: string; amount: string }>>({})
   const [saveHint, setSaveHint] = useState<{ id: string; text: string; ok: boolean } | null>(null)
+  const [quotas, setQuotas] = useState<OfficeQuotaBundle>({ year: null, lines: [], allocations: [] })
 
   const [otherName, setOtherName] = useState('')
   const [otherDraft, setOtherDraft] = useState('')
@@ -118,6 +130,10 @@ function AnnualPlanSheetContent() {
   const lumpMode = freeAmountMode
   const confirmed = plan?.status === 'confirmed'
   const totals = useMemo(() => splitPlanTotals(lines), [lines])
+  const selectedStaff = staffs.find((s) => s.id === staffId)
+  const officeKey = selectedStaff ? officeKeyFromStaff(selectedStaff) : null
+  const staffAlloc = allocationForStaff(quotas.allocations, staffId)
+  const officeQuotaAmt = officeKey ? officeQuotaTotal(quotas.lines, officeKey) : 0
   const selectedMachine = pickedProduct || machines.find((m) => m.code === machineCode) || null
   const qtyNum = Number(qty)
   const unitNum = Number(unitPrice)
@@ -134,6 +150,7 @@ function AnnualPlanSheetContent() {
     if (!staffId) {
       setPlan(null)
       setLines([])
+      setRemarkEdits({})
       return
     }
     setLoading(true)
@@ -143,10 +160,13 @@ function AnnualPlanSheetContent() {
       const nextLines = await fetchPlanLines(nextPlan.id)
       setPlan(nextPlan)
       setLines(nextLines)
+      setRemarkEdits({})
+      setRemarkEdits({})
     } catch (e) {
       setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
       setPlan(null)
       setLines([])
+      setRemarkEdits({})
     } finally {
       setLoading(false)
     }
@@ -169,6 +189,21 @@ function AnnualPlanSheetContent() {
   useEffect(() => {
     void loadPlan()
   }, [loadPlan])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await fetchOfficeQuotas(fiscalYear)
+        if (!cancelled) setQuotas(next)
+      } catch {
+        if (!cancelled) setQuotas({ year: null, lines: [], allocations: [] })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [fiscalYear])
 
   useEffect(() => {
     if (!staffId) {
@@ -339,9 +374,11 @@ function AnnualPlanSheetContent() {
         amount: amountNum,
         confidence,
         change_kind: confirmed ? changeKind || 'interim' : 'initial',
+        customer_name: customerName,
       })
       setLines((prev) => [...prev, line])
       setAmount('')
+      setCustomerName('')
       setPickedProduct(null)
       setProductQuery('')
       setProductHits([])
@@ -376,6 +413,16 @@ function AnnualPlanSheetContent() {
     try {
       await deletePlanLine(plan.id, line.id, reason || undefined)
       setLines((prev) => prev.filter((r) => r.id !== line.id))
+      setRemarkEdits((prev) => {
+        const next = { ...prev }
+        delete next[String(line.id)]
+        return next
+      })
+      setRemarkEdits((prev) => {
+        const next = { ...prev }
+        delete next[String(line.id)]
+        return next
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -413,6 +460,7 @@ function AnnualPlanSheetContent() {
           confidence: line.confidence,
           gross_profit: Number(line.gross_profit || 0),
           change_kind: 'interim',
+          customer_name: line.customer_name,
           reason: reason.trim(),
         })
         setLines((prev) => [...prev, created])
@@ -448,6 +496,11 @@ function AnnualPlanSheetContent() {
         setInterimEdits((prev) => {
           const next = { ...prev }
           delete next[line.id]
+          return next
+        })
+        setRemarkEdits((prev) => {
+          const next = { ...prev }
+          delete next[String(line.id)]
           return next
         })
       } else {
@@ -508,6 +561,28 @@ function AnnualPlanSheetContent() {
     }
   }
 
+  const handleSaveRemarks = async (line: AnnualPlanLine, value: string) => {
+    if (!plan) return
+    const next = value.trim()
+    const prev = String(line.customer_name || '').trim()
+    if (next === prev) return
+    setSaving(true)
+    setError('')
+    try {
+      const updated = await updatePlanLineCustomerName(plan.id, line, next)
+      setLines((prevLines) => prevLines.map((row) => (String(row.id) === String(updated.id) ? updated : row)))
+      setRemarkEdits((prevEdits) => {
+        const copy = { ...prevEdits }
+        delete copy[String(line.id)]
+        return copy
+      })
+    } catch (e) {
+      setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleConfirm = async () => {
     if (!plan || lines.length === 0) return
     if (plan.status === 'confirmed') return
@@ -534,6 +609,9 @@ function AnnualPlanSheetContent() {
         <div style={{ display: 'flex', gap: 8 }}>
           <Link href={`/plan/annual?fy=${fiscalYear}`}>
             <button style={{ ...planBtn, background: '#3b82f6', color: '#fff', borderColor: '#2563eb' }}>集計</button>
+          </Link>
+          <Link href={`/plan/annual/quota?fy=${fiscalYear}`}>
+            <button style={{ ...planBtn, background: '#b45309', color: '#fff', borderColor: '#b45309' }}>ノルマ</button>
           </Link>
           <Link href="/selectors">
             <button style={{ ...planBtn, background: '#16a34a', color: '#fff', borderColor: '#15803d' }}>メニューへ戻る</button>
@@ -587,6 +665,20 @@ function AnnualPlanSheetContent() {
           {loading ? ' …読込中' : ''}
         </span>
       </div>
+
+      {staffAlloc && staffAlloc.amount > 0 ? (
+        <AnnualQuotaHint
+          title="ノルマ配分（目安）"
+          quotaAmount={staffAlloc.amount}
+          planAmount={totals.initial.amount}
+          caption="配分は会社目標の目安です。下の計画行には含まれません。"
+        />
+      ) : officeQuotaAmt > 0 ? (
+        <p style={{ ...planMuted, marginTop: 0 }}>
+          営業所ノルマ {officeQuotaAmt.toLocaleString('ja-JP')} 円（未配分）。あなたの当初{' '}
+          {totals.initial.amount.toLocaleString('ja-JP')} 円。配分はノルマ画面で設定します。
+        </p>
+      ) : null}
 
       {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
 
@@ -833,6 +925,15 @@ function AnnualPlanSheetContent() {
               />
             </label>
           )}
+          <label style={{ gridColumn: '1 / -1', color: '#e2e8f0' }}>
+            備考（販売予定先）
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="得意先名・農協名など（任意）"
+              style={inputStyle}
+            />
+          </label>
         </div>
         {!lumpMode && !otherMode && (
           <p style={{ ...planMuted, marginBottom: 0 }}>
@@ -894,11 +995,11 @@ function AnnualPlanSheetContent() {
 
       <h2 style={{ fontSize: 16, color: '#f8fafc' }}>追加済みの行</h2>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
           <thead>
             <tr>
-              {['区分', 'カテゴリ', '機種（品名）', '台数', '計画額', '粗利', '確度', ''].map((h) => (
-                <th key={h || 'actions'} style={{ ...planTh, textAlign: h === 'カテゴリ' || h.startsWith('機種') || h === '区分' ? 'left' : 'right' }}>
+              {['区分', 'カテゴリ', '機種（品名）', '備考（販売予定先）', '台数', '計画額', '粗利', '確度', ''].map((h) => (
+                <th key={h || 'actions'} style={{ ...planTh, textAlign: h === 'カテゴリ' || h.startsWith('機種') || h === '区分' || h.startsWith('備考') ? 'left' : 'right' }}>
                   {h}
                 </th>
               ))}
@@ -907,7 +1008,7 @@ function AnnualPlanSheetContent() {
           <tbody>
             {lines.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={9} style={{ ...planTd, color: '#94a3b8' }}>
                   まだ行がありません。上のフォームから追加してください。
                 </td>
               </tr>
@@ -925,6 +1026,26 @@ function AnnualPlanSheetContent() {
                 <td style={planTd}>{CHANGE_KIND_LABEL[lineChangeKind(line)]}</td>
                 <td style={planTd}>{displayPlanCategory(line.category)}</td>
                 <td style={planTd}>{displayPlanLineMachine(line)}</td>
+                <td style={planTd}>
+                  <input
+                    value={remarkEdits[lineId] ?? (line.customer_name || '')}
+                    disabled={saving}
+                    onChange={(e) =>
+                      setRemarkEdits((prev) => ({
+                        ...prev,
+                        [lineId]: e.target.value,
+                      }))
+                    }
+                    onBlur={(e) => void handleSaveRemarks(line, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur()
+                      }
+                    }}
+                    placeholder="任意"
+                    style={{ ...inputStyle, minWidth: 140 }}
+                  />
+                </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>
                   {interim ? (
                     <input
