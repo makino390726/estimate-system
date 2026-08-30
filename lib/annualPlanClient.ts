@@ -113,6 +113,40 @@ export async function fetchPlanLines(planId: string): Promise<AnnualPlanLine[]> 
   return (data || []) as AnnualPlanLine[]
 }
 
+export type AnnualPlanChange = {
+  line_id: string | null
+  action: string
+  reason: string | null
+  created_at: string
+}
+
+export async function fetchPlanChanges(planId: string): Promise<AnnualPlanChange[]> {
+  const { data, error } = await supabase
+    .from('annual_staff_plan_changes')
+    .select('line_id, action, reason, created_at')
+    .eq('plan_id', planId)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data || []).map((row) => ({
+    line_id: row.line_id ? String(row.line_id) : null,
+    action: String(row.action || ''),
+    reason: row.reason ? String(row.reason) : null,
+    created_at: String(row.created_at || ''),
+  }))
+}
+
+/** 行ごとの最新の変更理由。数量保存時の定型「中間修正」は除外 */
+export function latestChangeReasonByLine(changes: AnnualPlanChange[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const c of changes) {
+    const id = String(c.line_id || '')
+    const reason = String(c.reason || '').trim()
+    if (!id || !reason || reason === '中間修正' || out[id]) continue
+    out[id] = reason
+  }
+  return out
+}
+
 export function displayPlanLineMachine(line: Pick<AnnualPlanLine, 'machine_code' | 'machine_name'>): string {
   return formatPlanMachineLabel(String(line.machine_code || '').trim(), line.machine_name)
 }

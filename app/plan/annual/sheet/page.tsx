@@ -25,8 +25,10 @@ import {
   confirmPlan,
   deletePlanLine,
   displayPlanLineMachine,
+  fetchPlanChanges,
   fetchPlanLines,
   fetchPlanStaffs,
+  latestChangeReasonByLine,
   formatPlanDbError,
   getOrCreatePlan,
   splitPlanTotals,
@@ -118,6 +120,7 @@ function AnnualPlanSheetContent() {
   const [interimEdits, setInterimEdits] = useState<Record<string, { qty: string; amount: string }>>({})
   const [saveHint, setSaveHint] = useState<{ id: string; text: string; ok: boolean } | null>(null)
   const [quotas, setQuotas] = useState<OfficeQuotaBundle>({ year: null, lines: [], allocations: [] })
+  const [changeReasons, setChangeReasons] = useState<Record<string, string>>({})
 
   const [otherName, setOtherName] = useState('')
   const [otherDraft, setOtherDraft] = useState('')
@@ -151,22 +154,27 @@ function AnnualPlanSheetContent() {
       setPlan(null)
       setLines([])
       setRemarkEdits({})
+      setChangeReasons({})
       return
     }
     setLoading(true)
     setError('')
     try {
       const nextPlan = await getOrCreatePlan(fiscalYear, staffId)
-      const nextLines = await fetchPlanLines(nextPlan.id)
+      const [nextLines, nextChanges] = await Promise.all([
+        fetchPlanLines(nextPlan.id),
+        fetchPlanChanges(nextPlan.id).catch(() => []),
+      ])
       setPlan(nextPlan)
       setLines(nextLines)
-      setRemarkEdits({})
+      setChangeReasons(latestChangeReasonByLine(nextChanges))
       setRemarkEdits({})
     } catch (e) {
       setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
       setPlan(null)
       setLines([])
       setRemarkEdits({})
+      setChangeReasons({})
     } finally {
       setLoading(false)
     }
@@ -355,6 +363,12 @@ function AnnualPlanSheetContent() {
   const handleAdd = async () => {
     if (!plan || !canAdd) return
     if (!lumpMode && !otherMode && !selectedMachine) return
+    const nextKind = confirmed ? changeKind || 'interim' : 'initial'
+    const reason =
+      confirmed && nextKind === 'interim'
+        ? window.prompt('中間計画の変更理由を入力してください。', '')
+        : undefined
+    if (confirmed && nextKind === 'interim' && (reason == null || !reason.trim())) return
     setSaving(true)
     setError('')
     try {
@@ -373,10 +387,14 @@ function AnnualPlanSheetContent() {
         qty: lumpMode || otherMode ? (qtyNum > 0 ? qtyNum : 0) : qtyNum,
         amount: amountNum,
         confidence,
-        change_kind: confirmed ? changeKind || 'interim' : 'initial',
+        change_kind: nextKind,
         customer_name: customerName,
+        reason: reason?.trim(),
       })
       setLines((prev) => [...prev, line])
+      if (reason?.trim()) {
+        setChangeReasons((prev) => ({ ...prev, [String(line.id)]: reason.trim() }))
+      }
       setAmount('')
       setCustomerName('')
       setPickedProduct(null)
@@ -464,6 +482,7 @@ function AnnualPlanSheetContent() {
           reason: reason.trim(),
         })
         setLines((prev) => [...prev, created])
+        setChangeReasons((prev) => ({ ...prev, [String(created.id)]: reason.trim() }))
         setInterimEdits((prev) => ({
           ...prev,
           [String(created.id)]: {
@@ -1005,11 +1024,11 @@ function AnnualPlanSheetContent() {
 
       <h2 style={{ fontSize: 16, color: '#f8fafc' }}>追加済みの行</h2>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1120 }}>
           <thead>
             <tr>
-              {['区分', 'カテゴリ', '機種（品名）', '備考（販売予定先）', '台数', '計画額', '粗利', '確度', ''].map((h) => (
-                <th key={h || 'actions'} style={{ ...planTh, textAlign: h === 'カテゴリ' || h.startsWith('機種') || h === '区分' || h.startsWith('備考') ? 'left' : 'right' }}>
+              {['区分', '変更理由', 'カテゴリ', '機種（品名）', '備考（販売予定先）', '台数', '計画額', '粗利', '確度', ''].map((h) => (
+                <th key={h || 'actions'} style={{ ...planTh, textAlign: h === 'カテゴリ' || h.startsWith('機種') || h === '区分' || h === '変更理由' || h.startsWith('備考') ? 'left' : 'right' }}>
                   {h}
                 </th>
               ))}
@@ -1018,7 +1037,7 @@ function AnnualPlanSheetContent() {
           <tbody>
             {lines.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={10} style={{ ...planTd, color: '#94a3b8' }}>
                   まだ行がありません。上のフォームから追加してください。
                 </td>
               </tr>
@@ -1034,6 +1053,13 @@ function AnnualPlanSheetContent() {
               return (
               <tr key={lineId} style={interim ? { background: 'rgba(251, 191, 36, 0.08)' } : undefined}>
                 <td style={planTd}>{CHANGE_KIND_LABEL[lineChangeKind(line)]}</td>
+                <td style={{ ...planTd, maxWidth: 220, whiteSpace: 'pre-wrap' }}>
+                  {changeReasons[lineId] ? (
+                    <span style={{ color: interim ? '#fde68a' : '#cbd5e1' }}>{changeReasons[lineId]}</span>
+                  ) : (
+                    <span style={planMuted}>{interim ? '—' : ''}</span>
+                  )}
+                </td>
                 <td style={planTd}>{displayPlanCategory(line.category)}</td>
                 <td style={planTd}>{displayPlanLineMachine(line)}</td>
                 <td style={planTd}>
