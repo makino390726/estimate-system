@@ -297,7 +297,7 @@ export async function confirmOfficeQuotas(fiscalYear: number): Promise<OfficeQuo
   await ensureQuotaYear(fiscalYear)
   const bundle = await fetchOfficeQuotas(fiscalYear)
   if (companyQuotaTotal(bundle.lines) <= 0) throw new Error('ノルマ合計が 0 のため確定できません。')
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('annual_office_quota_years')
     .update({
       status: 'confirmed',
@@ -305,13 +305,17 @@ export async function confirmOfficeQuotas(fiscalYear: number): Promise<OfficeQuo
       updated_at: new Date().toISOString(),
     })
     .eq('fiscal_year', fiscalYear)
+    .select('fiscal_year, status, confirmed_at')
+    .maybeSingle()
   if (error) throw new Error(error.message)
+  if (!data) throw new Error('確定できませんでした。年度データが見つかりません。')
+  if (data.status !== 'confirmed') throw new Error('確定できませんでした。状態が更新されていません。')
   return fetchOfficeQuotas(fiscalYear)
 }
 
 export async function reopenOfficeQuotas(fiscalYear: number): Promise<OfficeQuotaBundle> {
   await ensureQuotaYear(fiscalYear)
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('annual_office_quota_years')
     .update({
       status: 'draft',
@@ -319,7 +323,11 @@ export async function reopenOfficeQuotas(fiscalYear: number): Promise<OfficeQuot
       updated_at: new Date().toISOString(),
     })
     .eq('fiscal_year', fiscalYear)
+    .select('fiscal_year, status, confirmed_at')
+    .maybeSingle()
   if (error) throw new Error(error.message)
+  if (!data) throw new Error('改定できませんでした。年度データが見つかりません。')
+  if (data.status === 'confirmed') throw new Error('改定できませんでした。確定のままです。')
   return fetchOfficeQuotas(fiscalYear)
 }
 

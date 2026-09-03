@@ -77,12 +77,15 @@ function AnnualQuotaContent() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [hint, setHint] = useState('')
+  const [wasConfirmed, setWasConfirmed] = useState(false)
 
   const confirmed = bundle.year?.status === 'confirmed'
+  const locked = confirmed || saving
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
+    setHint('')
     try {
       const [staffList, plans, priorSales, currentSales] = await Promise.all([
         fetchPlanStaffs(),
@@ -139,6 +142,7 @@ function AnnualQuotaContent() {
 
       setStaffs(staffList)
       setBundle(quota)
+      setWasConfirmed(quota.year?.status === 'confirmed')
       setAmounts(amountsFromLines(quota.lines))
       setPlanByOfficeCat(nextPlan)
       setPlanByStaffId(nextPlanByStaff)
@@ -201,15 +205,24 @@ function AnnualQuotaContent() {
   }
 
   const handleConfirm = async () => {
-    if (!window.confirm('この年度の営業所ノルマを確定します。確定後の修正は「改定」が必要です。')) return
+    if (
+      !window.confirm(
+        wasConfirmed
+          ? 'この年度の営業所ノルマを再確定します。確定後の修正は「再編集」が必要です。'
+          : 'この年度の営業所ノルマを確定します。確定後の修正は「再編集」が必要です。',
+      )
+    )
+      return
     setSaving(true)
     setError('')
+    setHint('')
     try {
       const saved = await saveOfficeQuotaGrid(fiscalYear, amounts)
       setBundle(saved)
       const next = await confirmOfficeQuotas(fiscalYear)
       setBundle(next)
-      setHint('確定しました')
+      setWasConfirmed(true)
+      setHint('確定しました。金額を直すときは「再編集」を押してください。')
     } catch (e) {
       setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
     } finally {
@@ -218,13 +231,20 @@ function AnnualQuotaContent() {
   }
 
   const handleReopen = async () => {
-    if (!window.confirm('確定を取り消して下書きに戻します。')) return
+    if (
+      !window.confirm(
+        '確定を解除して再編集できるようにします。入力済みの金額はそのまま残ります。直し終わったら保存し、必要なら再度「確定」してください。',
+      )
+    )
+      return
     setSaving(true)
     setError('')
+    setHint('')
     try {
       const next = await reopenOfficeQuotas(fiscalYear)
       setBundle(next)
-      setHint('下書きに戻しました')
+      setWasConfirmed(true)
+      setHint('再編集できます。営業所×科目と必達目標を直して保存し、必要なら再度「確定」してください。')
     } catch (e) {
       setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
     } finally {
@@ -298,7 +318,7 @@ function AnnualQuotaContent() {
       </div>
 
       <p style={{ ...planMuted, marginTop: 0 }}>
-        {fiscalYearLabel(fiscalYear)}。会社目標は営業所×科目の金額です。管理部（購買）・企画部（SE・海外）も含みます。担当者の積み上げとは別で、個人シートの行には書き戻りません。前年実績は既存の売上取込の参考値です。
+        {fiscalYearLabel(fiscalYear)}。会社目標は営業所×科目の金額です。管理部（購買）・企画部（SE・海外）も含みます。担当者の積み上げとは別で、個人シートの行には書き戻りません。前年実績は既存の売上取込の参考値です。確定後も「再編集」で金額・配分を直せます。
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
@@ -313,14 +333,29 @@ function AnnualQuotaContent() {
           </select>
         </label>
         <span style={planMuted}>
-          {confirmed ? '確定済' : '下書き'}
+          {confirmed ? '確定済' : wasConfirmed ? '下書き（再編集中）' : '下書き'}
           {loading ? ' …読込中' : ''}
         </span>
+        {confirmed && (
+          <button
+            type="button"
+            onClick={() => void handleReopen()}
+            disabled={saving || loading}
+            style={{ ...planBtn, background: '#b45309', color: '#fff', borderColor: '#b45309' }}
+          >
+            再編集
+          </button>
+        )}
         <span style={{ marginLeft: 'auto', ...planMuted }}>会社計 {yen(gridCompanyTotal)}</span>
       </div>
 
       {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
       {hint && <p style={{ color: '#86efac' }}>{hint}</p>}
+      {confirmed && !error && (
+        <p style={{ color: '#fde68a' }}>
+          確定済みです。営業所×科目や必達目標を直すには「再編集」を押してください。金額はそのまま残ります。
+        </p>
+      )}
 
       <section style={planPanel}>
         <h2 style={{ marginTop: 0, fontSize: 16, color: '#f8fafc' }}>営業所 × 科目</h2>
@@ -354,7 +389,7 @@ function AnnualQuotaContent() {
                       <td key={cat} style={{ ...planTd, textAlign: 'right' }}>
                         <input
                           value={amounts[office.key]?.[cat] || ''}
-                          disabled={confirmed || saving}
+                          disabled={locked}
                           onChange={(e) => setCell(office.key, cat, formatQuotaAmountInput(e.target.value))}
                           onBlur={(e) => setCell(office.key, cat, formatQuotaAmountInput(e.target.value))}
                           placeholder={
@@ -427,12 +462,17 @@ function AnnualQuotaContent() {
               disabled={saving || loading || gridCompanyTotal <= 0}
               style={{ ...planBtn, background: '#0f766e', color: '#fff', borderColor: '#0f766e', opacity: gridCompanyTotal > 0 ? 1 : 0.5 }}
             >
-              確定
+              {wasConfirmed ? '再確定' : '確定'}
             </button>
           )}
           {confirmed && (
-            <button type="button" onClick={() => void handleReopen()} disabled={saving} style={planBtn}>
-              改定（下書きに戻す）
+            <button
+              type="button"
+              onClick={() => void handleReopen()}
+              disabled={saving || loading}
+              style={{ ...planBtn, background: '#b45309', color: '#fff', borderColor: '#b45309' }}
+            >
+              再編集（改定）
             </button>
           )}
         </div>
@@ -473,7 +513,7 @@ function AnnualQuotaContent() {
                       <td style={{ ...planTd, textAlign: 'right' }}>
                         <input
                           value={allocEdits[staff.id] || ''}
-                          disabled={confirmed || saving}
+                          disabled={locked}
                           onChange={(e) =>
                             setAllocEdits((prev) => ({ ...prev, [staff.id]: formatQuotaAmountInput(e.target.value) }))
                           }
@@ -523,6 +563,19 @@ function AnnualQuotaContent() {
                   style={{ ...planBtn, background: '#b45309', color: '#fff', borderColor: '#b45309', opacity: allocRemain < 0 ? 0.5 : 1 }}
                 >
                   配分を保存
+                </button>
+              </div>
+            )}
+            {confirmed && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={planMuted}>必達目標を直すには再編集してください。</span>
+                <button
+                  type="button"
+                  onClick={() => void handleReopen()}
+                  disabled={saving || loading}
+                  style={{ ...planBtn, background: '#b45309', color: '#fff', borderColor: '#b45309' }}
+                >
+                  再編集
                 </button>
               </div>
             )}

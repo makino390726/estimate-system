@@ -33,6 +33,7 @@ import {
   getOrCreatePlan,
   splitPlanTotals,
   updateLineChangeKind,
+  updatePlanLineConfidence,
   updatePlanLineCustomerName,
   updatePlanLineQtyAmount,
   planLineItemKey,
@@ -157,6 +158,8 @@ function AnnualPlanSheetContent() {
       setPlan(null)
       setLines([])
       setRemarkEdits({})
+      setInterimEdits({})
+      setSaveHint(null)
       setChangeReasons({})
       return
     }
@@ -172,11 +175,15 @@ function AnnualPlanSheetContent() {
       setLines(nextLines)
       setChangeReasons(latestChangeReasonByLine(nextChanges))
       setRemarkEdits({})
+      setInterimEdits({})
+      setSaveHint(null)
     } catch (e) {
       setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
       setPlan(null)
       setLines([])
       setRemarkEdits({})
+      setInterimEdits({})
+      setSaveHint(null)
       setChangeReasons({})
     } finally {
       setLoading(false)
@@ -450,7 +457,7 @@ function AnnualPlanSheetContent() {
         delete next[String(line.id)]
         return next
       })
-      setRemarkEdits((prev) => {
+      setInterimEdits((prev) => {
         const next = { ...prev }
         delete next[String(line.id)]
         return next
@@ -555,12 +562,15 @@ function AnnualPlanSheetContent() {
     }
   }
 
-  const handleSaveInterim = async (line: AnnualPlanLine) => {
+  const handleSaveLineQtyAmount = async (line: AnnualPlanLine) => {
     if (!plan) {
       setError('計画が読み込めていません。画面を再読み込みしてください。')
       return
     }
     const lineId = String(line.id)
+    const interim = lineChangeKind(line) === 'interim'
+    const draft = plan.status !== 'confirmed'
+    if (!draft && !interim) return
     const edit = interimEdits[lineId] || interimEdits[line.id] || {
       qty: Number(line.qty) > 0 ? String(line.qty) : '',
       amount: String(Math.round(Number(line.amount) || 0)),
@@ -568,18 +578,26 @@ function AnnualPlanSheetContent() {
     const qty = parsePlanNumber(edit.qty)
     const amount = parsePlanNumber(edit.amount)
     if (!Number.isFinite(amount) || !(amount > 0)) {
-      const msg = '中間修正の計画額を入力してください。'
+      const msg = '計画額を入力してください。'
       setError(msg)
       setSaveHint({ id: lineId, text: msg, ok: false })
       return
     }
-    const nextCurrent =
-      totals.current.amount - Math.round(Number(line.amount || 0)) + Math.round(amount)
-    const quotaMsg = quotaFloorError(nextCurrent, staffQuotaAmt)
-    if (quotaMsg) {
-      setError(quotaMsg)
-      setSaveHint({ id: lineId, text: quotaMsg, ok: false })
+    const nextQty = Number.isFinite(qty) && qty > 0 ? qty : 0
+    const nextAmount = Math.round(amount)
+    if (nextQty === Number(line.qty || 0) && nextAmount === Math.round(Number(line.amount) || 0)) {
+      setSaveHint({ id: lineId, text: '変更はありません', ok: true })
       return
+    }
+    if (plan.status === 'confirmed') {
+      const nextCurrent =
+        totals.current.amount - Math.round(Number(line.amount || 0)) + nextAmount
+      const quotaMsg = quotaFloorError(nextCurrent, staffQuotaAmt)
+      if (quotaMsg) {
+        setError(quotaMsg)
+        setSaveHint({ id: lineId, text: quotaMsg, ok: false })
+        return
+      }
     }
     setSaving(true)
     setError('')
@@ -588,9 +606,9 @@ function AnnualPlanSheetContent() {
       const updated = await updatePlanLineQtyAmount(
         plan.id,
         { ...line, id: lineId },
-        Number.isFinite(qty) && qty > 0 ? qty : 0,
-        amount,
-        '中間修正',
+        nextQty,
+        nextAmount,
+        interim ? '中間修正' : undefined,
       )
       setLines((prev) => prev.map((row) => (String(row.id) === String(updated.id) ? updated : row)))
       setInterimEdits((prev) => ({
@@ -605,6 +623,20 @@ function AnnualPlanSheetContent() {
       const msg = formatPlanDbError(e instanceof Error ? e.message : String(e))
       setError(msg)
       setSaveHint({ id: lineId, text: msg, ok: false })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveConfidence = async (line: AnnualPlanLine, confidence: PlanConfidence) => {
+    if (!plan || line.confidence === confidence) return
+    setSaving(true)
+    setError('')
+    try {
+      const updated = await updatePlanLineConfidence(plan.id, line, confidence)
+      setLines((prev) => prev.map((row) => (String(row.id) === String(updated.id) ? updated : row)))
+    } catch (e) {
+      setError(formatPlanDbError(e instanceof Error ? e.message : String(e)))
     } finally {
       setSaving(false)
     }
@@ -676,7 +708,7 @@ function AnnualPlanSheetContent() {
         {fiscalYearLabel(fiscalYear)}。生産品（暖房機・たばこ乾燥機など）は機種マスタから選ぶと定価×数量です。「その他」を選ぶと品名を入力でき、Excel実績は機種指定分を除いた商品CD範囲で集計します。肥料・農薬・資材・工事も同様です。
         {confirmed
           ? ' 確定後の「中間へ」は、当初の行を残したまま中間修正計画を作ります。中間修正の行で数量・金額を変更してください。同じ品名は中間計画では中間修正の数量・金額に置き換わります。上のフォームから追加する場合は「当初計画の変更」か「中間計画の変更」を選んでください。'
-          : ' 下書きの行は確定時に当初計画になります。必達目標がある場合、当初計画はノルマ以上が必要です（上限なし）。'}
+          : ' 下書きの行は確定時に当初計画になります。追加済みの行は数量・計画額・確度・備考を表で編集できます。必達目標がある場合、当初計画はノルマ以上が必要です（上限なし）。'}
       </p>
       {staffs.length === 0 && (
         <p style={{ color: '#fde68a' }}>
@@ -1079,6 +1111,7 @@ function AnnualPlanSheetContent() {
             {lines.map((line) => {
               const lineId = String(line.id)
               const interim = lineChangeKind(line) === 'interim'
+              const canEditQtyAmount = !confirmed || interim
               const edit = interimEdits[lineId] || {
                 qty: Number(line.qty) > 0 ? String(line.qty) : '',
                 amount: String(Math.round(Number(line.amount) || 0)),
@@ -1117,7 +1150,7 @@ function AnnualPlanSheetContent() {
                   />
                 </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>
-                  {interim ? (
+                  {canEditQtyAmount ? (
                     <input
                       type="number"
                       min={0}
@@ -1145,7 +1178,7 @@ function AnnualPlanSheetContent() {
                   )}
                 </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>
-                  {interim ? (
+                  {canEditQtyAmount ? (
                     <input
                       type="number"
                       min={0}
@@ -1165,7 +1198,21 @@ function AnnualPlanSheetContent() {
                   )}
                 </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{Number(line.gross_profit).toLocaleString('ja-JP')}</td>
-                <td style={{ ...planTd, textAlign: 'center' }}>{CONFIDENCE_LABEL[line.confidence]}</td>
+                <td style={{ ...planTd, textAlign: 'center' }}>
+                  <select
+                    value={line.confidence}
+                    disabled={saving}
+                    aria-label="確度"
+                    onChange={(e) => void handleSaveConfidence(line, e.target.value as PlanConfidence)}
+                    style={{ ...inputStyle, width: 72, minWidth: 72, textAlign: 'center' }}
+                  >
+                    {CONFIDENCE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {CONFIDENCE_LABEL[opt.value]}
+                      </option>
+                    ))}
+                  </select>
+                </td>
                 <td style={{ ...planTd, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {confirmed && (
                     <button
@@ -1177,15 +1224,19 @@ function AnnualPlanSheetContent() {
                       {interim ? '当初へ' : '中間へ'}
                     </button>
                   )}
-                  {interim && (
+                  {canEditQtyAmount && (
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => void handleSaveInterim(line)}
+                      onClick={() => void handleSaveLineQtyAmount(line)}
                       disabled={saving}
                       style={{ ...planBtn, marginRight: 6, background: '#b45309', color: '#fff', borderColor: '#b45309' }}
                     >
-                      {saveHint?.id === lineId && saveHint.text === '保存中…' ? '保存中…' : '修正を保存'}
+                      {saveHint?.id === lineId && saveHint.text === '保存中…'
+                        ? '保存中…'
+                        : interim
+                          ? '修正を保存'
+                          : '保存'}
                     </button>
                   )}
                   <button type="button" onClick={() => void handleDelete(line)} disabled={saving} style={planBtn}>

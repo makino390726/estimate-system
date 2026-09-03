@@ -306,7 +306,7 @@ export async function updatePlanLineQtyAmount(
     .select('*')
     .maybeSingle()
   if (error) throw new Error(error.message)
-  if (!data) throw new Error('中間修正の保存に失敗しました。行が見つかりません。')
+  if (!data) throw new Error('計画行の保存に失敗しました。行が見つかりません。')
 
   const { error: logError } = await supabase.from('annual_staff_plan_changes').insert({
     plan_id: planId,
@@ -319,6 +319,39 @@ export async function updatePlanLineQtyAmount(
   })
   if (logError) {
     console.warn('annual plan revise log:', logError.message)
+  }
+  return data as AnnualPlanLine
+}
+
+export async function updatePlanLineConfidence(
+  planId: string,
+  line: AnnualPlanLine,
+  confidence: PlanConfidence,
+): Promise<AnnualPlanLine> {
+  if (line.confidence === confidence) return line
+  const lineId = String(line.id)
+  const { data, error } = await supabase
+    .from('annual_staff_plan_lines')
+    .update({
+      confidence,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', lineId)
+    .select('*')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('確度の保存に失敗しました。行が見つかりません。')
+
+  const { error: logError } = await supabase.from('annual_staff_plan_changes').insert({
+    plan_id: planId,
+    line_id: lineId,
+    action: 'confidence',
+    old_payload: { confidence: line.confidence },
+    new_payload: { confidence },
+    actor_name: 'web',
+  })
+  if (logError) {
+    console.warn('annual plan confidence log:', logError.message)
   }
   return data as AnnualPlanLine
 }
