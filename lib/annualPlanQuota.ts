@@ -109,6 +109,26 @@ export function allocationForStaff(
   return allocations.find((a) => a.staff_id === staffId)
 }
 
+export function staffQuotaAmount(allocations: OfficeQuotaAllocation[], staffId: string): number {
+  const n = Math.round(Number(allocationForStaff(allocations, staffId)?.amount || 0))
+  return n > 0 ? n : 0
+}
+
+/** ノルマ未設定なら制限なし。設定時は計画額がノルマ未満ならエラー（上限はなし） */
+export function quotaFloorError(planAmount: number, quotaAmount: number): string | null {
+  const quota = Math.round(Number(quotaAmount) || 0)
+  if (!(quota > 0)) return null
+  const plan = Math.round(Number(planAmount) || 0)
+  if (plan >= quota) return null
+  const short = quota - plan
+  return `計画額がノルマ（${quota.toLocaleString('ja-JP')} 円）を下回っています。不足 ${short.toLocaleString('ja-JP')} 円。ノルマ以上なら上限なく登録できます。`
+}
+
+export function assertPlanMeetsQuotaFloor(planAmount: number, quotaAmount: number): void {
+  const msg = quotaFloorError(planAmount, quotaAmount)
+  if (msg) throw new Error(msg)
+}
+
 function mapLines(
   rows: Array<{ office_key?: string; plan_category?: string; amount?: number | string | null }>,
 ): OfficeQuotaLine[] {

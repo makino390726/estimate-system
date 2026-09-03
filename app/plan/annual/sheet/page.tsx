@@ -65,6 +65,7 @@ import {
   allocationForStaff,
   fetchOfficeQuotas,
   officeQuotaTotal,
+  quotaFloorError,
   type OfficeQuotaBundle,
 } from '@/lib/annualPlanQuota'
 import type { ItemMonthProgressResult } from '@/lib/annualPlanItemProgress'
@@ -137,6 +138,8 @@ function AnnualPlanSheetContent() {
   const officeKey = selectedStaff ? officeKeyFromStaff(selectedStaff) : null
   const staffAlloc = allocationForStaff(quotas.allocations, staffId)
   const officeQuotaAmt = officeKey ? officeQuotaTotal(quotas.lines, officeKey) : 0
+  const staffQuotaAmt = staffAlloc && staffAlloc.amount > 0 ? Math.round(staffAlloc.amount) : 0
+  const confirmQuotaError = quotaFloorError(totals.initial.amount, staffQuotaAmt)
   const selectedMachine = pickedProduct || machines.find((m) => m.code === machineCode) || null
   const qtyNum = Number(qty)
   const unitNum = Number(unitPrice)
@@ -419,6 +422,17 @@ function AnnualPlanSheetContent() {
 
   const handleDelete = async (line: AnnualPlanLine) => {
     if (!plan) return
+    if (plan.status === 'confirmed' && staffQuotaAmt > 0) {
+      const next = splitPlanTotals(lines.filter((r) => r.id !== line.id))
+      const msg = quotaFloorError(
+        lineChangeKind(line) === 'initial' ? next.initial.amount : next.current.amount,
+        staffQuotaAmt,
+      )
+      if (msg) {
+        setError(msg)
+        return
+      }
+    }
     const reason =
       plan.status === 'confirmed'
         ? window.prompt(
@@ -501,6 +515,14 @@ function AnnualPlanSheetContent() {
     const hasInitial = lines.some(
       (row) => row.id !== line.id && lineChangeKind(row) === 'initial' && planLineItemKey(row) === planLineItemKey(line),
     )
+    if (hasInitial && staffQuotaAmt > 0) {
+      const next = splitPlanTotals(lines.filter((row) => row.id !== line.id))
+      const msg = quotaFloorError(next.current.amount, staffQuotaAmt)
+      if (msg) {
+        setError(msg)
+        return
+      }
+    }
     const reason = window.prompt(
       hasInitial ? '中間修正を取り消して当初計画に戻す理由' : 'この行を当初計画へ移す理由',
       '',
@@ -549,6 +571,14 @@ function AnnualPlanSheetContent() {
       const msg = '中間修正の計画額を入力してください。'
       setError(msg)
       setSaveHint({ id: lineId, text: msg, ok: false })
+      return
+    }
+    const nextCurrent =
+      totals.current.amount - Math.round(Number(line.amount || 0)) + Math.round(amount)
+    const quotaMsg = quotaFloorError(nextCurrent, staffQuotaAmt)
+    if (quotaMsg) {
+      setError(quotaMsg)
+      setSaveHint({ id: lineId, text: quotaMsg, ok: false })
       return
     }
     setSaving(true)
@@ -605,6 +635,10 @@ function AnnualPlanSheetContent() {
   const handleConfirm = async () => {
     if (!plan || lines.length === 0) return
     if (plan.status === 'confirmed') return
+    if (confirmQuotaError) {
+      setError(confirmQuotaError)
+      return
+    }
     if (!window.confirm('現在の行合計を当初計画として確定します。確定後の追加は、当初の変更（経営上乗せなど）か中間計画の変更かを選んで登録できます。')) return
     setSaving(true)
     try {
@@ -642,7 +676,7 @@ function AnnualPlanSheetContent() {
         {fiscalYearLabel(fiscalYear)}。生産品（暖房機・たばこ乾燥機など）は機種マスタから選ぶと定価×数量です。「その他」を選ぶと品名を入力でき、Excel実績は機種指定分を除いた商品CD範囲で集計します。肥料・農薬・資材・工事も同様です。
         {confirmed
           ? ' 確定後の「中間へ」は、当初の行を残したまま中間修正計画を作ります。中間修正の行で数量・金額を変更してください。同じ品名は中間計画では中間修正の数量・金額に置き換わります。上のフォームから追加する場合は「当初計画の変更」か「中間計画の変更」を選んでください。'
-          : ' 下書きの行は確定時に当初計画になります。'}
+          : ' 下書きの行は確定時に当初計画になります。必達目標がある場合、当初計画はノルマ以上が必要です（上限なし）。'}
       </p>
       {staffs.length === 0 && (
         <p style={{ color: '#fde68a' }}>
@@ -697,10 +731,10 @@ function AnnualPlanSheetContent() {
 
       {staffAlloc && staffAlloc.amount > 0 ? (
         <AnnualQuotaHint
-          title="必達目標（ノルマ）（目安）"
+          title="必達目標（ノルマ）"
           quotaAmount={staffAlloc.amount}
           planAmount={totals.initial.amount}
-          caption="必達目標は会社目標の目安です。下の計画行には含まれません。"
+          caption="当初計画はノルマ額を下回ってはいけません。ノルマを超える計画に上限はありません。"
         />
       ) : officeQuotaAmt > 0 ? (
         <p style={{ ...planMuted, marginTop: 0 }}>
@@ -1178,11 +1212,25 @@ function AnnualPlanSheetContent() {
         <strong>中間計画 {totals.current.amount.toLocaleString('ja-JP')} 円</strong>
         <span>確度見込 {Math.round(totals.current.weighted).toLocaleString('ja-JP')} 円（●100% ▲50% □0%）</span>
         {plan?.status !== 'confirmed' && (
-          <button type="button" onClick={() => void handleConfirm()} disabled={saving || lines.length === 0} style={{ ...planBtn, background: '#0f766e', color: '#fff', borderColor: '#0f766e' }}>
+          <button
+            type="button"
+            onClick={() => void handleConfirm()}
+            disabled={saving || lines.length === 0 || Boolean(confirmQuotaError)}
+            style={{
+              ...planBtn,
+              background: '#0f766e',
+              color: '#fff',
+              borderColor: '#0f766e',
+              opacity: saving || lines.length === 0 || confirmQuotaError ? 0.5 : 1,
+            }}
+          >
             当初計画として確定
           </button>
         )}
       </div>
+      {plan?.status !== 'confirmed' && confirmQuotaError && (
+        <p style={{ color: '#fca5a5', marginTop: 8 }}>{confirmQuotaError}</p>
+      )}
 
       <div style={{ marginTop: 28 }}>
         <AnnualItemMonthProgress

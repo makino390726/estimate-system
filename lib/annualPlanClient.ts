@@ -14,6 +14,7 @@ import {
 } from '@/lib/annualPlanCategories'
 import { fiscalYearRange } from '@/lib/annualPlanFiscal'
 import { fetchSupabasePages } from '@/lib/supabasePagedFetch'
+import { assertPlanMeetsQuotaFloor, fetchOfficeQuotas, staffQuotaAmount } from '@/lib/annualPlanQuota'
 
 export type AnnualPlan = {
   id: string
@@ -325,6 +326,10 @@ export async function updatePlanLineQtyAmount(
 export async function confirmPlan(plan: AnnualPlan, lines: AnnualPlanLine[], reason?: string): Promise<AnnualPlan> {
   const amount = lines.reduce((s, r) => s + Number(r.amount || 0), 0)
   const gp = lines.reduce((s, r) => s + Number(r.gross_profit || 0), 0)
+  const quotas = await fetchOfficeQuotas(plan.fiscal_year).catch(() => null)
+  if (quotas) {
+    assertPlanMeetsQuotaFloor(amount, staffQuotaAmount(quotas.allocations, plan.staff_id))
+  }
   const { data, error } = await supabase
     .from('annual_staff_plans')
     .update({
