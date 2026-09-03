@@ -59,6 +59,8 @@ import {
   allocationTotalForOffice,
   companyQuotaTotal,
   fetchOfficeQuotas,
+  QUOTA_OFFICES,
+  quotaTotalsByCategory,
   quotaTotalsByOffice,
   type OfficeQuotaBundle,
 } from '@/lib/annualPlanQuota'
@@ -448,8 +450,26 @@ function AnnualDashboardContent() {
       prev.excel += sales.byStaff[staff.id] || 0
       map.set(label, prev)
     }
+    // 担当者がいない営業所でもノルマ行があれば表に出し、上部合計と営業所表の合計を揃える
+    for (const office of QUOTA_OFFICES) {
+      const quota = quotaByOffice[office.key] || 0
+      if (!(quota > 0)) continue
+      if ([...map.values()].some((o) => officeKeyFromLabel(o.label) === office.key)) continue
+      map.set(office.label, {
+        key: office.label,
+        label: office.label,
+        staffs: [],
+        initial: 0,
+        current: 0,
+        closed: 0,
+        excel: 0,
+        quota,
+      })
+    }
     return [...map.values()].sort((a, b) => compareSalesOfficeLabel(a.label, b.label))
   }, [staffs, planByStaff, closedByStaff, sales.byStaff, quotas.lines])
+
+  const quotaByCategory = useMemo(() => quotaTotalsByCategory(quotas.lines), [quotas.lines])
 
   const selectedOffice = officeRows.find((o) => o.key === lineOfficeKey)
   const officeLineLines = selectedOffice
@@ -470,6 +490,7 @@ function AnnualDashboardContent() {
     .filter(([staffId]) => staffs.some((s) => s.id === staffId))
     .reduce((s, [, r]) => s + r.amount, 0)
   const companyExcel = sales.totalAmount
+  // 営業所×科目のノルマ合計（配分合計ではない）
   const companyQuota = companyQuotaTotal(quotas.lines)
   const elapsed = fiscalElapsedPct(new Date(), fiscalYear)
 
@@ -481,9 +502,10 @@ function AnnualDashboardContent() {
     return PROGRESS_CATEGORIES.map((cat) => {
       const catLines = lines.filter((l) => progressCategoryFor(l.category) === cat)
       const excel = sales.byCategory[cat] || 0
-      return { cat, lines: catLines, totals: splitPlanTotals(catLines), conf: qtyByConfidence(currentPlanLines(catLines)), excel }
-    }).filter((r) => r.totals.current.amount > 0 || r.totals.current.qty > 0 || r.excel > 0)
-  }, [lines, sales.byCategory])
+      const quota = quotaByCategory[cat] || 0
+      return { cat, lines: catLines, totals: splitPlanTotals(catLines), conf: qtyByConfidence(currentPlanLines(catLines)), excel, quota }
+    }).filter((r) => r.totals.current.amount > 0 || r.totals.current.qty > 0 || r.excel > 0 || r.quota > 0)
+  }, [lines, sales.byCategory, quotaByCategory])
 
   const excelByMachine = useMemo(() => {
     const map = new Map<string, number>()
@@ -630,6 +652,7 @@ function AnnualDashboardContent() {
           ['見積成約（受注・注文・完了）', yen(companyClosed)],
           ['Excel実績（税抜）', yen(companyExcel)],
           ['見積達成率（対当初）', pct(companyClosed, companyInitial.amount)],
+          ['見積達成率（対ノルマ）', companyQuota > 0 ? pct(companyClosed, companyQuota) : '—'],
           ['Excel達成率（対当初）', pct(companyExcel, companyInitial.amount)],
           ['Excel達成率（対ノルマ）', companyQuota > 0 ? pct(companyExcel, companyQuota) : '—'],
         ].map(([label, value]) => (
@@ -641,7 +664,8 @@ function AnnualDashboardContent() {
       </div>
       <p style={{ ...planMuted, fontSize: 12, marginTop: -8, marginBottom: 16 }}>
         上段は見積ステータスが受注・注文・完了（作成日が年度内）。下段は取込んだ売上Excelの税抜。二つは足しません。
-        達成率の分母は当初計画。対中間 {pct(companyExcel, companyTotals.amount)}
+        営業所ノルマは各営業所×科目の合計。対当初の分母は当初計画、対ノルマは営業所ノルマ。対中間{' '}
+        {pct(companyExcel, companyTotals.amount)}
         {companyQuota > 0 ? ` · 積み上げ差 ${yen(companyInitial.amount - companyQuota)}` : ''}
         。粗利計画 {yen(companyTotals.gp)}
         {sales.unmatchedAmount > 0 ? ` · 担当未割当のExcel ${yen(sales.unmatchedAmount)}` : ''}
@@ -710,10 +734,24 @@ function AnnualDashboardContent() {
             }))}
           />
           <div style={{ overflowX: 'auto', marginBottom: 20 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1120 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1240 }}>
               <thead>
                 <tr>
-                  {['営業所', '人数', 'ノルマ', '当初', '積み上げ差', '中間計画', '見積成約', '見積対当初', 'Excel実績', 'Excel対当初', '対ノルマ', ''].map((h) => (
+                  {[
+                    '営業所',
+                    '人数',
+                    'ノルマ',
+                    '当初',
+                    '積み上げ差',
+                    '中間計画',
+                    '見積成約',
+                    '見積対当初',
+                    '見積対ノルマ',
+                    'Excel実績',
+                    'Excel対当初',
+                    'Excel対ノルマ',
+                    '',
+                  ].map((h) => (
                     <th key={h || 'office-actions'} style={planTh}>
                       {h}
                     </th>
@@ -733,6 +771,7 @@ function AnnualDashboardContent() {
                     <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.current)}</td>
                     <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.closed)}</td>
                     <td style={{ ...planTd, textAlign: 'right' }}>{pct(o.closed, o.initial)}</td>
+                    <td style={{ ...planTd, textAlign: 'right' }}>{o.quota > 0 ? pct(o.closed, o.quota) : '—'}</td>
                     <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.excel)}</td>
                     <td style={{ ...planTd, textAlign: 'right' }}>{pct(o.excel, o.initial)}</td>
                     <td style={{ ...planTd, textAlign: 'right' }}>{o.quota > 0 ? pct(o.excel, o.quota) : '—'}</td>
@@ -766,6 +805,9 @@ function AnnualDashboardContent() {
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyClosed)}</td>
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(companyClosed, companyInitial.amount)}</td>
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
+                    {companyQuota > 0 ? pct(companyClosed, companyQuota) : '—'}
+                  </td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
                     {yen(officeRows.reduce((s, o) => s + o.excel, 0))}
                   </td>
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
@@ -794,11 +836,27 @@ function AnnualDashboardContent() {
       )}
 
       <h2 style={{ fontSize: 16, color: '#f8fafc' }}>担当者別</h2>
+      <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
+        見積対ノルマ・Excel対ノルマの分母は各担当の必達目標（ノルマ配分）。未設定の担当は — です。小計の対ノルマは営業所ノルマに対する値です。
+      </p>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['担当者', '状態', '必達目標（ノルマ）', '当初', '中間計画', '見積成約', '見積対当初', 'Excel実績', 'Excel対当初', ''].map((h) => (
+              {[
+                '担当者',
+                '状態',
+                '必達目標（ノルマ）',
+                '当初',
+                '中間計画',
+                '見積成約',
+                '見積対当初',
+                '見積対ノルマ',
+                'Excel実績',
+                'Excel対当初',
+                'Excel対ノルマ',
+                '',
+              ].map((h) => (
                 <th key={h || 'actions'} style={planTh}>
                   {h}
                 </th>
@@ -809,7 +867,7 @@ function AnnualDashboardContent() {
             {officeRows.map((office) => (
               <Fragment key={office.key}>
                 <tr>
-                  <td colSpan={10} style={{ ...planTd, fontWeight: 700, background: '#1e293b' }}>
+                  <td colSpan={12} style={{ ...planTd, fontWeight: 700, background: '#1e293b' }}>
                     {office.label}
                     <span style={{ ...planMuted, fontWeight: 400, marginLeft: 8 }}>{office.staffs.length}名</span>
                   </td>
@@ -820,17 +878,20 @@ function AnnualDashboardContent() {
                   const closed = closedByStaff.get(staff.id)?.amount || 0
                   const excel = sales.byStaff[staff.id] || 0
                   const alloc = allocationForStaff(quotas.allocations, staff.id)
+                  const staffQuota = alloc ? Math.round(Number(alloc.amount || 0)) : 0
                   return (
                     <tr key={staff.id}>
                       <td style={planTd}>{staff.name}</td>
                       <td style={planTd}>{row?.plan.status === 'confirmed' ? '確定' : row ? '下書き' : '未作成'}</td>
-                      <td style={{ ...planTd, textAlign: 'right' }}>{alloc ? yen(alloc.amount) : '—'}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{staffQuota > 0 ? yen(staffQuota) : '—'}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.initial.amount)}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{yen(t.current.amount)}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{yen(closed)}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{pct(closed, t.initial.amount)}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{staffQuota > 0 ? pct(closed, staffQuota) : '—'}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{yen(excel)}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, t.initial.amount)}</td>
+                      <td style={{ ...planTd, textAlign: 'right' }}>{staffQuota > 0 ? pct(excel, staffQuota) : '—'}</td>
                       <td style={planTd}>
                         <button type="button" onClick={() => setItemStaffId(staff.id)} style={{ ...planBtn, padding: '4px 8px', marginRight: 8 }}>
                           月次
@@ -857,8 +918,14 @@ function AnnualDashboardContent() {
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(office.current)}</td>
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(office.closed)}</td>
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(office.closed, office.initial)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
+                    {office.quota > 0 ? pct(office.closed, office.quota) : '—'}
+                  </td>
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(office.excel)}</td>
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(office.excel, office.initial)}</td>
+                  <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
+                    {office.quota > 0 ? pct(office.excel, office.quota) : '—'}
+                  </td>
                   <td style={planTd} />
                 </tr>
               </Fragment>
@@ -901,10 +968,10 @@ function AnnualDashboardContent() {
         暖房機・たばこ乾燥機・食品乾燥機等は生産品にまとめ、Excel科目「生産品」と対比します。プレハブ冷蔵庫等の仕入品は工事です。計画額は中間計画、当初は担当確定＋経営上乗せです。
       </p>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['カテゴリ', '台数', '当初', 'Excel実績', '対当初', '中間計画', '対中間', '確度見込', '構成比'].map((h) => (
+              {['カテゴリ', '台数', '当初', 'Excel実績', '対当初', '対ノルマ', '中間計画', '対中間', '確度見込', '構成比'].map((h) => (
                 <th key={h} style={{ ...planTh, textAlign: h === 'カテゴリ' ? 'left' : 'right' }}>
                   {h}
                 </th>
@@ -914,7 +981,7 @@ function AnnualDashboardContent() {
           <tbody>
             {categoryRows.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={10} style={{ ...planTd, color: '#94a3b8' }}>
                   計画行がありません。
                 </td>
               </tr>
@@ -926,6 +993,7 @@ function AnnualDashboardContent() {
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.initial.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.excel)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.excel, r.totals.initial.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right' }}>{r.quota > 0 ? pct(r.excel, r.quota) : '—'}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.current.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{pct(r.excel, r.totals.current.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(r.totals.current.weighted)}</td>
@@ -939,6 +1007,9 @@ function AnnualDashboardContent() {
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyInitial.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyExcel)}</td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{pct(companyExcel, companyInitial.amount)}</td>
+                <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
+                  {companyQuota > 0 ? pct(companyExcel, companyQuota) : '—'}
+                </td>
                 <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(companyTotals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{pct(companyExcel, companyTotals.amount)}</td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{yen(companyTotals.weighted)}</td>

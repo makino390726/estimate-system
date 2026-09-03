@@ -92,6 +92,16 @@ export function quotaTotalsByOffice(lines: OfficeQuotaLine[]): Record<string, nu
   return out
 }
 
+export function quotaTotalsByCategory(lines: OfficeQuotaLine[]): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const line of lines) {
+    const cat = String(line.plan_category || '')
+    if (!cat) continue
+    out[cat] = (out[cat] || 0) + Math.round(Number(line.amount || 0))
+  }
+  return out
+}
+
 export function companyQuotaTotal(lines: OfficeQuotaLine[]): number {
   return lines.reduce((s, l) => s + Math.round(Number(l.amount || 0)), 0)
 }
