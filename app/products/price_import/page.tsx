@@ -39,15 +39,15 @@ const DEFAULT_COLUMN_MAPPING: ColumnMapping = {
   retailPriceColumn: '小売【別】',
 }
 
-const SAMPLE_IMPORT_HEADERS = [
+const SAMPLE_IMPORT_HEADERS: string[] = [
   DEFAULT_COLUMN_MAPPING.idColumn,
-  DEFAULT_COLUMN_MAPPING.nameColumn,
-  DEFAULT_COLUMN_MAPPING.unitColumn,
-  DEFAULT_COLUMN_MAPPING.costPriceColumn,
-  DEFAULT_COLUMN_MAPPING.retailPriceColumn,
-] as const
+  DEFAULT_COLUMN_MAPPING.nameColumn ?? '品名',
+  DEFAULT_COLUMN_MAPPING.unitColumn ?? '単位',
+  DEFAULT_COLUMN_MAPPING.costPriceColumn ?? '新仕入',
+  DEFAULT_COLUMN_MAPPING.retailPriceColumn ?? '小売【別】',
+]
 
-const SAMPLE_IMPORT_ROWS = [
+const SAMPLE_IMPORT_ROWS: (string | number)[][] = [
   ['SAMPLE-001', 'サンプル商品Ａ', '台', 10000, 15000],
   ['SAMPLE-002', 'サンプル商品Ｂ', '個', 2500, 3800],
   ['SAMPLE-003', 'サンプル商品Ｃ', '式', 80000, 120000],
