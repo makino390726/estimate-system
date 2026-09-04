@@ -26,11 +26,82 @@ type ColumnMapping = {
   retailPriceColumn: string | null
 }
 
+/** update: 既存コードは残し内容のみ更新 / replace: Excel を正としてファイルにないコードを削除 */
+type ImportMode = 'update' | 'replace'
+
+const SUPABASE_IN_CHUNK = 200
+
+const DEFAULT_COLUMN_MAPPING: ColumnMapping = {
+  idColumn: '商品ＣＤ',
+  nameColumn: '品名',
+  unitColumn: '単位',
+  costPriceColumn: '新仕入',
+  retailPriceColumn: '小売【別】',
+}
+
+const SAMPLE_IMPORT_HEADERS = [
+  DEFAULT_COLUMN_MAPPING.idColumn,
+  DEFAULT_COLUMN_MAPPING.nameColumn,
+  DEFAULT_COLUMN_MAPPING.unitColumn,
+  DEFAULT_COLUMN_MAPPING.costPriceColumn,
+  DEFAULT_COLUMN_MAPPING.retailPriceColumn,
+] as const
+
+const SAMPLE_IMPORT_ROWS = [
+  ['SAMPLE-001', 'サンプル商品Ａ', '台', 10000, 15000],
+  ['SAMPLE-002', 'サンプル商品Ｂ', '個', 2500, 3800],
+  ['SAMPLE-003', 'サンプル商品Ｃ', '式', 80000, 120000],
+]
+
+function downloadProductImportSample() {
+  const ws = XLSX.utils.aoa_to_sheet([SAMPLE_IMPORT_HEADERS, ...SAMPLE_IMPORT_ROWS])
+  ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 8 }, { wch: 12 }, { wch: 14 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '商品マスタ')
+  XLSX.writeFile(wb, '商品マスタ取込サンプル.xlsx')
+}
+
 function parseNumber(value: any): number | null {
   if (value === undefined || value === null || value === '') return null
   const num = Number(String(value).replace(/,/g, ''))
   if (Number.isNaN(num)) return null
   return num
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
+
+async function fetchProductsByIds(ids: string[]) {
+  const rows: { id: string; created_at: string | null; name: string; unit: string | null }[] = []
+  for (const chunk of chunkArray(ids, SUPABASE_IN_CHUNK)) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, created_at, name, unit')
+      .in('id', chunk)
+    if (error) throw error
+    rows.push(...(data || []))
+  }
+  return rows
+}
+
+async function fetchAllProductIds(): Promise<string[]> {
+  const ids: string[] = []
+  const pageSize = 1000
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase.from('products').select('id').range(from, from + pageSize - 1)
+    if (error) throw error
+    if (!data?.length) break
+    ids.push(...data.map((r) => String(r.id)))
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+  return ids
 }
 
 const ProductPriceImportPage: React.FC = () => {
@@ -41,14 +112,11 @@ const ProductPriceImportPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdateTime, setLastUpdateTime] = useState<string>('')
   const [sheetHeaders, setSheetHeaders] = useState<string[]>([])
-  const [columnMapping, setColumnMapping] = useState<ColumnMapping>({
-    idColumn: '商品ＣＤ',
-    nameColumn: '品名',
-    unitColumn: '単位',
-    costPriceColumn: '新仕入',
-    retailPriceColumn: '小売【別】',
-  })
+  const [columnMapping, setColumnMapping] = useState<ColumnMapping>(DEFAULT_COLUMN_MAPPING)
   const [showColumnMapping, setShowColumnMapping] = useState(false)
+  const [importMode, setImportMode] = useState<ImportMode>('update')
+  const [existingMasterCount, setExistingMasterCount] = useState(0)
+  const [obsoleteIds, setObsoleteIds] = useState<string[]>([])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null
@@ -56,6 +124,8 @@ const ProductPriceImportPage: React.FC = () => {
     setRows([])
     setMessage('')
     setSheetHeaders([])
+    setExistingMasterCount(0)
+    setObsoleteIds([])
   }
 
   // ① Excel を読み込んでヘッダーを抽出
@@ -137,13 +207,10 @@ const ProductPriceImportPage: React.FC = () => {
       // ★ Supabaseから既存の商品情報を取得してcreated_at / name / unit をマージ
       const productIds = prepared.map((p) => p.id)
       if (productIds.length > 0) {
-        const { data: existingProducts } = await supabase
-          .from('products')
-          .select('id, created_at, name, unit')
-          .in('id', productIds)
+        const existingProducts = await fetchProductsByIds(productIds)
 
         const existingMap = new Map(
-          (existingProducts || []).map((p) => [p.id, { created_at: p.created_at, name: p.name, unit: p.unit }])
+          existingProducts.map((p) => [p.id, { created_at: p.created_at, name: p.name, unit: p.unit }])
         )
 
         prepared.forEach((p) => {
@@ -161,10 +228,19 @@ const ProductPriceImportPage: React.FC = () => {
       // name が空の行を除外（既存値もない場合）
       const finalized = prepared.filter((p) => !!p.name)
 
+      const allExistingIds = await fetchAllProductIds()
+      const excelIdSet = new Set(finalized.map((p) => p.id))
+      const toDelete = allExistingIds.filter((id) => !excelIdSet.has(id))
+      const existingCount = finalized.filter((p) => p.created_at !== null).length
+      const newCount = finalized.length - existingCount
+
+      setExistingMasterCount(allExistingIds.length)
+      setObsoleteIds(toDelete)
       setRows(finalized)
 
       setMessage(
-        `解析完了：Excel 行数 ${raw.length} 件中、${finalized.length} 件を更新対象として読み込みました。`
+        `解析完了：Excel 行数 ${raw.length} 件中、${finalized.length} 件を読み込みました。\n` +
+          `（既存コードの更新: ${existingCount} 件、新規コード: ${newCount} 件、ファイルにない既存コード: ${toDelete.length} 件）`
       )
       setShowColumnMapping(false)
     } catch (error) {
@@ -175,7 +251,7 @@ const ProductPriceImportPage: React.FC = () => {
     }
   }
 
-  // ③ Supabase の products に upsert
+  // ③ Supabase の products に反映（内容更新 or すべて入替）
   const handleUpdateSupabase = async () => {
     if (rows.length === 0) {
       setMessage('更新対象データがありません。先に「Excel を解析」してください。')
@@ -183,7 +259,15 @@ const ProductPriceImportPage: React.FC = () => {
     }
 
     const confirmUpdate = window.confirm(
-      `商品マスタを更新します。\n${rows.length} 件のデータを反映しますか？`
+      importMode === 'replace'
+        ? `【すべて入替】Excel を正として商品マスタを置き換えます。\n` +
+            `・更新／追加: ${rows.length} 件\n` +
+            `・ファイルにない既存コードを削除: ${obsoleteIds.length} 件\n` +
+            `この操作は取り消せません。よろしいですか？`
+        : `【内容の更新】既存コードは残して内容を更新します。\n` +
+            `・更新／追加: ${rows.length} 件\n` +
+            `・ファイルにない既存コードは削除しません。\n` +
+            `よろしいですか？`
     )
     if (!confirmUpdate) {
       return
@@ -208,59 +292,85 @@ const ProductPriceImportPage: React.FC = () => {
         setMessage(`⚠️ 重複IDが検出されました。重複を除いた ${uniqueRows.length} 件を更新します。`)
       }
 
+      const now = new Date().toISOString()
       const payload = uniqueRows.map((r) => {
-        const record: any = { id: r.id }
-
-        record.name = r.name
+        const record: any = { id: r.id, name: r.name }
         if (r.unit !== null) record.unit = r.unit
-
-        if (r.cost_price !== null) {
-          record.cost_price = r.cost_price
-        }
-        if (r.retail_price !== null) {
-          record.retail_price = r.retail_price
-        }
-
-        record.created_at = new Date().toISOString()
-
+        if (r.cost_price !== null) record.cost_price = r.cost_price
+        if (r.retail_price !== null) record.retail_price = r.retail_price
+        record.created_at = r.created_at || now
         return record
       })
 
-      const { data, error, status, statusText } = await supabase
-        .from('products')
-        .upsert(payload, {
-          onConflict: 'id'
+      for (const chunk of chunkArray(payload, SUPABASE_IN_CHUNK)) {
+        const { error, status, statusText } = await supabase.from('products').upsert(chunk, {
+          onConflict: 'id',
         })
 
-      if (error) {
-        const errorInfo = {
-          message: (error as any)?.message,
-          details: (error as any)?.details,
-          hint: (error as any)?.hint,
-          code: (error as any)?.code,
-          raw: JSON.stringify(error)
+        if (error) {
+          const errorInfo = {
+            message: (error as any)?.message,
+            details: (error as any)?.details,
+            hint: (error as any)?.hint,
+            code: (error as any)?.code,
+            raw: JSON.stringify(error),
+          }
+          console.error('Supabase upsert error detail:', {
+            status,
+            statusText,
+            errorInfo,
+            sample: chunk.slice(0, 3),
+          })
+          const errorMessage =
+            errorInfo.message || errorInfo.details || errorInfo.hint || errorInfo.code || errorInfo.raw
+          setMessage(
+            `Supabase 更新中にエラーが発生しました: ${errorMessage}\nstatus: ${status} ${statusText}`
+          )
+          return
         }
-        console.error('Supabase upsert error detail:', {
-          status,
-          statusText,
-          errorInfo,
-          sample: payload.slice(0, 3)
-        })
-        const errorMessage =
-          errorInfo.message || errorInfo.details || errorInfo.hint || errorInfo.code || errorInfo.raw
-        setMessage(
-          `Supabase 更新中にエラーが発生しました: ${errorMessage}\nstatus: ${status} ${statusText}`
-        )
-        return
+      }
+
+      let deletedCount = 0
+      const failedDeletes: string[] = []
+
+      if (importMode === 'replace' && obsoleteIds.length > 0) {
+        setMessage(`更新完了。ファイルにない ${obsoleteIds.length} 件を削除中です…`)
+        for (const chunk of chunkArray(obsoleteIds, SUPABASE_IN_CHUNK)) {
+          const { error } = await supabase.from('products').delete().in('id', chunk)
+          if (!error) {
+            deletedCount += chunk.length
+            continue
+          }
+          // 参照中などで一括削除できない場合は1件ずつ試す
+          for (const id of chunk) {
+            const { error: oneErr } = await supabase.from('products').delete().eq('id', id)
+            if (oneErr) failedDeletes.push(id)
+            else deletedCount += 1
+          }
+        }
       }
 
       alert('完了しました')
       setLastUpdateTime(new Date().toLocaleString('ja-JP'))
-      setMessage(
-        `更新完了：products テーブルに ${payload.length} 件の upsert を行いました。\n` +
-          (uniqueRows.length < rows.length ? `※${rows.length - uniqueRows.length}件の重複IDは除外されました\n` : '') +
-          '※既存idは更新／存在しないidは新規追加されています。'
-      )
+      const duplicateNote =
+        uniqueRows.length < rows.length ? `※${rows.length - uniqueRows.length}件の重複IDは除外されました\n` : ''
+      if (importMode === 'replace') {
+        setObsoleteIds(failedDeletes)
+        setExistingMasterCount(payload.length + failedDeletes.length)
+        setMessage(
+          `入替完了：更新／追加 ${payload.length} 件、削除 ${deletedCount} 件。\n` +
+            duplicateNote +
+            (failedDeletes.length > 0
+              ? `※見積明細などから参照されているため削除できなかったコード: ${failedDeletes.length} 件`
+              : '※Excel にない既存コードは削除しました。')
+        )
+      } else {
+        setMessage(
+          `更新完了：products テーブルに ${payload.length} 件を反映しました。\n` +
+            duplicateNote +
+            '※既存コードは内容を更新／新しいコードは追加。ファイルにないコードは残しています。'
+        )
+      }
     } catch (error) {
       console.error('Unexpected error in handleUpdateSupabase:', error)
       const errMsg = error instanceof Error ? error.message : JSON.stringify(error)
@@ -286,12 +396,121 @@ const ProductPriceImportPage: React.FC = () => {
       <p style={{ color: '#94a3b8' }}>
         Excel ファイルを読み込み、カラムマッピングを設定して、
         <br />
-        Supabase の <code>products</code> テーブルを更新します。
+        Supabase の <code>products</code> テーブルを更新します。取込方法を先に選んでください。
       </p>
+
+      <div
+        style={{
+          marginTop: 16,
+          marginBottom: 8,
+          padding: 16,
+          backgroundColor: '#1e293b',
+          border: '1px solid #334155',
+          borderRadius: 12,
+        }}
+      >
+        <div style={{ fontWeight: 'bold', color: '#93c5fd', marginBottom: 10 }}>取込方法</div>
+        <div style={{ display: 'grid', gap: 10 }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              padding: '12px 14px',
+              backgroundColor: importMode === 'update' ? '#1e3a5f' : '#0f172a',
+              borderRadius: 8,
+              border: importMode === 'update' ? '2px solid #3b82f6' : '2px solid #334155',
+            }}
+          >
+            <input
+              type="radio"
+              name="importMode"
+              value="update"
+              checked={importMode === 'update'}
+              disabled={isLoading}
+              onChange={() => setImportMode('update')}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <span style={{ display: 'block', fontWeight: 'bold', color: '#fff' }}>
+                コードは残して内容を更新
+              </span>
+              <span style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                一致する商品コードの品名・単価などを更新し、新しいコードは追加します。ファイルにない既存コードは削除しません。
+              </span>
+            </span>
+          </label>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              padding: '12px 14px',
+              backgroundColor: importMode === 'replace' ? '#3f1d1d' : '#0f172a',
+              borderRadius: 8,
+              border: importMode === 'replace' ? '2px solid #ef4444' : '2px solid #334155',
+            }}
+          >
+            <input
+              type="radio"
+              name="importMode"
+              value="replace"
+              checked={importMode === 'replace'}
+              disabled={isLoading}
+              onChange={() => setImportMode('replace')}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <span style={{ display: 'block', fontWeight: 'bold', color: '#fff' }}>
+                コードからすべて入替
+              </span>
+              <span style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                Excel を正として置き換えます。一致するコードは内容を更新し、ファイルにない商品コードは削除されます。
+              </span>
+            </span>
+          </label>
+        </div>
+        {importMode === 'replace' && (
+          <p style={{ margin: '10px 0 0', fontSize: 12, color: '#fca5a5' }}>
+            注意: 見積明細などから参照されている商品は削除できない場合があります。
+          </p>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16, marginBottom: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+        <button
+          type="button"
+          onClick={() => {
+            downloadProductImportSample()
+            setMessage('取込サンプル（商品マスタ取込サンプル.xlsx）をダウンロードしました。列名はそのまま使い、行の内容を書き換えて取り込んでください。')
+          }}
+          disabled={isLoading}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: isLoading ? '#334155' : '#0f766e',
+            color: '#fff',
+            border: '1px solid',
+            borderColor: isLoading ? '#475569' : '#0d9488',
+            borderRadius: '10px',
+            cursor: isLoading ? 'not-allowed' : 'pointer',
+            fontWeight: 'bold',
+            fontSize: '14px',
+            boxShadow: isLoading ? 'none' : '0 8px 24px rgba(13, 148, 136, 0.25)',
+            textShadow: '0 1px 2px rgba(0,0,0,0.25)',
+          }}
+        >
+          ⬇ 取込サンプルをダウンロード
+        </button>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+          列名は初期マッピング（商品ＣＤ／品名／単位／新仕入／小売【別】）に合わせています。
+        </span>
+      </div>
 
       {!showColumnMapping && !rows.length && (
         <>
-          <div style={{ marginTop: 16, marginBottom: 16 }}>
+          <div style={{ marginTop: 8, marginBottom: 16 }}>
             <label
               style={{
                 display: 'inline-block',
@@ -526,25 +745,47 @@ const ProductPriceImportPage: React.FC = () => {
 
       {rows.length > 0 && (
         <>
+          <div
+            style={{
+              marginTop: 16,
+              padding: 14,
+              backgroundColor: importMode === 'replace' ? '#3f1d1d' : '#1e293b',
+              border: `1px solid ${importMode === 'replace' ? '#7f1d1d' : '#334155'}`,
+              borderRadius: 10,
+              fontSize: 13,
+              color: '#e2e8f0',
+            }}
+          >
+            <div>
+              取込方法:{' '}
+              <strong>{importMode === 'replace' ? 'コードからすべて入替' : 'コードは残して内容を更新'}</strong>
+            </div>
+            <div style={{ marginTop: 6, color: '#cbd5e1' }}>
+              Excel {rows.length} 件 ／ 既存マスタ {existingMasterCount} 件
+              {importMode === 'replace'
+                ? ` ／ 削除予定 ${obsoleteIds.length} 件（ファイルにないコード）`
+                : ' ／ ファイルにない既存コードは残します'}
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 12, marginBottom: 16, marginTop: 16 }}>
             <button
               onClick={handleUpdateSupabase}
               disabled={rows.length === 0 || isLoading}
               style={{
                 padding: '10px 20px',
-                backgroundColor: rows.length === 0 || isLoading ? '#334155' : '#dc2626',
+                backgroundColor: rows.length === 0 || isLoading ? '#334155' : importMode === 'replace' ? '#dc2626' : '#2563eb',
                 color: '#fff',
                 border: '1px solid',
-                borderColor: rows.length === 0 || isLoading ? '#475569' : '#b91c1c',
+                borderColor: rows.length === 0 || isLoading ? '#475569' : importMode === 'replace' ? '#b91c1c' : '#1d4ed8',
                 borderRadius: '10px',
                 cursor: rows.length === 0 || isLoading ? 'not-allowed' : 'pointer',
                 fontWeight: 'bold',
                 fontSize: '14px',
-                boxShadow: rows.length === 0 || isLoading ? 'none' : '0 8px 24px rgba(220, 38, 38, 0.25)',
+                boxShadow: rows.length === 0 || isLoading ? 'none' : importMode === 'replace' ? '0 8px 24px rgba(220, 38, 38, 0.25)' : '0 8px 24px rgba(37, 99, 235, 0.25)',
                 textShadow: '0 1px 2px rgba(0,0,0,0.25)'
               }}
             >
-              ③ 商品マスタ更新
+              {importMode === 'replace' ? '③ すべて入替して反映' : '③ 内容を更新'}
             </button>
             <input
               type="text"
