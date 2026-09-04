@@ -35,17 +35,22 @@ const DEFAULT_COLUMN_MAPPING: ColumnMapping = {
   idColumn: '商品ＣＤ',
   nameColumn: '品名',
   unitColumn: '単位',
-  costPriceColumn: '新仕入',
-  retailPriceColumn: '小売【別】',
+  costPriceColumn: '原価',
+  retailPriceColumn: '定価',
 }
 
 const SAMPLE_IMPORT_HEADERS: string[] = [
   DEFAULT_COLUMN_MAPPING.idColumn,
   DEFAULT_COLUMN_MAPPING.nameColumn ?? '品名',
   DEFAULT_COLUMN_MAPPING.unitColumn ?? '単位',
-  DEFAULT_COLUMN_MAPPING.costPriceColumn ?? '新仕入',
-  DEFAULT_COLUMN_MAPPING.retailPriceColumn ?? '小売【別】',
+  DEFAULT_COLUMN_MAPPING.costPriceColumn ?? '原価',
+  DEFAULT_COLUMN_MAPPING.retailPriceColumn ?? '定価',
 ]
+
+function pickHeader(headers: string[], candidates: string[]): string | null {
+  const set = new Set(headers)
+  return candidates.find((c) => set.has(c)) ?? null
+}
 
 const SAMPLE_IMPORT_ROWS: (string | number)[][] = [
   ['SAMPLE-001', 'サンプル商品Ａ', '台', 10000, 15000],
@@ -148,6 +153,13 @@ const ProductPriceImportPage: React.FC = () => {
       const headers = XLSX.utils.sheet_to_json<any>(sheet, { defval: '', range: 0, header: 1 })[0] || []
       const validHeaders = headers.filter((h: any) => h !== undefined && h !== '' && typeof h === 'string')
       setSheetHeaders(validHeaders)
+      setColumnMapping({
+        idColumn: pickHeader(validHeaders, ['商品ＣＤ', '商品CD', DEFAULT_COLUMN_MAPPING.idColumn]) || '',
+        nameColumn: pickHeader(validHeaders, ['品名', '商品名']),
+        unitColumn: pickHeader(validHeaders, ['単位']),
+        costPriceColumn: pickHeader(validHeaders, ['原価', '新仕入']),
+        retailPriceColumn: pickHeader(validHeaders, ['定価', '小売【別】']),
+      })
       setShowColumnMapping(true)
       setMessage('Excel ファイルを読み込みました。カラムマッピングを設定してください。')
     } catch (error) {
@@ -504,7 +516,7 @@ const ProductPriceImportPage: React.FC = () => {
           ⬇ 取込サンプルをダウンロード
         </button>
         <span style={{ fontSize: 12, color: '#94a3b8' }}>
-          列名は初期マッピング（商品ＣＤ／品名／単位／新仕入／小売【別】）に合わせています。
+          列名は商品ＣＤ／品名／単位／原価／定価です。内容を書き換えて取り込んでください。
         </span>
       </div>
 
