@@ -219,20 +219,6 @@ function GroupedBars(props: {
   )
 }
 
-function mergeStaffExcelByCategory(
-  staffIds: string[],
-  byStaffCategory: Record<string, Record<string, number>>,
-) {
-  const out: Record<string, number> = {}
-  for (const id of staffIds) {
-    const cats = byStaffCategory[id] || {}
-    for (const [cat, amt] of Object.entries(cats)) {
-      out[cat] = (out[cat] || 0) + Number(amt || 0)
-    }
-  }
-  return out
-}
-
 function qtyByConfidence(lines: AnnualPlanLine[]) {
   return {
     high: lines.filter((l) => l.confidence === 'high').reduce((s, r) => s + Number(r.qty || 0), 0),
@@ -259,6 +245,8 @@ function AnnualDashboardContent() {
     byStaff: {},
     byCategory: {},
     byStaffCategory: {},
+    byOffice: {},
+    byOfficeCategory: {},
     unmatchedAmount: 0,
     totalAmount: 0,
     import: null,
@@ -291,6 +279,8 @@ function AnnualDashboardContent() {
       byStaff: {},
       byCategory: {},
       byStaffCategory: {},
+      byOffice: {},
+      byOfficeCategory: {},
       unmatchedAmount: 0,
       totalAmount: 0,
       import: null,
@@ -447,13 +437,13 @@ function AnnualDashboardContent() {
       prev.initial += t.initial.amount
       prev.current += t.current.amount
       prev.closed += closedByStaff.get(staff.id)?.amount || 0
-      prev.excel += sales.byStaff[staff.id] || 0
       map.set(label, prev)
     }
     // 担当者がいない営業所でもノルマ行があれば表に出し、上部合計と営業所表の合計を揃える
     for (const office of QUOTA_OFFICES) {
       const quota = quotaByOffice[office.key] || 0
-      if (!(quota > 0)) continue
+      const excel = sales.byOffice[office.label] || 0
+      if (!(quota > 0) && !(excel > 0)) continue
       if ([...map.values()].some((o) => officeKeyFromLabel(o.label) === office.key)) continue
       map.set(office.label, {
         key: office.label,
@@ -466,8 +456,11 @@ function AnnualDashboardContent() {
         quota,
       })
     }
+    for (const o of map.values()) {
+      o.excel = sales.byOffice[o.label] || 0
+    }
     return [...map.values()].sort((a, b) => compareSalesOfficeLabel(a.label, b.label))
-  }, [staffs, planByStaff, closedByStaff, sales.byStaff, quotas.lines])
+  }, [staffs, planByStaff, closedByStaff, sales.byOffice, quotas.lines])
 
   const quotaByCategory = useMemo(() => quotaTotalsByCategory(quotas.lines), [quotas.lines])
 
@@ -476,10 +469,7 @@ function AnnualDashboardContent() {
     ? selectedOffice.staffs.flatMap((s) => planByStaff.get(s.id)?.lines || [])
     : lines
   const officeLineExcel = selectedOffice
-    ? mergeStaffExcelByCategory(
-        selectedOffice.staffs.map((s) => s.id),
-        sales.byStaffCategory,
-      )
+    ? sales.byOfficeCategory[selectedOffice.label] || {}
     : sales.byCategory
 
   const companyLines = lines
@@ -619,7 +609,8 @@ function AnnualDashboardContent() {
       <section style={planPanel}>
         <h2 style={{ marginTop: 0, fontSize: 16, color: '#f8fafc' }}>売上Excel取込</h2>
         <p style={{ ...planMuted, marginTop: 0 }}>
-          毎月の累計ファイル（例: 売上(2025.9～2026.7).xlsx）を選ぶと、この年度の実績を置き換えます。石油・その他資材は資材に合算します。
+          毎月の累計ファイル（例: 売上(2025.9～2026.7).xlsx）を選ぶと、この年度の実績を置き換えます。石油・その他資材は資材に合算します。部門は
+          鹿児島・宮崎→南九州営業所、熊本→中九州営業所、福岡→西九州営業所、東日本→東日本、東北→東北、四国・SE・海外→企画部、管理・農材・燃料→管理部（購買）（担当は大迫。Excelの大倉野・スタンドも含む） に寄せます。
         </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
@@ -721,7 +712,7 @@ function AnnualDashboardContent() {
         <>
           <h2 style={{ fontSize: 16, color: '#f8fafc' }}>営業所別</h2>
           <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
-            担当者マスタの部署で集計します。福岡営業所は西九州、東日本出張所は東日本にまとめます。管理部は管理部（購買）、企画部は企画部（SE・海外）です。
+            計画・見積成約は担当者マスタの部署、Excel実績は取込表の部門です。鹿児島・宮崎→南九州営業所、熊本→中九州営業所、福岡→西九州営業所、東日本→東日本、東北→東北、四国・SE・海外→企画部、管理・農材・燃料→管理部（購買）（担当は大迫。Excelの大倉野・スタンドも含む）です。
           </p>
           <ProgressBars
             title="営業所別 計画 / 見積成約 / Excel"

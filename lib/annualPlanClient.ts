@@ -456,6 +456,8 @@ export type SalesActualSummary = {
   byStaff: Record<string, number>
   byCategory: Record<string, number>
   byStaffCategory: Record<string, Record<string, number>>
+  byOffice: Record<string, number>
+  byOfficeCategory: Record<string, Record<string, number>>
   unmatchedAmount: number
   totalAmount: number
   import: {
@@ -478,6 +480,8 @@ export async function fetchSalesActualSummary(fiscalYear: number): Promise<Sales
     byStaff: json.byStaff || {},
     byCategory: json.byCategory || {},
     byStaffCategory: json.byStaffCategory || {},
+    byOffice: json.byOffice || {},
+    byOfficeCategory: json.byOfficeCategory || {},
     unmatchedAmount: Number(json.unmatchedAmount || 0),
     totalAmount: Number(json.totalAmount || 0),
     import: json.import || null,

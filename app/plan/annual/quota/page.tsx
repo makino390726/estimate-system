@@ -34,7 +34,7 @@ import {
   suggestAllocations,
   type OfficeQuotaBundle,
 } from '@/lib/annualPlanQuota'
-import { officeKeyFromStaff } from '@/lib/branches'
+import { officeKeyFromLabel, officeKeyFromStaff } from '@/lib/branches'
 import {
   planBtn,
   planInput,
@@ -128,14 +128,32 @@ function AnnualQuotaContent() {
       const nextPriorCat: Record<string, Record<string, number>> = {}
       const sales = priorSales || currentSales
       if (sales) {
-        for (const staff of staffList) {
-          const key = officeKeyFromStaff(staff)
-          if (!key) continue
-          nextPriorOffice[key] = (nextPriorOffice[key] || 0) + (sales.byStaff[staff.id] || 0)
-          const cats = sales.byStaffCategory[staff.id] || {}
-          if (!nextPriorCat[key]) nextPriorCat[key] = {}
-          for (const [cat, amt] of Object.entries(cats)) {
-            nextPriorCat[key][cat] = (nextPriorCat[key][cat] || 0) + Number(amt || 0)
+        const officeActuals = sales.byOffice || {}
+        const officeCatActuals = sales.byOfficeCategory || {}
+        if (Object.keys(officeActuals).length > 0) {
+          for (const [label, amount] of Object.entries(officeActuals)) {
+            const key = officeKeyFromLabel(label)
+            if (!key) continue
+            nextPriorOffice[key] = (nextPriorOffice[key] || 0) + Number(amount || 0)
+          }
+          for (const [label, cats] of Object.entries(officeCatActuals)) {
+            const key = officeKeyFromLabel(label)
+            if (!key) continue
+            if (!nextPriorCat[key]) nextPriorCat[key] = {}
+            for (const [cat, amt] of Object.entries(cats)) {
+              nextPriorCat[key][cat] = (nextPriorCat[key][cat] || 0) + Number(amt || 0)
+            }
+          }
+        } else {
+          for (const staff of staffList) {
+            const key = officeKeyFromStaff(staff)
+            if (!key) continue
+            nextPriorOffice[key] = (nextPriorOffice[key] || 0) + (sales.byStaff[staff.id] || 0)
+            const cats = sales.byStaffCategory[staff.id] || {}
+            if (!nextPriorCat[key]) nextPriorCat[key] = {}
+            for (const [cat, amt] of Object.entries(cats)) {
+              nextPriorCat[key][cat] = (nextPriorCat[key][cat] || 0) + Number(amt || 0)
+            }
           }
         }
       }

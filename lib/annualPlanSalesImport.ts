@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ParsedSalesActualRow } from '@/lib/annualPlanSalesExcel'
-import { resolveExcelStaffId, type PlanStaffMatch } from '@/lib/annualPlanStaffMatch'
+import { resolveSalesActualStaffId, type PlanStaffMatch } from '@/lib/annualPlanStaffMatch'
+import { isPurchasingExcelDepartment } from '@/lib/branches'
 import { EXCLUDED_STAFF_IDS } from '@/lib/staffPerformanceSummary'
 
 export async function fetchStaffsForExcelMatch(sb: SupabaseClient): Promise<PlanStaffMatch[]> {
@@ -27,12 +28,13 @@ export async function rematchUnmatchedSalesActualStaff(
 
   const pageSize = 1000
   let offset = 0
-  const byRaw = new Map<string, string[]>()
+  const byStaffId = new Map<string, string[]>()
+  let stillUnmatched = 0
 
   while (true) {
     const { data, error } = await sb
       .from('annual_sales_actual_lines')
-      .select('id, staff_name_raw')
+      .select('id, staff_name_raw, department')
       .eq('fiscal_year', fiscalYear)
       .is('staff_id', null)
       .order('id', { ascending: true })
@@ -40,20 +42,24 @@ export async function rematchUnmatchedSalesActualStaff(
     if (error) throw new Error(error.message)
     const rows = data || []
     for (const row of rows) {
-      const raw = String(row.staff_name_raw || '').trim()
-      if (!raw) continue
-      const ids = byRaw.get(raw) || []
+      const staffId = resolveSalesActualStaffId(
+        { department: row.department, staff_name_raw: row.staff_name_raw },
+        staffs,
+      )
+      if (!staffId) {
+        stillUnmatched += 1
+        continue
+      }
+      const ids = byStaffId.get(staffId) || []
       ids.push(String(row.id))
-      byRaw.set(raw, ids)
+      byStaffId.set(staffId, ids)
     }
     if (rows.length < pageSize) break
     offset += pageSize
   }
 
   let updated = 0
-  for (const [raw, ids] of byRaw) {
-    const staffId = resolveExcelStaffId(raw, staffs)
-    if (!staffId) continue
+  for (const [staffId, ids] of byStaffId) {
     for (let i = 0; i < ids.length; i += 200) {
       const chunk = ids.slice(i, i + 200)
       const { error } = await sb
@@ -64,8 +70,6 @@ export async function rematchUnmatchedSalesActualStaff(
       updated += chunk.length
     }
   }
-
-  const stillUnmatched = [...byRaw.values()].reduce((n, ids) => n + ids.length, 0) - updated
   const { data: latest } = await sb
     .from('annual_sales_actual_imports')
     .select('id')
@@ -119,8 +123,8 @@ export async function replaceSalesActualsForYear(
 
   let unmatched_staff = 0
   const payload = input.rows.map((row) => {
-    const staff_id = resolveExcelStaffId(row.staff_name_raw, input.staffs)
-    if (row.staff_name_raw && !staff_id) unmatched_staff += 1
+    const staff_id = resolveSalesActualStaffId(row, input.staffs)
+    if ((row.staff_name_raw || isPurchasingExcelDepartment(row.department)) && !staff_id) unmatched_staff += 1
     return {
       fiscal_year: input.fiscalYear,
       slip_no: row.slip_no || null,

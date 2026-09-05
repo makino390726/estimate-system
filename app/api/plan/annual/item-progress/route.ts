@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { fetchPlanMachines } from '@/lib/annualPlanMachines'
 import { buildItemMonthProgress, type SalesActualItemRow } from '@/lib/annualPlanItemProgress'
+import { fetchStaffsForExcelMatch } from '@/lib/annualPlanSalesImport'
+import { resolveExcelStaffId, resolveSalesActualStaffId } from '@/lib/annualPlanStaffMatch'
+import { PURCHASING_EXCEL_STAFF_NAME, PURCHASING_OFFICE_LABEL } from '@/lib/branches'
 import { readAnnualPlanCache, writeAnnualPlanCache } from '@/lib/annualPlanQueryCache'
 import { fetchSupabasePages } from '@/lib/supabasePagedFetch'
 
@@ -21,11 +24,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'staff は必須です' }, { status: 400 })
     }
 
-    const cacheKey = `item-progress:${fiscalYear}:${allStaff ? 'all' : staffId}`
+    const cacheKey = `item-progress-v3:${fiscalYear}:${allStaff ? 'all' : staffId}`
     const cached = readAnnualPlanCache<Record<string, unknown>>(cacheKey)
     if (cached) return NextResponse.json({ ok: true, ...cached })
 
     const sb = getSupabaseAdmin()
+    const staffs = await fetchStaffsForExcelMatch(sb)
+    const purchasingStaffId = resolveExcelStaffId(PURCHASING_EXCEL_STAFF_NAME, staffs)
 
     type PlanLineRow = {
       category: string
@@ -106,13 +111,41 @@ export async function GET(request: Request) {
       }),
     )
 
+    const applyStaffScope = <T extends { eq: (col: string, val: string) => T; or: (filter: string) => T }>(
+      query: T,
+    ): T => {
+      if (allStaff) return query
+      const selected = staffs.find((s) => s.id === staffId)
+      const surname = String(selected?.name || '').replace(/[\s　].*$/, '').trim()
+      if (purchasingStaffId && staffId === purchasingStaffId) {
+        return query.or(
+          [
+            `staff_id.eq.${staffId}`,
+            `department.eq."${PURCHASING_OFFICE_LABEL}"`,
+            'department.eq.管理部',
+            'department.eq.管理',
+            'department.eq.農材',
+            'department.eq.燃料',
+            'department.eq.購買',
+            'staff_name_raw.ilike.%大倉野%',
+            'staff_name_raw.ilike.%スタンド%',
+            'staff_name_raw.ilike.%大迫%',
+          ].join(','),
+        )
+      }
+      if (surname.length >= 2) {
+        return query.or(`staff_id.eq.${staffId},staff_name_raw.ilike.%${surname}%`)
+      }
+      return query.eq('staff_id', staffId)
+    }
+
     const actuals = await fetchSupabasePages<SalesActualItemRow>({
       count: async () => {
         let query = sb
           .from('annual_sales_actual_lines')
           .select('id', { count: 'exact', head: true })
           .eq('fiscal_year', fiscalYear)
-        if (!allStaff) query = query.eq('staff_id', staffId)
+        query = applyStaffScope(query)
         const { count, error } = await query
         if (error) throw new Error(error.message)
         return count || 0
@@ -120,19 +153,32 @@ export async function GET(request: Request) {
       page: async (from, to) => {
         let query = sb
           .from('annual_sales_actual_lines')
-          .select('billed_on, product_code, product_name, qty, amount_ex_tax, plan_category')
+          .select('billed_on, product_code, product_name, qty, amount_ex_tax, plan_category, department, staff_id, staff_name_raw')
           .eq('fiscal_year', fiscalYear)
-        if (!allStaff) query = query.eq('staff_id', staffId)
+        query = applyStaffScope(query)
         const { data, error } = await query.order('id', { ascending: true }).range(from, to)
         if (error) throw new Error(error.message)
-        return (data || []).map((row) => ({
-          billed_on: row.billed_on ? String(row.billed_on).slice(0, 10) : null,
-          product_code: row.product_code ? String(row.product_code) : null,
-          product_name: row.product_name ? String(row.product_name) : null,
-          qty: Number(row.qty || 0),
-          amount_ex_tax: Number(row.amount_ex_tax || 0),
-          plan_category: row.plan_category ? String(row.plan_category) : null,
-        }))
+        return (data || [])
+          .filter((row) => {
+            if (allStaff) return true
+            const effective = resolveSalesActualStaffId(
+              {
+                department: row.department,
+                staff_name_raw: row.staff_name_raw,
+                staff_id: row.staff_id,
+              },
+              staffs,
+            )
+            return effective === staffId
+          })
+          .map((row) => ({
+            billed_on: row.billed_on ? String(row.billed_on).slice(0, 10) : null,
+            product_code: row.product_code ? String(row.product_code) : null,
+            product_name: row.product_name ? String(row.product_name) : null,
+            qty: Number(row.qty || 0),
+            amount_ex_tax: Number(row.amount_ex_tax || 0),
+            plan_category: row.plan_category ? String(row.plan_category) : null,
+          }))
       },
     })
 

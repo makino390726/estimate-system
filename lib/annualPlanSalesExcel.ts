@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 import { excelPlanCategoryFor } from '@/lib/annualPlanCategories'
 import { fiscalYearFromDate, fiscalYearRange } from '@/lib/annualPlanFiscal'
+import { isPurchasingExcelDepartment, PURCHASING_EXCEL_STAFF_NAME, salesOfficeLabelFromExcelDepartment } from '@/lib/branches'
 
 export type ParsedSalesActualRow = {
   slip_no: string
@@ -224,6 +225,12 @@ export function parseSalesActualWorkbook(
     const amount_ex_tax = parseNumber(idx.amount_ex_tax >= 0 ? line[idx.amount_ex_tax] : 0)
     const amount_inc_tax = parseNumber(idx.amount_inc_tax >= 0 ? line[idx.amount_inc_tax] : 0)
     kamoku_counts[kamoku] = (kamoku_counts[kamoku] || 0) + 1
+    const department = salesOfficeLabelFromExcelDepartment(
+      String(idx.department >= 0 ? line[idx.department] : ''),
+    )
+    const staff_name_raw = isPurchasingExcelDepartment(department)
+      ? PURCHASING_EXCEL_STAFF_NAME
+      : String(idx.staff_name_raw >= 0 ? line[idx.staff_name_raw] : '').trim()
     rows.push({
       slip_no: String(idx.slip_no >= 0 ? line[idx.slip_no] : '').trim(),
       billed_on,
@@ -233,8 +240,8 @@ export function parseSalesActualWorkbook(
       customer_name: String(idx.customer_name >= 0 ? line[idx.customer_name] : '').trim(),
       kamoku,
       plan_category,
-      department: String(idx.department >= 0 ? line[idx.department] : '').trim(),
-      staff_name_raw: String(idx.staff_name_raw >= 0 ? line[idx.staff_name_raw] : '').trim(),
+      department,
+      staff_name_raw,
       qty: parseNumber(idx.qty >= 0 ? line[idx.qty] : 0),
       unit_price: parseNumber(idx.unit_price >= 0 ? line[idx.unit_price] : 0),
       amount_ex_tax,

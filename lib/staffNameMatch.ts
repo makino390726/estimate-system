@@ -6,10 +6,11 @@ const STAFF_NAME_ITAIJI: Record<string, string> = {
     '\uFA11': '\u5D0E', // 﨑 → 崎
     '\u9AD9': '\u9AD8', // 髙 → 高
     '\uFA10': '\u585A', // 塚 → 塚
+    '\u51B6': '\u6CBB', // 冶 → 治（Excel「粟津　敬冶」とマスタ「粟津 敬治」）
 }
 
 function unifyStaffNameItaiji(value: string): string {
-    return value.replace(/[\uFA11\u9AD9\uFA10]/g, (ch) => STAFF_NAME_ITAIJI[ch] || ch)
+    return value.replace(/[\uFA11\u9AD9\uFA10\u51B6]/g, (ch) => STAFF_NAME_ITAIJI[ch] || ch)
 }
 
 /** 担当者名照合用: 半角・全角スペース・NFKC・人名異体字の正規化 */

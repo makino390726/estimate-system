@@ -90,9 +90,45 @@ export const QUOTA_ONLY_OFFICES = [
     { id: 'quota_planning', name: '企画部（SE・海外）' },
 ] as const
 
+export const PURCHASING_OFFICE_LABEL = QUOTA_ONLY_OFFICES[0].name
+/** 売上Excelの管理・農材・燃料は購買に寄せ、担当は大迫に固定する */
+export const PURCHASING_EXCEL_STAFF_NAME = '大迫'
+
 function quotaOfficeAliases(id: (typeof QUOTA_ONLY_OFFICES)[number]['id']): string[] {
-    if (id === 'quota_purchasing') return ['管理部', '管理部（購買）', '購買']
-    return ['企画部', '企画部（SE・海外）', 'SE・海外']
+    if (id === 'quota_purchasing') return ['管理部', '管理部（購買）', '購買', '農材', '燃料']
+    return ['企画部', '企画部（SE・海外）', 'SE・海外', 'SE', 'ＳＥ', '四国', '海外']
+}
+
+/**
+ * 売上Excelの「部門」（鹿児島・宮崎など）→ 年度計画の営業所名。
+ * 取込時と営業所別Excel集計で使う。
+ * 鹿児島・宮崎→南九州、熊本→中九州、福岡→西九州、東日本→東日本、東北→東北、
+ * 四国・SE・海外→企画部、管理・農材・燃料→管理部（購買）。
+ */
+export function salesOfficeLabelFromExcelDepartment(raw: string | null | undefined): string {
+    const dept = String(raw || '').replace(/[\s　]/g, '')
+    if (!dept) return ''
+
+    const rules: Array<{ needles: string[]; label: string }> = [
+        { needles: ['鹿児島', '宮崎', '南九州'], label: '南九州営業所' },
+        { needles: ['熊本', '中九州'], label: '中九州営業所' },
+        { needles: ['福岡', '西九州'], label: '西九州営業所' },
+        { needles: ['東日本'], label: '東日本営業所' },
+        { needles: ['沖縄'], label: '沖縄出張所' },
+        { needles: ['東北'], label: '東北出張所' },
+        { needles: ['四国', 'ＳＥ', 'SE', '海外', '企画'], label: '企画部（SE・海外）' },
+        { needles: ['管理', '農材', '燃料', '購買'], label: '管理部（購買）' },
+    ]
+    for (const rule of rules) {
+        if (rule.needles.some((n) => dept.includes(n))) return rule.label
+    }
+
+    const viaStaff = salesOfficeLabelFromStaff({ department: String(raw || '').trim() })
+    return viaStaff === UNSET_SALES_OFFICE_LABEL ? String(raw || '').trim() : viaStaff
+}
+
+export function isPurchasingExcelDepartment(raw: string | null | undefined): boolean {
+    return salesOfficeLabelFromExcelDepartment(raw) === PURCHASING_OFFICE_LABEL
 }
 
 function allQuotaOffices(): Array<{ id: string; name: string }> {

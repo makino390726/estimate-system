@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { fetchStaffsForExcelMatch } from '@/lib/annualPlanSalesImport'
-import { resolveExcelStaffId } from '@/lib/annualPlanStaffMatch'
+import { resolveSalesActualStaffId } from '@/lib/annualPlanStaffMatch'
+import { salesOfficeLabelFromExcelDepartment } from '@/lib/branches'
 import { readAnnualPlanCache, writeAnnualPlanCache } from '@/lib/annualPlanQueryCache'
 import { fetchSupabasePages } from '@/lib/supabasePagedFetch'
 
@@ -11,6 +12,8 @@ export type SalesActualSummary = {
   byStaff: Record<string, number>
   byCategory: Record<string, number>
   byStaffCategory: Record<string, Record<string, number>>
+  byOffice: Record<string, number>
+  byOfficeCategory: Record<string, Record<string, number>>
   unmatchedAmount: number
   totalAmount: number
   import: {
@@ -35,7 +38,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'fy が不正です' }, { status: 400 })
     }
 
-    const cacheKey = `sales-actuals:${fiscalYear}`
+    const cacheKey = `sales-actuals-v5:${fiscalYear}`
     const cached = readAnnualPlanCache<SalesActualSummary>(cacheKey)
     if (cached) return NextResponse.json({ ok: true, ...cached })
 
@@ -54,6 +57,7 @@ export async function GET(request: Request) {
     const rows = await fetchSupabasePages<{
       staff_id: string | null
       staff_name_raw: string | null
+      department: string | null
       plan_category: string | null
       amount_ex_tax: number | null
     }>({
@@ -68,7 +72,7 @@ export async function GET(request: Request) {
       page: async (from, to) => {
         const { data, error } = await sb
           .from('annual_sales_actual_lines')
-          .select('staff_id, staff_name_raw, plan_category, amount_ex_tax')
+          .select('staff_id, staff_name_raw, department, plan_category, amount_ex_tax')
           .eq('fiscal_year', fiscalYear)
           .order('id', { ascending: true })
           .range(from, to)
@@ -80,6 +84,8 @@ export async function GET(request: Request) {
     const byStaff: Record<string, number> = {}
     const byCategory: Record<string, number> = {}
     const byStaffCategory: Record<string, Record<string, number>> = {}
+    const byOffice: Record<string, number> = {}
+    const byOfficeCategory: Record<string, Record<string, number>> = {}
     let unmatchedAmount = 0
     let totalAmount = 0
 
@@ -89,9 +95,20 @@ export async function GET(request: Request) {
       totalAmount += amount
       const category = String(row.plan_category || '')
       add(byCategory, category, amount)
-      const staffId = row.staff_id
-        ? String(row.staff_id)
-        : resolveExcelStaffId(String(row.staff_name_raw || ''), staffs)
+      const office = salesOfficeLabelFromExcelDepartment(row.department)
+      if (office) {
+        add(byOffice, office, amount)
+        if (!byOfficeCategory[office]) byOfficeCategory[office] = {}
+        add(byOfficeCategory[office], category, amount)
+      }
+      const staffId = resolveSalesActualStaffId(
+        {
+          department: row.department,
+          staff_name_raw: row.staff_name_raw,
+          staff_id: row.staff_id,
+        },
+        staffs,
+      )
       if (staffId) {
         add(byStaff, staffId, amount)
         if (!byStaffCategory[staffId]) byStaffCategory[staffId] = {}
@@ -103,6 +120,8 @@ export async function GET(request: Request) {
       byStaff,
       byCategory,
       byStaffCategory,
+      byOffice,
+      byOfficeCategory,
       unmatchedAmount,
       totalAmount,
       import: latest

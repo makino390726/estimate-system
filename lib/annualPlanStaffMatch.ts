@@ -1,9 +1,29 @@
+import { isPurchasingExcelDepartment, PURCHASING_EXCEL_STAFF_NAME } from '@/lib/branches'
 import { normalizeStaffNameKey } from '@/lib/staffNameMatch'
 
 export type PlanStaffMatch = { id: string; name: string }
 
+/** Excel 担当名 → 年度計画の担当。大倉野・スタンドは購買の大迫に寄せる */
+const EXCEL_STAFF_ALIASES: Array<{ needles: string[]; name: string }> = [
+  { needles: ['大倉野', 'スタンド'], name: PURCHASING_EXCEL_STAFF_NAME },
+]
+
 function stripTrailingDigits(key: string): string {
   return key.replace(/[0-9０-９]+$/g, '')
+}
+
+function aliasedExcelStaffName(rawName: string): string {
+  const key = normalizeStaffNameKey(rawName)
+  if (!key) return rawName
+  for (const alias of EXCEL_STAFF_ALIASES) {
+    if (alias.needles.some((n) => key.includes(normalizeStaffNameKey(n)))) return alias.name
+  }
+  return rawName
+}
+
+export function isOsakoExcelAlias(rawName: string | null | undefined): boolean {
+  const raw = String(rawName || '')
+  return Boolean(raw) && aliasedExcelStaffName(raw) === PURCHASING_EXCEL_STAFF_NAME
 }
 
 /**
@@ -15,7 +35,7 @@ export function resolveExcelStaffId(
   rawName: string,
   staffs: readonly PlanStaffMatch[],
 ): string | null {
-  const key = normalizeStaffNameKey(rawName)
+  const key = normalizeStaffNameKey(aliasedExcelStaffName(rawName))
   if (!key) return null
 
   const rows = staffs
@@ -44,4 +64,20 @@ export function resolveExcelStaffId(
   if (equal) return equal.id
   candidates.sort((a, b) => a.key.length - b.key.length)
   return candidates[0].id
+}
+
+/** 管理・農材・燃料、および Excel 担当「大倉野」「スタンド」は大迫。 */
+export function resolveSalesActualStaffId(
+  input: {
+    department?: string | null
+    staff_name_raw?: string | null
+    staff_id?: string | null
+  },
+  staffs: readonly PlanStaffMatch[],
+): string | null {
+  if (isPurchasingExcelDepartment(input.department) || isOsakoExcelAlias(input.staff_name_raw)) {
+    return resolveExcelStaffId(PURCHASING_EXCEL_STAFF_NAME, staffs)
+  }
+  if (input.staff_id) return String(input.staff_id)
+  return resolveExcelStaffId(String(input.staff_name_raw || ''), staffs)
 }
