@@ -2983,7 +2983,7 @@ export default function CaseNewPage() {
           taxAmount={taxAmount}
           totalAmount={totalAmount}
           layoutType={layoutType}
-          MAX_ROWS_PER_PAGE={15}  // ★ ここで1ページ15行に設定
+          MAX_ROWS_PER_PAGE={20}
           approvalStamps={approvalStamps}
           stampUrls={{
             staff: approvalStamps.staff ? '/stamps/staff.png' : null,

@@ -121,6 +121,9 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
         background-image: none !important;
         text-shadow: none !important;
       }
+      tr {
+        page-break-inside: avoid;
+      }
       body, div, p, span, td, th, table, tr {
         color: #000 !important;
       }
@@ -295,7 +298,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
             </tr>
 
-            {/* 埋め行 */}
+            {/* 埋め行（値引行は常に表示するため、ここに固定空白は足さない） */}
             {Array.from({ length: fillerRowsCount }).map((_, idx) => (
               <tr key={`filler-${idx}`}>
                 <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
@@ -306,28 +309,6 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                 <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
               </tr>
             ))}
-
-            {/* 値引きが0の場合は空白行を2行追加 */}
-            {discount === 0 && (
-              <>
-                <tr>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                </tr>
-                <tr>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                </tr>
-              </>
-            )}
 
             {/* 小計〜合計 */}
             <tr>
@@ -487,7 +468,6 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
     sectionGroups.forEach((group, groupIndex) => {
       const sectionNumber = groupIndex + 1
-      // ★ コメント行を考慮して計算
       const commentRowsCount = group.rows.filter(r => r.comment).length
       const requiredRows = 1 + group.rows.length + commentRowsCount + 1
       const emptyRowsCount = Math.max(0, DETAIL_BODY_ROWS - requiredRows)
@@ -881,31 +861,33 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   // =========================
   // 縦様式
   // =========================
-  const DATA_ROWS_PER_PAGE = MAX_ROWS_PER_PAGE || 20 // ★ propsから使用、デフォルト20
+  const DATA_ROWS_PER_PAGE = MAX_ROWS_PER_PAGE || 20
+  const BODY_SLOTS = DATA_ROWS_PER_PAGE
+  const slotCost = (row: PrintRow) => 1 + (row.comment ? 1 : 0)
+  const totalSlots = visibleRows.reduce((sum, row) => sum + slotCost(row), 0)
+  const isMultiPage = totalSlots > BODY_SLOTS
+  const nonLastDataSlots = BODY_SLOTS - 1
 
-  // ★ コメント行を考慮したページ分割ロジック
   const pages: PrintRow[][] = []
-  let currentPage: PrintRow[] = []
-  let currentPageRows = 0
-
-  for (const row of visibleRows) {
-    const rowsForThisRow = 1 + (row.comment ? 1 : 0) // データ行 + コメント行（あれば）
-
-    if (currentPageRows + rowsForThisRow > DATA_ROWS_PER_PAGE) {
-      // 新しいページに移動
-      if (currentPage.length > 0) {
+  if (!isMultiPage) {
+    pages.push(visibleRows)
+  } else {
+    let currentPage: PrintRow[] = []
+    let currentPageRows = 0
+    for (const row of visibleRows) {
+      const rowsForThisRow = slotCost(row)
+      if (currentPageRows + rowsForThisRow > nonLastDataSlots && currentPage.length > 0) {
         pages.push(currentPage)
+        currentPage = [row]
+        currentPageRows = rowsForThisRow
+      } else {
+        currentPage.push(row)
+        currentPageRows += rowsForThisRow
       }
-      currentPage = [row]
-      currentPageRows = rowsForThisRow
-    } else {
-      currentPage.push(row)
-      currentPageRows += rowsForThisRow
     }
-  }
-
-  if (currentPage.length > 0) {
-    pages.push(currentPage)
+    if (currentPage.length > 0) {
+      pages.push(currentPage)
+    }
   }
   if (pages.length === 0) {
     pages.push([])
@@ -916,9 +898,12 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
       <style>{printStyleSheet}</style>
       {pages.map((pageRows, pageIndex) => {
         const isLast = pageIndex === pages.length - 1
-        // ★ コメント行を考慮した埋め行計算
-        const filledRows = pageRows.reduce((sum, row) => sum + (1 + (row.comment ? 1 : 0)), 0)
-        const emptyCount = Math.max(0, DATA_ROWS_PER_PAGE - filledRows)
+        const filledRows = pageRows.reduce((sum, row) => sum + slotCost(row), 0)
+        const pageSubtotal = pageRows.reduce((sum, row) => sum + (row.amount || 0), 0)
+        const showPageTotalOnly = isMultiPage && !isLast
+        const dataSlots = showPageTotalOnly ? nonLastDataSlots : BODY_SLOTS
+        const emptyCount = Math.max(0, dataSlots - filledRows)
+        const summaryLabel = isMultiPage ? 'ページ合計' : '小　　　計'
 
         return (
           <div
@@ -1166,6 +1151,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                 fontSize: 10,
                 marginTop: '3mm',
                 marginBottom: '2mm',
+                tableLayout: 'fixed',
               }}
             >
               <thead>
@@ -1182,7 +1168,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                 {pageRows.map((row, idx) => (
                   <React.Fragment key={idx}>
                     <tr>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                         {row.item_name}
                         {row.spec && (
                           <>
@@ -1228,41 +1214,20 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   </tr>
                 ))}
 
-                {discount === 0 && (
-                  <>
-                    <tr>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>&nbsp;</td>
-                    </tr>
-                    <tr>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>&nbsp;</td>
-                    </tr>
-                  </>
-                )}
-
                 <tr>
                   <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
-                    小　　　計
+                    {summaryLabel}
                   </td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
-                    {isLast ? subtotal.toLocaleString() : ''}
+                    {pageSubtotal.toLocaleString()}
                   </td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
                 </tr>
 
-                {discount > 0 && (
+                {!showPageTotalOnly && discount > 0 && (
                   <>
                     <tr>
                       <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
@@ -1272,7 +1237,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
-                        {isLast ? discount.toLocaleString() : ''}
+                        {discount.toLocaleString()}
                       </td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
                     </tr>
@@ -1285,13 +1250,15 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
-                        {isLast ? subtotalAfterDiscount.toLocaleString() : ''}
+                        {subtotalAfterDiscount.toLocaleString()}
                       </td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
                     </tr>
                   </>
                 )}
 
+                {!showPageTotalOnly && (
+                  <>
                 <tr>
                   <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
                     消 費 税（{(taxRate * 100).toFixed(0)}%）
@@ -1300,7 +1267,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
-                    {isLast ? taxAmount.toLocaleString() : ''}
+                    {taxAmount.toLocaleString()}
                   </td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
                 </tr>
@@ -1313,10 +1280,12 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   <td style={{ border: '2px solid #000', padding: '2px 3px', backgroundColor: '#f0f0f0', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '2px solid #000', padding: '2px 3px', backgroundColor: '#f0f0f0', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '2px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 11, backgroundColor: '#f0f0f0', height: '6mm' }}>
-                    {isLast ? totalAmount.toLocaleString() : ''}
+                    {totalAmount.toLocaleString()}
                   </td>
                   <td style={{ border: '2px solid #000', padding: '2px 3px', backgroundColor: '#f0f0f0', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                 </tr>
+                  </>
+                )}
               </tbody>
             </table>
           </div>
