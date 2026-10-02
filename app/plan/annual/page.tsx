@@ -564,72 +564,85 @@ function AnnualDashboardContent() {
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     documentTitle: `年度計画進捗_${fiscalYearLabel(fiscalYear)}`,
+    ignoreGlobalStyles: true,
     pageStyle: `
       @page {
         size: A4 landscape;
         margin: 8mm;
       }
-      @media print {
-        body { margin: 0; padding: 0; }
-        .print-hide { display: none !important; }
-        h1.print-only, p.print-only { display: block !important; }
-        span.print-only { display: inline !important; }
-        .annual-progress-print,
-        .annual-progress-print div {
-          background-color: #fff !important;
-          color: #111 !important;
-          box-shadow: none !important;
-        }
-        .annual-progress-print {
-          max-width: none !important;
-          padding: 0 !important;
-        }
-        .annual-progress-print h1,
-        .annual-progress-print h2 {
-          color: #111 !important;
-        }
-        .annual-progress-print table {
-          min-width: 0 !important;
-          width: 100% !important;
-          font-size: 8pt !important;
-        }
-        .annual-progress-print th,
-        .annual-progress-print td {
-          background: #fff !important;
-          color: #111 !important;
-          border-color: #333 !important;
-          padding: 2px 3px !important;
-        }
-        .annual-progress-print thead { display: table-header-group; }
-        .annual-progress-print tr,
-        .annual-progress-print tbody.print-keep {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        .annual-progress-print h2,
-        .annual-progress-print h3 {
-          break-after: avoid;
-          page-break-after: avoid;
-        }
-        .print-keep {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-        .print-break {
-          break-before: page;
-          page-break-before: always;
-        }
-        .print-scroll { overflow: visible !important; }
-        .annual-progress-print .print-meter-track {
-          background-color: #e5e7eb !important;
-          border-color: #94a3b8 !important;
-        }
-        .annual-progress-print .print-meter-closed { background-color: #64748b !important; }
-        .annual-progress-print .print-meter-excel { background-color: #16a34a !important; }
-        .annual-progress-print .print-meter-plan { background-color: #94a3b8 !important; }
-        .annual-progress-print .print-meter-weighted { background-color: #0284c7 !important; }
-        .annual-progress-print .print-meter-elapsed { background-color: #0284c7 !important; }
+      html {
+        color-scheme: only light;
       }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #fff !important;
+        color: #111 !important;
+        font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      a { color: inherit !important; text-decoration: none !important; }
+      .print-hide { display: none !important; }
+      h1.print-only, p.print-only { display: block !important; }
+      span.print-only { display: inline !important; }
+      .annual-progress-print,
+      .annual-progress-print div {
+        background-color: #fff !important;
+        color: #111 !important;
+        box-shadow: none !important;
+      }
+      .annual-progress-print {
+        max-width: none !important;
+        padding: 0 !important;
+      }
+      .annual-progress-print h1,
+      .annual-progress-print h2,
+      .annual-progress-print h3 {
+        color: #111 !important;
+      }
+      .annual-progress-print table {
+        min-width: 0 !important;
+        width: 100% !important;
+        font-size: 8pt !important;
+        border-collapse: collapse !important;
+      }
+      .annual-progress-print th,
+      .annual-progress-print td {
+        background: #fff !important;
+        color: #111 !important;
+        border: 1px solid #333 !important;
+        padding: 2px 3px !important;
+      }
+      .annual-progress-print thead { display: table-header-group; }
+      .annual-progress-print tr,
+      .annual-progress-print tbody.print-keep {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .annual-progress-print h2,
+      .annual-progress-print h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+      }
+      .print-keep {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .print-break {
+        break-before: page;
+        page-break-before: always;
+      }
+      .print-scroll { overflow: visible !important; }
+      .annual-progress-print .print-meter-track {
+        background-color: #e5e7eb !important;
+        border-color: #94a3b8 !important;
+      }
+      .annual-progress-print .print-meter-closed { background-color: #64748b !important; }
+      .annual-progress-print .print-meter-excel { background-color: #16a34a !important; }
+      .annual-progress-print .print-meter-plan { background-color: #94a3b8 !important; }
+      .annual-progress-print .print-meter-weighted { background-color: #0284c7 !important; }
+      .annual-progress-print .print-meter-elapsed { background-color: #0284c7 !important; }
     `,
   })
 
