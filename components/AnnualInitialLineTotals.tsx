@@ -42,7 +42,7 @@ export function AnnualInitialLineTotals(props: {
   const excelTotal = rows.reduce((s, r) => s + Number(excelByCategory[r.cat] || 0), 0)
 
   return (
-    <div style={{ overflowX: 'auto', marginTop: 12 }}>
+    <div className="print-keep print-scroll" style={{ overflowX: 'auto', marginTop: 12 }}>
       {props.title ? (
         <h3 style={{ margin: '0 0 8px', fontSize: 14, color: '#f8fafc' }}>{props.title}</h3>
       ) : null}

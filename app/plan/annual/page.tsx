@@ -1,9 +1,10 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { useReactToPrint } from 'react-to-print'
 import {
   fetchAllLinesForPlans,
   fetchAllPlansForYear,
@@ -85,6 +86,7 @@ function DualMeter(props: { closed: number; excel: number; plan: number; elapsed
   const elapsed = Math.min(Math.max(props.elapsed, 0), 100)
   const marker = (
     <div
+      className="print-meter-elapsed"
       title={`経過 ${elapsed}%`}
       style={{
         position: 'absolute',
@@ -98,32 +100,32 @@ function DualMeter(props: { closed: number; excel: number; plan: number; elapsed
     />
   )
   return (
-    <div style={{ ...planPanel, padding: 16 }}>
+    <div className="print-keep" style={{ ...planPanel, padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
         <span>見積成約 {pct(props.closed, props.plan)} / Excel {pct(props.excel, props.plan)} / 経過 {elapsed}%</span>
         <span>
           {yen(props.closed)} / {yen(props.excel)} / 当初計画 {yen(props.plan)}
         </span>
       </div>
-      <div style={{ position: 'relative', height: 14, background: '#1e293b', borderRadius: 4, overflow: 'hidden', border: '1px solid #334155', marginBottom: 6 }}>
-        <div style={{ width: `${closedPct}%`, height: '100%', background: '#64748b' }} />
+      <div className="print-meter-track" style={{ position: 'relative', height: 14, background: '#1e293b', borderRadius: 4, overflow: 'hidden', border: '1px solid #334155', marginBottom: 6 }}>
+        <div className="print-meter-closed" style={{ width: `${closedPct}%`, height: '100%', background: '#64748b' }} />
         {marker}
       </div>
-      <div style={{ position: 'relative', height: 14, background: '#1e293b', borderRadius: 4, overflow: 'hidden', border: '1px solid #334155' }}>
-        <div style={{ width: `${excelPct}%`, height: '100%', background: '#22c55e' }} />
+      <div className="print-meter-track" style={{ position: 'relative', height: 14, background: '#1e293b', borderRadius: 4, overflow: 'hidden', border: '1px solid #334155' }}>
+        <div className="print-meter-excel" style={{ width: `${excelPct}%`, height: '100%', background: '#22c55e' }} />
         {marker}
       </div>
       <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, ...planMuted }}>
         <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#64748b', marginRight: 6 }} />
+          <span className="print-meter-closed" style={{ display: 'inline-block', width: 10, height: 10, background: '#64748b', marginRight: 6 }} />
           上段 見積成約（受注・注文・完了）
         </span>
         <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#22c55e', marginRight: 6 }} />
+          <span className="print-meter-excel" style={{ display: 'inline-block', width: 10, height: 10, background: '#22c55e', marginRight: 6 }} />
           下段 Excel税抜
         </span>
         <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#38bdf8', marginRight: 6 }} />
+          <span className="print-meter-elapsed" style={{ display: 'inline-block', width: 10, height: 10, background: '#38bdf8', marginRight: 6 }} />
           年度の経過
         </span>
       </div>
@@ -138,11 +140,11 @@ function ProgressBars(props: {
 }) {
   const max = Math.max(...props.rows.map((r) => Math.max(r.plan, r.closed, r.excel)), 1)
   return (
-    <div style={{ ...planPanel, padding: 16 }}>
+    <div className="print-keep" style={{ ...planPanel, padding: 16 }}>
       <h2 style={{ margin: '0 0 12px', fontSize: 16, color: '#f8fafc' }}>{props.title}</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {props.rows.map((r) => (
-          <div key={r.label}>
+          <div key={r.label} className="print-keep">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4, fontSize: 13 }}>
               <span>{r.label}</span>
               <span style={planMuted}>
@@ -150,14 +152,14 @@ function ProgressBars(props: {
               </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(r.plan / max) * 100}%`, height: '100%', background: '#94a3b8' }} />
+              <div className="print-meter-track" style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div className="print-meter-plan" style={{ width: `${(r.plan / max) * 100}%`, height: '100%', background: '#94a3b8' }} />
               </div>
-              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(r.closed / max) * 100}%`, height: '100%', background: '#64748b' }} />
+              <div className="print-meter-track" style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div className="print-meter-closed" style={{ width: `${(r.closed / max) * 100}%`, height: '100%', background: '#64748b' }} />
               </div>
-              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(r.excel / max) * 100}%`, height: '100%', background: '#22c55e' }} />
+              <div className="print-meter-track" style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div className="print-meter-excel" style={{ width: `${(r.excel / max) * 100}%`, height: '100%', background: '#22c55e' }} />
               </div>
             </div>
           </div>
@@ -179,7 +181,7 @@ function GroupedBars(props: {
       <h2 style={{ margin: '0 0 12px', fontSize: 16, color: '#f8fafc' }}>{props.title}</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {props.rows.map((r) => (
-          <div key={r.key || r.label}>
+          <div key={r.key || r.label} className="print-keep">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4, fontSize: 13 }}>
               <span>{r.label}</span>
               <span style={planMuted}>
@@ -187,14 +189,14 @@ function GroupedBars(props: {
               </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(r.plan / max) * 100}%`, height: '100%', background: '#94a3b8' }} />
+              <div className="print-meter-track" style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div className="print-meter-plan" style={{ width: `${(r.plan / max) * 100}%`, height: '100%', background: '#94a3b8' }} />
               </div>
-              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(r.weighted / max) * 100}%`, height: '100%', background: '#38bdf8' }} />
+              <div className="print-meter-track" style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div className="print-meter-weighted" style={{ width: `${(r.weighted / max) * 100}%`, height: '100%', background: '#38bdf8' }} />
               </div>
-              <div style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(r.excel / max) * 100}%`, height: '100%', background: '#22c55e' }} />
+              <div className="print-meter-track" style={{ height: 10, background: '#1e293b', borderRadius: 3, overflow: 'hidden' }}>
+                <div className="print-meter-excel" style={{ width: `${(r.excel / max) * 100}%`, height: '100%', background: '#22c55e' }} />
               </div>
             </div>
           </div>
@@ -202,15 +204,15 @@ function GroupedBars(props: {
       </div>
       <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 12, flexWrap: 'wrap', ...planMuted }}>
         <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#94a3b8', marginRight: 6 }} />
+          <span className="print-meter-plan" style={{ display: 'inline-block', width: 10, height: 10, background: '#94a3b8', marginRight: 6 }} />
           上段 計画額
         </span>
         <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#38bdf8', marginRight: 6 }} />
+          <span className="print-meter-weighted" style={{ display: 'inline-block', width: 10, height: 10, background: '#38bdf8', marginRight: 6 }} />
           中段 確度見込
         </span>
         <span>
-          <span style={{ display: 'inline-block', width: 10, height: 10, background: '#22c55e', marginRight: 6 }} />
+          <span className="print-meter-excel" style={{ display: 'inline-block', width: 10, height: 10, background: '#22c55e', marginRight: 6 }} />
           下段 Excel税抜
         </span>
       </div>
@@ -233,6 +235,7 @@ function machineKey(line: AnnualPlanLine) {
 
 function AnnualDashboardContent() {
   const searchParams = useSearchParams()
+  const printRef = useRef<HTMLDivElement | null>(null)
   const [fiscalYear, setFiscalYear] = useState(() => {
     const q = Number(searchParams.get('fy'))
     return Number.isFinite(q) && q > 2000 ? q : fiscalYearFromDate()
@@ -558,11 +561,91 @@ function AnnualDashboardContent() {
     return { totals: lineTotals(groupedLines), conf: qtyByConfidence(groupedLines), excel }
   }, [machineRows, excelByMachine])
 
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: `年度計画進捗_${fiscalYearLabel(fiscalYear)}`,
+    pageStyle: `
+      @page {
+        size: A4 landscape;
+        margin: 8mm;
+      }
+      @media print {
+        body { margin: 0; padding: 0; }
+        .print-hide { display: none !important; }
+        h1.print-only, p.print-only { display: block !important; }
+        span.print-only { display: inline !important; }
+        .annual-progress-print,
+        .annual-progress-print div {
+          background-color: #fff !important;
+          color: #111 !important;
+          box-shadow: none !important;
+        }
+        .annual-progress-print {
+          max-width: none !important;
+          padding: 0 !important;
+        }
+        .annual-progress-print h1,
+        .annual-progress-print h2 {
+          color: #111 !important;
+        }
+        .annual-progress-print table {
+          min-width: 0 !important;
+          width: 100% !important;
+          font-size: 8pt !important;
+        }
+        .annual-progress-print th,
+        .annual-progress-print td {
+          background: #fff !important;
+          color: #111 !important;
+          border-color: #333 !important;
+          padding: 2px 3px !important;
+        }
+        .annual-progress-print thead { display: table-header-group; }
+        .annual-progress-print tr,
+        .annual-progress-print tbody.print-keep {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .annual-progress-print h2,
+        .annual-progress-print h3 {
+          break-after: avoid;
+          page-break-after: avoid;
+        }
+        .print-keep {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .print-break {
+          break-before: page;
+          page-break-before: always;
+        }
+        .print-scroll { overflow: visible !important; }
+        .annual-progress-print .print-meter-track {
+          background-color: #e5e7eb !important;
+          border-color: #94a3b8 !important;
+        }
+        .annual-progress-print .print-meter-closed { background-color: #64748b !important; }
+        .annual-progress-print .print-meter-excel { background-color: #16a34a !important; }
+        .annual-progress-print .print-meter-plan { background-color: #94a3b8 !important; }
+        .annual-progress-print .print-meter-weighted { background-color: #0284c7 !important; }
+        .annual-progress-print .print-meter-elapsed { background-color: #0284c7 !important; }
+      }
+    `,
+  })
+
   return (
     <div style={planPageStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+      <style>{`.print-only { display: none; }`}</style>
+      <div className="print-hide" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <h1 style={{ margin: 0, fontSize: 20, color: '#f8fafc' }}>年度計画 進捗</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => handlePrint()}
+            style={{ ...planBtn, background: '#00bcd4', color: '#000', borderColor: '#00bcd4', fontWeight: 700 }}
+          >
+            PDF印刷
+          </button>
           <Link href={`/plan/annual/quota?fy=${fiscalYear}`}>
             <button style={{ ...planBtn, background: '#b45309', color: '#fff', borderColor: '#b45309' }}>ノルマ</button>
           </Link>
@@ -575,7 +658,16 @@ function AnnualDashboardContent() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+      <div ref={printRef} className="annual-progress-print">
+      <div className="print-keep">
+      <h1 className="print-only" style={{ margin: '0 0 8px', fontSize: 18, textAlign: 'center' }}>
+        年度計画 進捗（{fiscalYearLabel(fiscalYear)}）
+      </h1>
+      <p className="print-only" style={{ margin: '0 0 12px', fontSize: 12, textAlign: 'center' }}>
+        経過 {elapsed}%
+      </p>
+
+      <div className="print-hide" style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
         <label>
           年度{' '}
           <select value={String(fiscalYear)} onChange={(e) => setFiscalYear(Number(e.target.value))} style={planInput}>
@@ -606,7 +698,7 @@ function AnnualDashboardContent() {
         </p>
       )}
 
-      <section style={planPanel}>
+      <section className="print-hide" style={planPanel}>
         <h2 style={{ marginTop: 0, fontSize: 16, color: '#f8fafc' }}>売上Excel取込</h2>
         <p style={{ ...planMuted, marginTop: 0 }}>
           毎月の累計ファイル（例: 売上(2025.9～2026.7).xlsx）を選ぶと、この年度の実績を置き換えます。石油・その他資材は資材に合算します。部門は
@@ -663,9 +755,10 @@ function AnnualDashboardContent() {
       </p>
 
       <DualMeter closed={companyClosed} excel={companyExcel} plan={companyInitial.amount} elapsed={elapsed} />
+      </div>
 
-      <div id="annual-line-totals" style={{ ...planPanel, padding: 16, marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+      <div id="annual-line-totals" className="print-keep" style={{ ...planPanel, padding: 16, marginBottom: 20 }}>
+        <div className="print-hide" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
           <label style={planMuted}>
             集計単位{' '}
             <select
@@ -709,7 +802,8 @@ function AnnualDashboardContent() {
       />
 
       {officeRows.length > 0 && (
-        <>
+        <div>
+          <div className="print-keep">
           <h2 style={{ fontSize: 16, color: '#f8fafc' }}>営業所別</h2>
           <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
             計画・見積成約は担当者マスタの部署、Excel実績は取込表の部門です。鹿児島・宮崎→南九州営業所、熊本→中九州営業所、福岡→西九州営業所、東日本→東日本、東北→東北、四国・SE・海外→企画部、管理・農材・燃料→管理部（購買）（担当は大迫。Excelの大倉野・スタンドも含む）です。
@@ -724,7 +818,8 @@ function AnnualDashboardContent() {
               excel: o.excel,
             }))}
           />
-          <div style={{ overflowX: 'auto', marginBottom: 20 }}>
+          </div>
+          <div className="print-scroll print-keep" style={{ overflowX: 'auto', marginBottom: 20 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1240 }}>
               <thead>
                 <tr>
@@ -743,7 +838,7 @@ function AnnualDashboardContent() {
                     'Excel対ノルマ',
                     '',
                   ].map((h) => (
-                    <th key={h || 'office-actions'} style={planTh}>
+                    <th key={h || 'office-actions'} className={h ? undefined : 'print-hide'} style={planTh}>
                       {h}
                     </th>
                   ))}
@@ -766,7 +861,7 @@ function AnnualDashboardContent() {
                     <td style={{ ...planTd, textAlign: 'right' }}>{yen(o.excel)}</td>
                     <td style={{ ...planTd, textAlign: 'right' }}>{pct(o.excel, o.initial)}</td>
                     <td style={{ ...planTd, textAlign: 'right' }}>{o.quota > 0 ? pct(o.excel, o.quota) : '—'}</td>
-                    <td style={planTd}>
+                    <td className="print-hide" style={planTd}>
                       <button
                         type="button"
                         onClick={() => {
@@ -807,7 +902,7 @@ function AnnualDashboardContent() {
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
                     {companyQuota > 0 ? pct(officeRows.reduce((s, o) => s + o.excel, 0), companyQuota) : '—'}
                   </td>
-                  <td style={planTd}>
+                  <td className="print-hide" style={planTd}>
                     <button
                       type="button"
                       onClick={() => {
@@ -823,14 +918,17 @@ function AnnualDashboardContent() {
               </tbody>
             </table>
           </div>
-        </>
+        </div>
       )}
 
+      <div className="print-break">
+      <div className="print-keep">
       <h2 style={{ fontSize: 16, color: '#f8fafc' }}>担当者別</h2>
       <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
         見積対ノルマ・Excel対ノルマの分母は各担当の必達目標（ノルマ配分）。未設定の担当は — です。小計の対ノルマは営業所ノルマに対する値です。
       </p>
-      <div style={{ overflowX: 'auto' }}>
+      </div>
+      <div className="print-scroll" style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
@@ -848,15 +946,14 @@ function AnnualDashboardContent() {
                 'Excel対ノルマ',
                 '',
               ].map((h) => (
-                <th key={h || 'actions'} style={planTh}>
+                <th key={h || 'actions'} className={h ? undefined : 'print-hide'} style={planTh}>
                   {h}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
             {officeRows.map((office) => (
-              <Fragment key={office.key}>
+              <tbody key={office.key} className="print-keep">
                 <tr>
                   <td colSpan={12} style={{ ...planTd, fontWeight: 700, background: '#1e293b' }}>
                     {office.label}
@@ -883,7 +980,7 @@ function AnnualDashboardContent() {
                       <td style={{ ...planTd, textAlign: 'right' }}>{yen(excel)}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{pct(excel, t.initial.amount)}</td>
                       <td style={{ ...planTd, textAlign: 'right' }}>{staffQuota > 0 ? pct(excel, staffQuota) : '—'}</td>
-                      <td style={planTd}>
+                      <td className="print-hide" style={planTd}>
                         <button type="button" onClick={() => setItemStaffId(staff.id)} style={{ ...planBtn, padding: '4px 8px', marginRight: 8 }}>
                           月次
                         </button>
@@ -917,16 +1014,16 @@ function AnnualDashboardContent() {
                   <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>
                     {office.quota > 0 ? pct(office.excel, office.quota) : '—'}
                   </td>
-                  <td style={planTd} />
+                  <td className="print-hide" style={planTd} />
                 </tr>
-              </Fragment>
+              </tbody>
             ))}
-          </tbody>
         </table>
       </div>
+      </div>
 
-      <div style={{ marginTop: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+      <div className="print-break" style={{ marginTop: 28 }}>
+        <div className="print-hide" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
           <label style={planMuted}>
             担当者{' '}
             <select
@@ -954,11 +1051,12 @@ function AnnualDashboardContent() {
         />
       </div>
 
+      <div className="print-keep">
       <h2 style={{ fontSize: 16, marginTop: 24, color: '#f8fafc', marginBottom: 4 }}>カテゴリ別</h2>
       <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
         暖房機・たばこ乾燥機・食品乾燥機等は生産品にまとめ、Excel科目「生産品」と対比します。プレハブ冷蔵庫等の仕入品は工事です。計画額は中間計画、当初は担当確定＋経営上乗せです。
       </p>
-      <div style={{ overflowX: 'auto' }}>
+      <div className="print-scroll" style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
@@ -1010,10 +1108,17 @@ function AnnualDashboardContent() {
           </tbody>
         </table>
       </div>
+      </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
-        <h2 style={{ fontSize: 16, color: '#f8fafc', margin: 0 }}>機種別</h2>
-        <label style={planMuted}>
+      <div className="print-break">
+      <div className="print-keep" style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: 16, color: '#f8fafc', margin: 0 }}>
+          機種別
+          <span className="print-only" style={{ fontWeight: 400, fontSize: 13, marginLeft: 8 }}>
+            （{machineCategory}）
+          </span>
+        </h2>
+        <label className="print-hide" style={planMuted}>
           カテゴリ{' '}
           <select
             value={machineCategory}
@@ -1053,7 +1158,7 @@ function AnnualDashboardContent() {
           }))}
         />
       )}
-      <div style={{ overflowX: 'auto' }}>
+      <div className="print-scroll print-break" style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
           <thead>
             <tr>
@@ -1111,6 +1216,8 @@ function AnnualDashboardContent() {
             )}
           </tbody>
         </table>
+      </div>
+      </div>
       </div>
     </div>
   )
