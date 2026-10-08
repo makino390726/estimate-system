@@ -1055,7 +1055,7 @@ function AnnualDashboardContent() {
         <AnnualItemMonthProgress
           data={itemProgress}
           loading={itemProgressLoading}
-          caption={`選択した担当者の品名に対し、Excel売上の請求月から売れた台数と残りを表示します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。${OTHER_CODE_RANGE_CAPTION} 計画に無い売上はExcel科目別に税抜で出ます。`}
+          caption={`選択した担当者の品名に対し、Excel売上の請求月から売れた台数と残りを表示します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。${OTHER_CODE_RANGE_CAPTION}`}
         />
         <AnnualInitialLineTotals
           title={`当初計画 行計（${staffs.find((s) => s.id === itemStaffId)?.name || '担当者'}）`}
@@ -1161,7 +1161,7 @@ function AnnualDashboardContent() {
       {machineRows.length > 0 && (
         <GroupedBars
           title="機種別 計画額・確度見込・Excel実績"
-          caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。Excel実績は税抜で、計画の品名・商品CDと突合します。棒の長さは表示中の最大額に対する比率です。`}
+          caption={`${fiscalYearLabel(fiscalYear)} · 担当者を合算。カテゴリ絞り込みがそのまま反映されます。Excel実績は税抜で、商品CD指定行はコード、それ以外は品名で突合し、一致しないものはその他に計上します。棒の長さは表示中の最大額に対する比率です。`}
           rows={machineRows.slice(0, 20).map((r) => ({
             key: r.key,
             label: `${CHANGE_KIND_LABEL[r.changeKind]} ${formatPlanMachineLabel(r.code, r.name)}`,

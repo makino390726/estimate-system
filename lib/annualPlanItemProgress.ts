@@ -1,6 +1,5 @@
 import {
   LUMP_MACHINE_CODE,
-  OTHER_MACHINE_CODE,
   PROGRESS_CATEGORIES,
   displayPlanCategory,
   formatPlanMachineLabel,
@@ -16,6 +15,7 @@ export type PlanLineForItemProgress = {
   category: string
   machine_code: string
   machine_name: string | null
+  machine_source?: string | null
   qty: number
   amount: number
   change_kind?: string | null
@@ -92,42 +92,82 @@ export function normalizeItemText(value: string): string {
     .replace(/[‐–—−ー－]/g, '-')
 }
 
-function tokensForPlan(line: PlanLineForItemProgress, extraCodes: string[]): string[] {
-  if (isOtherMachineCode(line.machine_code) || line.machine_code === LUMP_MACHINE_CODE) return []
-  const raw = [line.machine_code, line.machine_name || '', ...extraCodes]
-    .map((v) => normalizeItemText(v))
-    .filter((v) => v && v !== LUMP_MACHINE_CODE && v !== OTHER_MACHINE_CODE && v !== 'その他')
-  return [...new Set(raw)]
+function compactItemName(value: string): string {
+  return normalizeItemText(value).replace(/[-()[\]（）【】]/g, '')
 }
 
+/** 品名のない「その他」「その他資材」など。名称突合の対象にしない */
+function isGenericOtherName(name: string): boolean {
+  const n = normalizeItemText(name)
+  if (!n) return true
+  if (n === '他') return true
+  if ((PROGRESS_CATEGORIES as readonly string[]).includes(n)) return true
+  return /^その他(資材|肥料|農薬|工事|生産品)?$/.test(n)
+}
+
+/** 品名やコード欄に書いた 4桁以上の数字を商品CDとみなす */
+function extractProductCodes(value: string | null | undefined): string[] {
+  const raw = String(value || '').normalize('NFKC')
+  const matches = raw.match(/\d{4,}/g) || []
+  return [...new Set(matches.map((m) => normalizeProductCode(m)).filter((c) => c.length >= 4))]
+}
+
+function isNumericProductCode(value: string): boolean {
+  const s = String(value || '')
+    .normalize('NFKC')
+    .replace(/[\s　-]/g, '')
+  return /^\d{4,}$/.test(s)
+}
+
+/**
+ * 個人シートで商品CDを明確に指定した行だけコード突合する。
+ * 機種マスタの短い型番（例: 1）は商品CDにしない。
+ */
 function reservedCodesForPlan(line: PlanLineForItemProgress, extraCodes: string[]): string[] {
-  if (isOtherMachineCode(line.machine_code) || line.machine_code === LUMP_MACHINE_CODE) return []
-  const raw = [line.machine_code, ...extraCodes].map((v) => normalizeProductCode(v)).filter((v) => v.length >= 4)
-  return [...new Set(raw)]
+  const code = String(line.machine_code || '').trim()
+  if (code === LUMP_MACHINE_CODE) return []
+  const out = new Set<string>(extractProductCodes(line.machine_name))
+  if (isOtherMachineCode(code)) return [...out]
+  if (line.machine_source === 'product' || isNumericProductCode(code)) {
+    const n = normalizeProductCode(code)
+    if (n.length >= 4) out.add(n)
+  }
+  for (const extra of extraCodes) {
+    const n = normalizeProductCode(extra)
+    if (n.length >= 4) out.add(n)
+  }
+  return [...out]
 }
 
-function matchScore(actual: SalesActualItemRow, tokens: string[], reservedCodes: string[]): number {
-  const code = normalizeItemText(actual.product_code || '')
-  const codeNum = normalizeProductCode(actual.product_code || '')
-  const name = normalizeItemText(actual.product_name || '')
-  if (codeNum && reservedCodes.includes(codeNum)) return 1000 + codeNum.length
+/** 型番っぽい英数（文字と数字の両方、5文字以上）。短いCD部分一致は使わない */
+function modelTokens(compact: string): string[] {
+  return [...new Set((compact.match(/[a-z0-9]{5,}/g) || []).filter((t) => /[a-z]/.test(t) && /\d/.test(t)))]
+}
+
+function nameMatchScore(planName: string, actualName: string): number {
+  const planNorm = normalizeItemText(planName)
+  const actualNorm = normalizeItemText(actualName)
+  if (!planNorm || !actualNorm || isGenericOtherName(planName)) return 0
+  if (planNorm === actualNorm) return 200
+  const planC = compactItemName(planName)
+  const actualC = compactItemName(actualName)
+  if (planC.length >= 4 && planC === actualC) return 180
+  const min = 5
+  if (planC.length >= min && actualC.includes(planC)) return 100 + Math.min(planC.length, 50)
+  if (actualC.length >= min && planC.includes(actualC)) return 80 + Math.min(actualC.length, 50)
   let best = 0
-  for (const token of tokens) {
-    if (!token) continue
-    const tokenNum = normalizeProductCode(token)
-    if (codeNum && tokenNum && codeNum === tokenNum) {
-      best = Math.max(best, 100 + tokenNum.length)
-      continue
-    }
-    if (code && (code === token || code.includes(token) || token.includes(code))) {
-      best = Math.max(best, 100 + token.length)
-      continue
-    }
-    if (token.length >= 2 && name && (name === token || name.includes(token))) {
-      best = Math.max(best, 40 + token.length)
-    }
+  for (const token of modelTokens(planC)) {
+    if (actualC.includes(token)) best = Math.max(best, 90 + token.length)
   }
   return best
+}
+
+const NAME_MATCH_THRESHOLD = 80
+
+function matchScore(actual: SalesActualItemRow, reservedCodes: string[], planName: string): number {
+  const codeNum = normalizeProductCode(actual.product_code || '')
+  if (codeNum && reservedCodes.includes(codeNum)) return 1000 + codeNum.length
+  return nameMatchScore(planName, actual.product_name || '')
 }
 
 export function buildItemMonthProgress(
@@ -148,9 +188,9 @@ export function buildItemMonthProgress(
     currentQty: number
     currentAmount: number
     revised: boolean
-    tokens: string[]
     reservedCodes: string[]
     isOther: boolean
+    isGenericOther: boolean
     progressCat: string
   }
   const grouped = new Map<string, Group>()
@@ -171,7 +211,6 @@ export function buildItemMonthProgress(
         prev.planQty += Number(line.qty || 0)
         prev.planAmount += Number(line.amount || 0)
       }
-      prev.tokens = [...new Set([...prev.tokens, ...tokensForPlan(line, extra)])]
       prev.reservedCodes = [...new Set([...prev.reservedCodes, ...reservedCodesForPlan(line, extra)])]
     } else {
       const qty = Number(line.qty || 0)
@@ -187,9 +226,9 @@ export function buildItemMonthProgress(
         currentQty: kind === 'interim' ? qty : 0,
         currentAmount: kind === 'interim' ? amount : 0,
         revised: kind === 'interim',
-        tokens: tokensForPlan(line, extra),
         reservedCodes: reservedCodesForPlan(line, extra),
         isOther: isOtherMachineCode(code),
+        isGenericOther: isOtherMachineCode(code) && isGenericOtherName(name),
         progressCat: progressCategoryFor(line.category),
       })
     }
@@ -225,7 +264,13 @@ export function buildItemMonthProgress(
 
   const unmatched = { qty: zeros(12), amount: zeros(12), qtyTotal: 0, amountTotal: 0 }
   const unmatchedMap = new Map<string, UnmatchedCategoryMonth>()
-  const reservedAll = new Set(groups.flatMap((g) => g.reservedCodes))
+
+  const addSold = (row: ItemMonthProgressRow, month: number, qty: number, amount: number) => {
+    row.soldQty[month] += qty
+    row.soldAmount[month] += amount
+    row.soldQtyTotal += qty
+    row.soldAmountTotal += amount
+  }
 
   for (const actual of actuals) {
     const month = actual.billed_on ? fiscalMonthIndex(actual.billed_on, fiscalYear) : null
@@ -237,48 +282,38 @@ export function buildItemMonthProgress(
     let bestIdx = -1
     let bestScore = 0
     for (let i = 0; i < groups.length; i++) {
-      if (groups[i].isOther) continue
-      const score = matchScore(actual, groups[i].tokens, groups[i].reservedCodes)
+      const g = groups[i]
+      if (g.code === LUMP_MACHINE_CODE || g.isGenericOther) continue
+      const score = matchScore(actual, g.reservedCodes, g.name)
       if (score > bestScore) {
         bestScore = score
         bestIdx = i
       }
     }
 
-    if (bestIdx < 0 || bestScore < 42) {
-      const codeNum = normalizeProductCode(actual.product_code || '')
-      const otherBucket = otherProgressCategoryForProductCode(actual.product_code || '')
-      const otherIdx =
-        otherBucket && !(codeNum && reservedAll.has(codeNum))
-          ? groups.findIndex((g) => g.isOther && g.progressCat === otherBucket)
-          : -1
-      if (otherIdx >= 0) {
-        const otherRow = rows[otherIdx]
-        otherRow.soldQty[month] += qty
-        otherRow.soldAmount[month] += amount
-        otherRow.soldQtyTotal += qty
-        otherRow.soldAmountTotal += amount
-        continue
-      }
-      unmatched.qty[month] += qty
-      unmatched.amount[month] += amount
-      unmatched.qtyTotal += qty
-      unmatched.amountTotal += amount
-      const category = unmatchedCategoryFor(actual.plan_category)
-      const bucket = unmatchedMap.get(category) || emptyUnmatchedBucket(category)
-      bucket.qty[month] += qty
-      bucket.amount[month] += amount
-      bucket.qtyTotal += qty
-      bucket.amountTotal += amount
-      unmatchedMap.set(category, bucket)
+    if (bestIdx >= 0 && bestScore >= NAME_MATCH_THRESHOLD) {
+      addSold(rows[bestIdx], month, qty, amount)
       continue
     }
 
-    const row = rows[bestIdx]
-    row.soldQty[month] += qty
-    row.soldAmount[month] += amount
-    row.soldQtyTotal += qty
-    row.soldAmountTotal += amount
+    const otherBucket =
+      otherProgressCategoryForProductCode(actual.product_code || '') || unmatchedCategoryFor(actual.plan_category)
+    const otherIdx = groups.findIndex((g) => g.isGenericOther && g.progressCat === otherBucket)
+    if (otherIdx >= 0) {
+      addSold(rows[otherIdx], month, qty, amount)
+      continue
+    }
+
+    unmatched.qty[month] += qty
+    unmatched.amount[month] += amount
+    unmatched.qtyTotal += qty
+    unmatched.amountTotal += amount
+    const bucket = unmatchedMap.get(otherBucket) || emptyUnmatchedBucket(otherBucket)
+    bucket.qty[month] += qty
+    bucket.amount[month] += amount
+    bucket.qtyTotal += qty
+    bucket.amountTotal += amount
+    unmatchedMap.set(otherBucket, bucket)
   }
 
   for (const row of rows) {

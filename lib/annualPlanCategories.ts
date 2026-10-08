@@ -32,7 +32,7 @@ export const CONFIDENCE_OPTIONS: Array<{ value: PlanConfidence; label: string }>
 /** 品名なしの金額行。machine_code は NOT NULL のため固定キーを入れる */
 export const LUMP_MACHINE_CODE = 'lump'
 
-/** 機種マスタの「その他」。品名は手入力。Excel は商品CD範囲で集計する */
+/** 機種マスタの「その他」。品名は手入力。Excel は名称一致、不一致は科目別その他 */
 export const OTHER_MACHINE_CODE = 'other'
 
 export function isOtherMachineCode(code: string | null | undefined): boolean {
@@ -74,7 +74,7 @@ export function otherProgressCategoryForProductCode(productCode: string): string
 }
 
 export const OTHER_CODE_RANGE_CAPTION =
-  'その他は商品CD（先頭000無視）で分ける。生産品1000000～3999999、肥料4000000～49999999、農薬5000000～5999999、資材6000000～6999999、工事7000000～8999999。機種指定した商品は除く。'
+  '個人シートで商品CDを指定した行はコードで、それ以外は品名でExcel実績を突合します。一致しない売上はその他（生産品・肥料・農薬・資材・工事）に計上します。'
 
 export const CLOSED_CASE_STATUSES = ['受注', '注文', '完了'] as const
 

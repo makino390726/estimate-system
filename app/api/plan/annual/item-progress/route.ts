@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'staff は必須です' }, { status: 400 })
     }
 
-    const cacheKey = `item-progress-v3:${fiscalYear}:${allStaff ? 'all' : staffId}`
+    const cacheKey = `item-progress-v4:${fiscalYear}:${allStaff ? 'all' : staffId}`
     const cached = readAnnualPlanCache<Record<string, unknown>>(cacheKey)
     if (cached) return NextResponse.json({ ok: true, ...cached })
 
@@ -36,6 +36,7 @@ export async function GET(request: Request) {
       category: string
       machine_code: string
       machine_name: string | null
+      machine_source?: string | null
       qty: number
       amount: number
       change_kind?: string | null
@@ -64,7 +65,7 @@ export async function GET(request: Request) {
             page: async (from, to) => {
               const { data, error } = await sb
                 .from('annual_staff_plan_lines')
-                .select('category, machine_code, machine_name, qty, amount, change_kind')
+                .select('category, machine_code, machine_name, machine_source, qty, amount, change_kind')
                 .in('plan_id', chunk)
                 .order('id', { ascending: true })
                 .range(from, to)
@@ -86,7 +87,7 @@ export async function GET(request: Request) {
       if (plan?.id) {
         const { data: lineRows, error: lineError } = await sb
           .from('annual_staff_plan_lines')
-          .select('category, machine_code, machine_name, qty, amount, change_kind')
+          .select('category, machine_code, machine_name, machine_source, qty, amount, change_kind')
           .eq('plan_id', plan.id)
           .order('created_at', { ascending: true })
         if (lineError) throw new Error(lineError.message)
@@ -101,7 +102,7 @@ export async function GET(request: Request) {
         try {
           const { machines } = await fetchPlanMachines(category, { includePrices: false })
           for (const machine of machines) {
-            const codes = [machine.productCode, machine.code].filter((v): v is string => Boolean(v))
+            const codes = machine.productCode ? [machine.productCode] : []
             extraCodesByMachine[machine.code] = [...new Set([...(extraCodesByMachine[machine.code] || []), ...codes])]
             extraCodesByMachine[`${category}:${machine.code}`] = extraCodesByMachine[machine.code]
           }
