@@ -291,8 +291,8 @@ export async function updatePlanLineQtyAmount(
   amount: number,
   reason?: string,
 ): Promise<AnnualPlanLine> {
-  const nextAmount = Math.round(Number(amount) || 0)
-  const nextQty = Number.isFinite(qty) && qty > 0 ? qty : 0
+  const nextAmount = Number.isFinite(Number(amount)) ? Math.round(Number(amount)) : 0
+  const nextQty = Number.isFinite(Number(qty)) ? Number(qty) : 0
   const lineId = String(line.id)
   const { data, error } = await supabase
     .from('annual_staff_plan_lines')
@@ -555,6 +555,37 @@ export function planLineItemKey(line: Pick<AnnualPlanLine, 'category' | 'machine
   const code = String(line.machine_code || '').trim() || LUMP_MACHINE_CODE
   const name = String(line.machine_name || '').trim()
   return `${displayPlanCategory(line.category)}::${code}::${name}`
+}
+
+/** 中間修正は、同じ品名の当初行のすぐ下に並べる */
+export function orderLinesWithInterimBelow(lines: AnnualPlanLine[]): AnnualPlanLine[] {
+  const used = new Set<string>()
+  const out: AnnualPlanLine[] = []
+  for (const line of lines) {
+    const id = String(line.id)
+    if (used.has(id)) continue
+    if (lineChangeKind(line) === 'interim') {
+      const hasUnusedInitial = lines.some(
+        (row) =>
+          !used.has(String(row.id)) &&
+          lineChangeKind(row) === 'initial' &&
+          planLineItemKey(row) === planLineItemKey(line),
+      )
+      if (hasUnusedInitial) continue
+    }
+    out.push(line)
+    used.add(id)
+    if (lineChangeKind(line) !== 'initial') continue
+    for (const row of lines) {
+      const rid = String(row.id)
+      if (used.has(rid)) continue
+      if (lineChangeKind(row) === 'interim' && planLineItemKey(row) === planLineItemKey(line)) {
+        out.push(row)
+        used.add(rid)
+      }
+    }
+  }
+  return out
 }
 
 /** 中間修正がある品名は、中間計画では当初行の代わりに中間行を使う */

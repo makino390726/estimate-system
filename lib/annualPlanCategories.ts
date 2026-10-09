@@ -197,7 +197,7 @@ export const CHANGE_KIND_LABEL: Record<PlanChangeKind, string> = {
 
 export const CHANGE_KIND_OPTIONS: Array<{ value: PlanChangeKind; label: string; hint: string }> = [
   { value: 'initial', label: '当初計画の変更', hint: '経営の上乗せ・当初の訂正' },
-  { value: 'interim', label: '中間計画の変更', hint: '確定後の途中見直し。同じ品名は中間の数量・金額が中間計画になります' },
+  { value: 'interim', label: '中間計画の変更', hint: '確定後の途中見直し。同じ品名は中間の数量・金額が中間計画になります。0やマイナスで当初計上を相殺できます' },
 ]
 
 export function lineChangeKind(line: { change_kind?: string | null }): PlanChangeKind {

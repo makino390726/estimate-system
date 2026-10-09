@@ -253,7 +253,7 @@ export function buildItemMonthProgress(
     currentQty: g.currentQty,
     currentAmount: g.currentAmount,
     revised: g.revised,
-    useQty: g.currentQty > 0 || g.planQty > 0,
+    useQty: g.currentQty !== 0 || g.planQty !== 0,
     soldQty: zeros(12),
     soldAmount: zeros(12),
     soldQtyTotal: 0,

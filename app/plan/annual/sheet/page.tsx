@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -37,6 +37,7 @@ import {
   updatePlanLineCustomerName,
   updatePlanLineQtyAmount,
   planLineItemKey,
+  orderLinesWithInterimBelow,
   fetchItemMonthProgress,
   fetchSalesActualSummary,
   type AnnualPlan,
@@ -70,6 +71,7 @@ import {
   type OfficeQuotaBundle,
 } from '@/lib/annualPlanQuota'
 import type { ItemMonthProgressResult } from '@/lib/annualPlanItemProgress'
+import { isLocalAdminHost } from '@/lib/localAdmin'
 
 const PRODUCT_PAGE_SIZE = 20
 
@@ -119,7 +121,8 @@ function AnnualPlanSheetContent() {
   const [itemProgress, setItemProgress] = useState<ItemMonthProgressResult | null>(null)
   const [itemProgressLoading, setItemProgressLoading] = useState(false)
   const [excelByCategory, setExcelByCategory] = useState<Record<string, number>>({})
-  const [interimEdits, setInterimEdits] = useState<Record<string, { qty: string; amount: string }>>({})
+  const [interimEdits, setInterimEdits] = useState<Record<string, { qty: string; amount: string; unit?: string }>>({})
+  const [localAdmin, setLocalAdmin] = useState(() => isLocalAdminHost())
   const [saveHint, setSaveHint] = useState<{ id: string; text: string; ok: boolean } | null>(null)
   const [quotas, setQuotas] = useState<OfficeQuotaBundle>({ year: null, lines: [], allocations: [] })
   const [changeReasons, setChangeReasons] = useState<Record<string, string>>({})
@@ -144,14 +147,24 @@ function AnnualPlanSheetContent() {
   const selectedMachine = pickedProduct || machines.find((m) => m.code === machineCode) || null
   const qtyNum = Number(qty)
   const unitNum = Number(unitPrice)
-  const calcAmount = qtyNum > 0 && unitNum > 0 ? Math.round(qtyNum * unitNum) : 0
+  const signedAdd = confirmed && changeKind === 'interim'
+  const calcAmount =
+    Number.isFinite(qtyNum) && Number.isFinite(unitNum) && unitNum !== 0 && qtyNum !== 0
+      ? Math.round(qtyNum * unitNum)
+      : 0
   const amountNum = lumpMode || otherMode ? Number(amount) : calcAmount
+  const amountOk = signedAdd ? Number.isFinite(amountNum) && amountNum !== 0 : amountNum > 0
+  const qtyOk = signedAdd ? Number.isFinite(qtyNum) && qtyNum !== 0 : qtyNum > 0
   const baseCanAdd = otherMode
-    ? Boolean(staffId && category && otherName.trim() && amountNum > 0)
+    ? Boolean(staffId && category && otherName.trim() && amountOk)
     : lumpMode
-      ? Boolean(staffId && category && amountNum > 0)
-      : Boolean(staffId && category && selectedMachine && qtyNum > 0 && calcAmount > 0)
+      ? Boolean(staffId && category && amountOk)
+      : Boolean(staffId && category && selectedMachine && qtyOk && amountOk)
+  const displayLines = useMemo(() => orderLinesWithInterimBelow(lines), [lines])
   const canAdd = baseCanAdd && (!confirmed || Boolean(changeKind)) && !saving
+  const changeKindOptions = confirmed && !localAdmin
+    ? CHANGE_KIND_OPTIONS.filter((o) => o.value !== 'initial')
+    : CHANGE_KIND_OPTIONS
 
   const loadPlan = useCallback(async () => {
     if (!staffId) {
@@ -203,6 +216,14 @@ function AnnualPlanSheetContent() {
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    setLocalAdmin(isLocalAdminHost())
+  }, [])
+
+  useEffect(() => {
+    if (confirmed && !localAdmin) setChangeKind('interim')
+  }, [confirmed, localAdmin])
 
   useEffect(() => {
     void loadPlan()
@@ -373,12 +394,18 @@ function AnnualPlanSheetContent() {
   const handleAdd = async () => {
     if (!plan || !canAdd) return
     if (!lumpMode && !otherMode && !selectedMachine) return
-    const nextKind = confirmed ? changeKind || 'interim' : 'initial'
+    const nextKind = confirmed
+      ? !localAdmin
+        ? 'interim'
+        : changeKind || 'interim'
+      : 'initial'
     const reason =
       confirmed && nextKind === 'interim'
         ? window.prompt('中間計画の変更理由を入力してください。', '')
-        : undefined
-    if (confirmed && nextKind === 'interim' && (reason == null || !reason.trim())) return
+        : confirmed && nextKind === 'initial'
+          ? window.prompt('当初計画の変更理由（数量・単価）を入力してください。', '')
+          : undefined
+    if (confirmed && (reason == null || !reason.trim())) return
     setSaving(true)
     setError('')
     try {
@@ -394,7 +421,7 @@ function AnnualPlanSheetContent() {
           : lumpMode || pickedProduct
             ? 'product'
             : selectedMachine?.source || 'factory',
-        qty: lumpMode || otherMode ? (qtyNum > 0 ? qtyNum : 0) : qtyNum,
+        qty: lumpMode || otherMode ? (Number.isFinite(qtyNum) ? qtyNum : 0) : qtyNum,
         amount: amountNum,
         confidence,
         change_kind: nextKind,
@@ -502,12 +529,18 @@ function AnnualPlanSheetContent() {
           customer_name: line.customer_name,
           reason: reason.trim(),
         })
-        setLines((prev) => [...prev, created])
+        setLines((prev) => {
+          const idx = prev.findIndex((row) => String(row.id) === String(line.id))
+          if (idx < 0) return [...prev, created]
+          const next = [...prev]
+          next.splice(idx + 1, 0, created)
+          return next
+        })
         setChangeReasons((prev) => ({ ...prev, [String(created.id)]: reason.trim() }))
         setInterimEdits((prev) => ({
           ...prev,
           [String(created.id)]: {
-            qty: Number(created.qty) > 0 ? String(created.qty) : '',
+            qty: Number.isFinite(Number(created.qty)) ? String(created.qty) : '',
             amount: String(Math.round(Number(created.amount) || 0)),
           },
         }))
@@ -570,34 +603,48 @@ function AnnualPlanSheetContent() {
     const lineId = String(line.id)
     const interim = lineChangeKind(line) === 'interim'
     const draft = plan.status !== 'confirmed'
-    if (!draft && !interim) return
+    if (!draft && !interim && !localAdmin) return
     const edit = interimEdits[lineId] || interimEdits[line.id] || {
-      qty: Number(line.qty) > 0 ? String(line.qty) : '',
+      qty: Number.isFinite(Number(line.qty)) ? String(line.qty) : '',
       amount: String(Math.round(Number(line.amount) || 0)),
     }
     const qty = parsePlanNumber(edit.qty)
     const amount = parsePlanNumber(edit.amount)
-    if (!Number.isFinite(amount) || !(amount > 0)) {
-      const msg = '計画額を入力してください。'
+    if (!Number.isFinite(amount) || (!interim && !(amount > 0))) {
+      const msg = interim ? '計画額を入力してください。0やマイナスも保存できます。' : '計画額を入力してください。'
       setError(msg)
       setSaveHint({ id: lineId, text: msg, ok: false })
       return
     }
-    const nextQty = Number.isFinite(qty) && qty > 0 ? qty : 0
+    const nextQty = Number.isFinite(qty) ? qty : 0
     const nextAmount = Math.round(amount)
     if (nextQty === Number(line.qty || 0) && nextAmount === Math.round(Number(line.amount) || 0)) {
       setSaveHint({ id: lineId, text: '変更はありません', ok: true })
       return
     }
     if (plan.status === 'confirmed') {
-      const nextCurrent =
-        totals.current.amount - Math.round(Number(line.amount || 0)) + nextAmount
-      const quotaMsg = quotaFloorError(nextCurrent, staffQuotaAmt)
+      const nextTotals = splitPlanTotals(
+        lines.map((row) =>
+          String(row.id) === lineId ? { ...row, qty: nextQty, amount: nextAmount } : row,
+        ),
+      )
+      const quotaMsg = quotaFloorError(
+        interim ? nextTotals.current.amount : nextTotals.initial.amount,
+        staffQuotaAmt,
+      )
       if (quotaMsg) {
         setError(quotaMsg)
         setSaveHint({ id: lineId, text: quotaMsg, ok: false })
         return
       }
+    }
+    let reason: string | undefined
+    if (interim) {
+      reason = '中間修正'
+    } else if (!draft && localAdmin) {
+      const typed = window.prompt('当初計画の変更理由（数量・単価）を入力してください。', '')
+      if (typed == null || !typed.trim()) return
+      reason = typed.trim()
     }
     setSaving(true)
     setError('')
@@ -608,14 +655,18 @@ function AnnualPlanSheetContent() {
         { ...line, id: lineId },
         nextQty,
         nextAmount,
-        interim ? '中間修正' : undefined,
+        reason,
       )
       setLines((prev) => prev.map((row) => (String(row.id) === String(updated.id) ? updated : row)))
       setInterimEdits((prev) => ({
         ...prev,
         [String(updated.id)]: {
-          qty: Number(updated.qty) > 0 ? String(updated.qty) : '',
+          qty: Number.isFinite(Number(updated.qty)) ? String(updated.qty) : '',
           amount: String(Math.round(Number(updated.amount) || 0)),
+          unit:
+            Number(updated.qty) !== 0
+              ? String(Math.round(Number(updated.amount) / Number(updated.qty)))
+              : '',
         },
       }))
       setSaveHint({ id: lineId, text: '保存しました', ok: true })
@@ -707,7 +758,9 @@ function AnnualPlanSheetContent() {
       <p style={{ ...planMuted, marginTop: 0 }}>
         {fiscalYearLabel(fiscalYear)}。生産品（暖房機・たばこ乾燥機など）は機種マスタから選ぶと定価×数量です。「その他」を選ぶと品名を入力でき、Excel実績は機種指定分を除いた商品CD範囲で集計します。肥料・農薬・資材・工事も同様です。
         {confirmed
-          ? ' 確定後の「中間へ」は、当初の行を残したまま中間修正計画を作ります。中間修正の行で数量・金額を変更してください。同じ品名は中間計画では中間修正の数量・金額に置き換わります。上のフォームから追加する場合は「当初計画の変更」か「中間計画の変更」を選んでください。'
+          ? localAdmin
+            ? ' 管理者（ローカル画面）は確定後の当初行でも数量・単価を変更できます。本番では当初の数量・単価は変えられず、中間修正で見直します。'
+            : ' 確定後の当初行は数量・単価を変えられません。見直しは「中間へ」で直下に中間修正行を追加し、変更理由も表示されます。中間修正の数量・計画額は0やマイナス（当初計上の相殺）も入力できます。'
           : ' 下書きの行は確定時に当初計画になります。追加済みの行は数量・計画額・確度・備考を表で編集できます。必達目標がある場合、当初計画はノルマ以上が必要です（上限なし）。'}
       </p>
       {staffs.length === 0 && (
@@ -990,10 +1043,10 @@ function AnnualPlanSheetContent() {
             )}
           </div>
           <label style={{ color: '#e2e8f0' }}>
-            3. {lumpMode || otherMode ? '数量（任意）' : '計画台数（必須）'}
+            3. {lumpMode || otherMode ? '数量（任意）' : signedAdd ? '計画台数（マイナス可）' : '計画台数（必須）'}
             <input
               type="number"
-              min={0}
+              min={signedAdd ? undefined : 0}
               step={1}
               value={qty}
               onChange={(e) => setQty(e.target.value)}
@@ -1003,8 +1056,8 @@ function AnnualPlanSheetContent() {
           </label>
           {lumpMode || otherMode ? (
             <label style={{ color: '#e2e8f0' }}>
-              4. 計画額（円・必須）
-              <input type="number" min={0} step={1} value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} />
+              4. 計画額（円・必須{signedAdd ? '・マイナス可' : ''}）
+              <input type="number" min={signedAdd ? undefined : 0} step={1} value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} />
             </label>
           ) : (
             <label style={{ color: '#e2e8f0' }}>
@@ -1062,7 +1115,7 @@ function AnnualPlanSheetContent() {
         {confirmed && (
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ color: '#e2e8f0' }}>6. 追加区分（必須）</span>
-            {CHANGE_KIND_OPTIONS.map((opt) => (
+            {changeKindOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
@@ -1077,7 +1130,7 @@ function AnnualPlanSheetContent() {
                 {opt.label}
               </button>
             ))}
-            <span style={planMuted}>{CHANGE_KIND_OPTIONS.find((o) => o.value === changeKind)?.hint || '当初の上乗せか、中間の見直しかを選んでから追加'}</span>
+            <span style={planMuted}>{changeKindOptions.find((o) => o.value === changeKind)?.hint || '中間の見直しを選んでから追加'}</span>
           </div>
         )}
         <div style={{ marginTop: 12 }}>
@@ -1093,7 +1146,7 @@ function AnnualPlanSheetContent() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1120 }}>
           <thead>
             <tr>
-              {['区分', '変更理由', 'カテゴリ', '機種（品名）', '備考（販売予定先）', '台数', '計画額', '粗利', '確度', ''].map((h) => (
+              {['区分', '変更理由', 'カテゴリ', '機種（品名）', '備考（販売予定先）', '台数', '単価', '計画額', '粗利', '確度', ''].map((h) => (
                 <th key={h || 'actions'} style={{ ...planTh, textAlign: h === 'カテゴリ' || h.startsWith('機種') || h === '区分' || h === '変更理由' || h.startsWith('備考') ? 'left' : 'right' }}>
                   {h}
                 </th>
@@ -1103,26 +1156,38 @@ function AnnualPlanSheetContent() {
           <tbody>
             {lines.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ ...planTd, color: '#94a3b8' }}>
+                <td colSpan={11} style={{ ...planTd, color: '#94a3b8' }}>
                   まだ行がありません。上のフォームから追加してください。
                 </td>
               </tr>
             )}
-            {lines.map((line) => {
+            {displayLines.map((line) => {
               const lineId = String(line.id)
               const interim = lineChangeKind(line) === 'interim'
-              const canEditQtyAmount = !confirmed || interim
+              const canEditQtyAmount = !confirmed || interim || localAdmin
+              const editInitialUnit = localAdmin && confirmed && !interim
               const edit = interimEdits[lineId] || {
-                qty: Number(line.qty) > 0 ? String(line.qty) : '',
+                qty: Number.isFinite(Number(line.qty)) ? String(line.qty) : '',
                 amount: String(Math.round(Number(line.amount) || 0)),
+                unit:
+                  Number(line.qty) !== 0
+                    ? String(Math.round(Number(line.amount) / Number(line.qty)))
+                    : '',
               }
-              const unitPrice = Number(line.qty) > 0 ? Number(line.amount) / Number(line.qty) : 0
+              const unitPrice =
+                edit.unit != null && edit.unit !== ''
+                  ? parsePlanNumber(edit.unit)
+                  : Number(line.qty) !== 0
+                    ? Number(line.amount) / Number(line.qty)
+                    : 0
+              const reasonText = changeReasons[lineId] || ''
               return (
-              <tr key={lineId} style={interim ? { background: 'rgba(251, 191, 36, 0.08)' } : undefined}>
+              <Fragment key={lineId}>
+              <tr style={interim ? { background: 'rgba(251, 191, 36, 0.08)' } : undefined}>
                 <td style={planTd}>{CHANGE_KIND_LABEL[lineChangeKind(line)]}</td>
                 <td style={{ ...planTd, maxWidth: 220, whiteSpace: 'pre-wrap' }}>
-                  {changeReasons[lineId] ? (
-                    <span style={{ color: interim ? '#fde68a' : '#cbd5e1' }}>{changeReasons[lineId]}</span>
+                  {reasonText ? (
+                    <span style={{ color: interim ? '#fde68a' : '#cbd5e1' }}>{reasonText}</span>
                   ) : (
                     <span style={planMuted}>{interim ? '—' : ''}</span>
                   )}
@@ -1153,7 +1218,7 @@ function AnnualPlanSheetContent() {
                   {canEditQtyAmount ? (
                     <input
                       type="number"
-                      min={0}
+                      min={interim ? undefined : 0}
                       step={1}
                       value={edit.qty}
                       disabled={saving}
@@ -1161,40 +1226,78 @@ function AnnualPlanSheetContent() {
                         const qty = e.target.value
                         const qtyNum = parsePlanNumber(qty)
                         const nextAmount =
-                          unitPrice > 0 && Number.isFinite(qtyNum) && qtyNum >= 0
+                          Number.isFinite(unitPrice) &&
+                          unitPrice !== 0 &&
+                          Number.isFinite(qtyNum)
                             ? String(Math.round(qtyNum * unitPrice))
                             : edit.amount
                         setInterimEdits((prev) => ({
                           ...prev,
-                          [lineId]: { qty, amount: nextAmount },
+                          [lineId]: { qty, amount: nextAmount, unit: edit.unit },
                         }))
                       }}
                       style={{ ...inputStyle, width: 88, textAlign: 'right' }}
                     />
-                  ) : Number(line.qty) > 0 ? (
+                  ) : Number(line.qty) !== 0 ? (
                     Number(line.qty).toLocaleString('ja-JP')
                   ) : (
                     '—'
                   )}
                 </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>
-                  {canEditQtyAmount ? (
+                  {editInitialUnit ? (
                     <input
                       type="number"
                       min={0}
+                      step={1}
+                      value={edit.unit ?? ''}
+                      disabled={saving}
+                      onChange={(e) => {
+                        const unit = e.target.value
+                        const unitNum = parsePlanNumber(unit)
+                        const qtyNum = parsePlanNumber(edit.qty)
+                        const nextAmount =
+                          unitNum > 0 && Number.isFinite(qtyNum)
+                            ? String(Math.round(qtyNum * unitNum))
+                            : edit.amount
+                        setInterimEdits((prev) => ({
+                          ...prev,
+                          [lineId]: { qty: edit.qty, amount: nextAmount, unit },
+                        }))
+                      }}
+                      style={{ ...inputStyle, width: 110, textAlign: 'right' }}
+                    />
+                  ) : unitPrice > 0 ? (
+                    Math.round(unitPrice).toLocaleString('ja-JP')
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td style={{ ...planTd, textAlign: 'right' }}>
+                  {canEditQtyAmount && !editInitialUnit ? (
+                    <input
+                      type="number"
+                      min={interim ? undefined : 0}
                       step={1}
                       value={edit.amount}
                       disabled={saving}
                       onChange={(e) =>
                         setInterimEdits((prev) => ({
                           ...prev,
-                          [lineId]: { qty: edit.qty, amount: e.target.value },
+                          [lineId]: { qty: edit.qty, amount: e.target.value, unit: edit.unit },
                         }))
                       }
-                      style={{ ...inputStyle, width: 120, textAlign: 'right' }}
+                      style={{
+                        ...inputStyle,
+                        width: 120,
+                        textAlign: 'right',
+                        color: parsePlanNumber(edit.amount) < 0 ? '#fca5a5' : undefined,
+                      }}
                     />
                   ) : (
-                    Number(line.amount).toLocaleString('ja-JP')
+                    Number(
+                      editInitialUnit ? parsePlanNumber(edit.amount) || line.amount : line.amount,
+                    ).toLocaleString('ja-JP')
                   )}
                 </td>
                 <td style={{ ...planTd, textAlign: 'right' }}>{Number(line.gross_profit).toLocaleString('ja-JP')}</td>
@@ -1236,7 +1339,9 @@ function AnnualPlanSheetContent() {
                         ? '保存中…'
                         : interim
                           ? '修正を保存'
-                          : '保存'}
+                          : localAdmin && confirmed
+                            ? '当初を保存'
+                            : '保存'}
                     </button>
                   )}
                   <button type="button" onClick={() => void handleDelete(line)} disabled={saving} style={planBtn}>
@@ -1249,6 +1354,15 @@ function AnnualPlanSheetContent() {
                   )}
                 </td>
               </tr>
+              {interim && reasonText ? (
+                <tr style={{ background: 'rgba(251, 191, 36, 0.12)' }}>
+                  <td style={planTd} />
+                  <td colSpan={10} style={{ ...planTd, color: '#fde68a', whiteSpace: 'pre-wrap' }}>
+                    変更理由: {reasonText}
+                  </td>
+                </tr>
+              ) : null}
+              </Fragment>
               )
             })}
           </tbody>
