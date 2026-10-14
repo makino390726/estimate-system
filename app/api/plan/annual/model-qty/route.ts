@@ -33,7 +33,15 @@ export async function GET(request: Request) {
 
     const byModel = new Map<
       string,
-      { machine_code: string; machine_name: string; qty: number; highQty: number; amount: number }
+      {
+        machine_code: string
+        machine_name: string
+        qty: number
+        highQty: number
+        triangleQty: number
+        squareQty: number
+        amount: number
+      }
     >()
     for (const line of lines || []) {
       if (line.machine_source === 'product') continue
@@ -44,11 +52,15 @@ export async function GET(request: Request) {
         machine_name: String(line.machine_name || code),
         qty: 0,
         highQty: 0,
+        triangleQty: 0,
+        squareQty: 0,
         amount: 0,
       }
       const qty = Number(line.qty) || 0
       prev.qty += qty
       if (line.confidence === 'high') prev.highQty += qty
+      else if (line.confidence === 'mid') prev.triangleQty += qty
+      else if (line.confidence === 'low') prev.squareQty += qty
       prev.amount += Number(line.amount) || 0
       byModel.set(code, prev)
     }
