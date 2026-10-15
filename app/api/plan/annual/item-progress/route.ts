@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
+import { factoryCategoryFor } from '@/lib/annualPlanCategories'
 import { fetchPlanMachines } from '@/lib/annualPlanMachines'
 import { buildItemMonthProgress, type SalesActualItemRow } from '@/lib/annualPlanItemProgress'
 import { fetchStaffsForExcelMatch } from '@/lib/annualPlanSalesImport'
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'staff は必須です' }, { status: 400 })
     }
 
-    const cacheKey = `item-progress-v4:${fiscalYear}:${allStaff ? 'all' : staffId}`
+    const cacheKey = `item-progress-v5:${fiscalYear}:${allStaff ? 'all' : staffId}`
     const cached = readAnnualPlanCache<Record<string, unknown>>(cacheKey)
     if (cached) return NextResponse.json({ ok: true, ...cached })
 
@@ -96,16 +97,21 @@ export async function GET(request: Request) {
     }
 
     const extraCodesByMachine: Record<string, string[]> = {}
-    const categories = [...new Set(lines.map((l) => l.category))]
+    const machineRank: Record<string, number> = {}
+    const categories = [...new Set([...lines.map((l) => l.category), '暖房機', 'たばこ乾燥機'])]
     await Promise.all(
       categories.map(async (category) => {
         try {
           const { machines } = await fetchPlanMachines(category, { includePrices: false })
-          for (const machine of machines) {
+          const factory = factoryCategoryFor(category) || category
+          machines.forEach((machine, index) => {
             const codes = machine.productCode ? [machine.productCode] : []
             extraCodesByMachine[machine.code] = [...new Set([...(extraCodesByMachine[machine.code] || []), ...codes])]
             extraCodesByMachine[`${category}:${machine.code}`] = extraCodesByMachine[machine.code]
-          }
+            machineRank[`${factory}::${machine.code}`] = index
+            machineRank[`${category}::${machine.code}`] = index
+            if (machineRank[machine.code] == null) machineRank[machine.code] = index
+          })
         } catch {
           // 機種マスタが読めなくても品名・CDの突合は続ける
         }
@@ -183,7 +189,7 @@ export async function GET(request: Request) {
       },
     })
 
-    const result = buildItemMonthProgress(fiscalYear, lines, actuals, extraCodesByMachine)
+    const result = buildItemMonthProgress(fiscalYear, lines, actuals, extraCodesByMachine, machineRank)
     writeAnnualPlanCache(cacheKey, result)
     return NextResponse.json({ ok: true, ...result })
   } catch (e: unknown) {

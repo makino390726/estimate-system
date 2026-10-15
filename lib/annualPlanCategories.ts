@@ -136,6 +136,21 @@ export function displayPlanCategory(category: string): string {
   return `生産品（${factory}）`
 }
 
+/** 個人シート・品名別進捗の表示順。暖房機→たばこ→…→肥料・農薬・資材・工事 */
+export function planCategorySortIndex(category: string): number {
+  const raw = String(category || '').trim()
+  const produced = /^生産品（(.+)）$/.exec(raw)
+  const key = produced ? produced[1] : raw
+  const direct = (PLAN_CATEGORIES as readonly string[]).indexOf(key)
+  if (direct >= 0) return direct
+  const factory = factoryCategoryFor(key)
+  if (factory) {
+    const idx = (PLAN_CATEGORIES as readonly string[]).indexOf(factory)
+    if (idx >= 0) return idx
+  }
+  return PLAN_CATEGORIES.length
+}
+
 /** 進捗・Excel対比用。暖房機・食品乾燥機・たばこ乾燥機等は生産品 */
 export const PROGRESS_CATEGORIES = ['生産品', ...AMOUNT_ONLY_CATEGORIES] as const
 

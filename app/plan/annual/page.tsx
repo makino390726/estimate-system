@@ -263,8 +263,6 @@ function AnnualDashboardContent() {
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
   const [itemStaffId, setItemStaffId] = useState(() => searchParams.get('staff') || '')
-  const [itemProgress, setItemProgress] = useState<ItemMonthProgressResult | null>(null)
-  const [itemProgressLoading, setItemProgressLoading] = useState(false)
   const [companyItemProgress, setCompanyItemProgress] = useState<ItemMonthProgressResult | null>(null)
   const [lineOfficeKey, setLineOfficeKey] = useState('all')
   const [quotas, setQuotas] = useState<OfficeQuotaBundle>({ year: null, lines: [], allocations: [] })
@@ -348,28 +346,6 @@ function AnnualDashboardContent() {
     }
     if (!staffs.some((s) => s.id === itemStaffId)) setItemStaffId(staffs[0].id)
   }, [itemStaffId, staffs])
-
-  useEffect(() => {
-    if (!itemStaffId) {
-      setItemProgress(null)
-      return
-    }
-    let cancelled = false
-    setItemProgressLoading(true)
-    void (async () => {
-      try {
-        const next = await fetchItemMonthProgress(fiscalYear, itemStaffId)
-        if (!cancelled) setItemProgress(next)
-      } catch {
-        if (!cancelled) setItemProgress(null)
-      } finally {
-        if (!cancelled) setItemProgressLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [fiscalYear, itemStaffId, sales.import?.imported_at])
 
   const handleImport = async (file: File | undefined) => {
     if (!file) return
@@ -696,7 +672,7 @@ function AnnualDashboardContent() {
         </label>
         <span style={planMuted}>
           経過 {elapsed}%
-          {loading ? ' …計画読込中' : salesLoading || machineExcelLoading || itemProgressLoading ? ' …実績読込中' : ''}
+          {loading ? ' …計画読込中' : salesLoading || machineExcelLoading ? ' …実績読込中' : ''}
         </span>
       </div>
 
@@ -1036,9 +1012,14 @@ function AnnualDashboardContent() {
       </div>
 
       <div className="print-break" style={{ marginTop: 28 }}>
-        <div className="print-hide" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+        <AnnualItemMonthProgress
+          data={companyItemProgress}
+          loading={machineExcelLoading}
+          caption={`全営業担当者の計画・Excel売上を合算します。並びはカテゴリ順、生産品は暖房機・たばこ乾燥機の機種マスタ規格順です。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。${OTHER_CODE_RANGE_CAPTION}`}
+        />
+        <div className="print-hide" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '16px 0 8px' }}>
           <label style={planMuted}>
-            担当者{' '}
+            当初計画 行計の担当者{' '}
             <select
               value={itemStaffId}
               onChange={(e) => setItemStaffId(e.target.value)}
@@ -1052,11 +1033,6 @@ function AnnualDashboardContent() {
             </select>
           </label>
         </div>
-        <AnnualItemMonthProgress
-          data={itemProgress}
-          loading={itemProgressLoading}
-          caption={`選択した担当者の品名に対し、Excel売上の請求月から売れた台数と残りを表示します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。${OTHER_CODE_RANGE_CAPTION}`}
-        />
         <AnnualInitialLineTotals
           title={`当初計画 行計（${staffs.find((s) => s.id === itemStaffId)?.name || '担当者'}）`}
           lines={planByStaff.get(itemStaffId)?.lines || []}

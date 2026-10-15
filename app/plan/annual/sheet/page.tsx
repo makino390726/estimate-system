@@ -10,6 +10,8 @@ import {
   CONFIDENCE_OPTIONS,
   AMOUNT_ONLY_CATEGORIES,
   FACTORY_PRODUCT_CATEGORIES,
+  factoryCategoryFor,
+  isFactoryPlanCategory,
   OTHER_CODE_RANGE_CAPTION,
   OTHER_MACHINE_CODE,
   PLAN_CATEGORIES,
@@ -37,7 +39,7 @@ import {
   updatePlanLineCustomerName,
   updatePlanLineQtyAmount,
   planLineItemKey,
-  orderLinesWithInterimBelow,
+  orderPlanSheetDisplayLines,
   fetchItemMonthProgress,
   fetchSalesActualSummary,
   type AnnualPlan,
@@ -126,6 +128,7 @@ function AnnualPlanSheetContent() {
   const [saveHint, setSaveHint] = useState<{ id: string; text: string; ok: boolean } | null>(null)
   const [quotas, setQuotas] = useState<OfficeQuotaBundle>({ year: null, lines: [], allocations: [] })
   const [changeReasons, setChangeReasons] = useState<Record<string, string>>({})
+  const [machineRank, setMachineRank] = useState<Record<string, number>>({})
 
   const [otherName, setOtherName] = useState('')
   const [otherDraft, setOtherDraft] = useState('')
@@ -160,7 +163,7 @@ function AnnualPlanSheetContent() {
     : lumpMode
       ? Boolean(staffId && category && amountOk)
       : Boolean(staffId && category && selectedMachine && qtyOk && amountOk)
-  const displayLines = useMemo(() => orderLinesWithInterimBelow(lines), [lines])
+  const displayLines = useMemo(() => orderPlanSheetDisplayLines(lines, machineRank), [lines, machineRank])
   const canAdd = baseCanAdd && (!confirmed || Boolean(changeKind)) && !saving
   const changeKindOptions = confirmed && !localAdmin
     ? CHANGE_KIND_OPTIONS.filter((o) => o.value !== 'initial')
@@ -322,6 +325,43 @@ function AnnualPlanSheetContent() {
       cancelled = true
     }
   }, [category])
+
+  const factoryCatsForSort = useMemo(() => {
+    const cats = new Set<string>(['暖房機', 'たばこ乾燥機'])
+    for (const line of lines) {
+      if (!isFactoryPlanCategory(line.category)) continue
+      const factory = factoryCategoryFor(line.category)
+      if (factory) cats.add(factory)
+    }
+    return [...cats]
+  }, [lines])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const next: Record<string, number> = {}
+      await Promise.all(
+        factoryCatsForSort.map(async (cat) => {
+          try {
+            const res = await fetch(`/api/plan/annual/machines?category=${encodeURIComponent(cat)}`)
+            const json = await res.json()
+            if (!res.ok || !json.ok) return
+            const list = (json.machines || []) as PlanMachine[]
+            list.forEach((machine, index) => {
+              next[`${cat}::${machine.code}`] = index
+              if (next[machine.code] == null) next[machine.code] = index
+            })
+          } catch {
+            // マスタが読めなくてもカテゴリ順とコード順で並べる
+          }
+        }),
+      )
+      if (!cancelled) setMachineRank(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [factoryCatsForSort])
 
   useEffect(() => {
     if (lumpMode || otherMode) return
@@ -1141,7 +1181,10 @@ function AnnualPlanSheetContent() {
         {machineWarning && <p style={{ color: '#fbbf24', marginBottom: 0 }}>{machineWarning}</p>}
       </section>
 
-      <h2 style={{ fontSize: 16, color: '#f8fafc' }}>追加済みの行</h2>
+      <h2 style={{ fontSize: 16, color: '#f8fafc', marginBottom: 4 }}>追加済みの行</h2>
+      <p style={{ ...planMuted, marginTop: 0 }}>
+        カテゴリ順です。生産品は暖房機・たばこ乾燥機の機種マスタ規格順、その他・肥料・農薬・資材・工事はその後ろです。中間修正は同じ品名の直下です。
+      </p>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1120 }}>
           <thead>

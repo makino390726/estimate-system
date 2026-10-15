@@ -2,9 +2,11 @@ import {
   LUMP_MACHINE_CODE,
   PROGRESS_CATEGORIES,
   displayPlanCategory,
+  factoryCategoryFor,
   formatPlanMachineLabel,
   isOtherMachineCode,
   lineChangeKind,
+  planCategorySortIndex,
   normalizeProductCode,
   otherProgressCategoryForProductCode,
   progressCategoryFor,
@@ -170,11 +172,38 @@ function matchScore(actual: SalesActualItemRow, reservedCodes: string[], planNam
   return nameMatchScore(planName, actual.product_name || '')
 }
 
+function sortItemProgressRows(
+  rows: ItemMonthProgressRow[],
+  machineRank: Record<string, number>,
+) {
+  const rankOf = (row: ItemMonthProgressRow) => {
+    const produced = /^生産品（(.+)）$/.exec(row.category)?.[1]
+    const factory = produced || factoryCategoryFor(row.category) || row.category
+    return machineRank[`${factory}::${row.code}`] ?? machineRank[row.code]
+  }
+  rows.sort((a, b) => {
+    const cat = planCategorySortIndex(a.category) - planCategorySortIndex(b.category)
+    if (cat !== 0) return cat
+    const otherA = isOtherMachineCode(a.code) || a.code === LUMP_MACHINE_CODE
+    const otherB = isOtherMachineCode(b.code) || b.code === LUMP_MACHINE_CODE
+    if (otherA !== otherB) return otherA ? 1 : -1
+    const rankA = rankOf(a)
+    const rankB = rankOf(b)
+    if (rankA != null && rankB != null && rankA !== rankB) return rankA - rankB
+    if (rankA != null && rankB == null) return -1
+    if (rankA == null && rankB != null) return 1
+    const codeCmp = a.code.localeCompare(b.code, 'ja', { numeric: true, sensitivity: 'base' })
+    if (codeCmp !== 0) return codeCmp
+    return a.label.localeCompare(b.label, 'ja')
+  })
+}
+
 export function buildItemMonthProgress(
   fiscalYear: number,
   lines: PlanLineForItemProgress[],
   actuals: SalesActualItemRow[],
   extraCodesByMachine: Record<string, string[]> = {},
+  machineRank: Record<string, number> = {},
 ): ItemMonthProgressResult {
   const months = fiscalMonthSlots(fiscalYear)
   type Group = {
@@ -321,12 +350,7 @@ export function buildItemMonthProgress(
     row.remainingAmount = row.currentAmount - row.soldAmountTotal
   }
 
-  rows.sort((a, b) => {
-    const cat = a.category.localeCompare(b.category, 'ja')
-    if (cat !== 0) return cat
-    if (a.useQty !== b.useQty) return a.useQty ? -1 : 1
-    return a.label.localeCompare(b.label, 'ja')
-  })
+  sortItemProgressRows(rows, machineRank)
 
   const categoryOrder = [...PROGRESS_CATEGORIES, 'その他']
   const unmatchedByCategory = [...unmatchedMap.values()].sort((a, b) => {

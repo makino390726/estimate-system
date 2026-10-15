@@ -6,8 +6,11 @@ import {
   PROGRESS_CATEGORIES,
   defaultGrossProfit,
   displayPlanCategory,
+  factoryCategoryFor,
   formatPlanMachineLabel,
+  isOtherMachineCode,
   lineChangeKind,
+  planCategorySortIndex,
   progressCategoryFor,
   type PlanChangeKind,
   type PlanConfidence,
@@ -555,6 +558,71 @@ export function planLineItemKey(line: Pick<AnnualPlanLine, 'category' | 'machine
   const code = String(line.machine_code || '').trim() || LUMP_MACHINE_CODE
   const name = String(line.machine_name || '').trim()
   return `${displayPlanCategory(line.category)}::${code}::${name}`
+}
+
+function machineRankOf(
+  line: Pick<AnnualPlanLine, 'category' | 'machine_code'>,
+  machineRank: Map<string, number> | Record<string, number>,
+): number | undefined {
+  const code = String(line.machine_code || '').trim()
+  const factory = factoryCategoryFor(line.category) || String(line.category || '').trim()
+  const keys = [`${factory}::${code}`, code]
+  if (machineRank instanceof Map) {
+    for (const key of keys) {
+      const n = machineRank.get(key)
+      if (n != null) return n
+    }
+    return undefined
+  }
+  for (const key of keys) {
+    const n = machineRank[key]
+    if (n != null) return n
+  }
+  return undefined
+}
+
+/** カテゴリ順。生産品は機種マスタの規格順。中間修正は同じ品名の当初行のすぐ下 */
+export function orderPlanSheetDisplayLines(
+  lines: AnnualPlanLine[],
+  machineRank: Map<string, number> | Record<string, number> = {},
+): AnnualPlanLine[] {
+  const grouped = new Map<string, AnnualPlanLine[]>()
+  const groupOrder: string[] = []
+  for (const line of lines) {
+    const key = planLineItemKey(line)
+    if (!grouped.has(key)) {
+      grouped.set(key, [])
+      groupOrder.push(key)
+    }
+    grouped.get(key)!.push(line)
+  }
+
+  const groups = groupOrder.map((key) => {
+    const members = grouped.get(key) || []
+    const initials = members.filter((row) => lineChangeKind(row) === 'initial')
+    const interims = members.filter((row) => lineChangeKind(row) === 'interim')
+    return { key, members: [...initials, ...interims], sortLine: initials[0] || interims[0] }
+  })
+
+  groups.sort((a, b) => {
+    const cat = planCategorySortIndex(a.sortLine.category) - planCategorySortIndex(b.sortLine.category)
+    if (cat !== 0) return cat
+    const codeA = String(a.sortLine.machine_code || '').trim()
+    const codeB = String(b.sortLine.machine_code || '').trim()
+    const otherA = isOtherMachineCode(codeA) || codeA === LUMP_MACHINE_CODE
+    const otherB = isOtherMachineCode(codeB) || codeB === LUMP_MACHINE_CODE
+    if (otherA !== otherB) return otherA ? 1 : -1
+    const rankA = machineRankOf(a.sortLine, machineRank)
+    const rankB = machineRankOf(b.sortLine, machineRank)
+    if (rankA != null && rankB != null && rankA !== rankB) return rankA - rankB
+    if (rankA != null && rankB == null) return -1
+    if (rankA == null && rankB != null) return 1
+    const codeCmp = codeA.localeCompare(codeB, 'ja', { numeric: true, sensitivity: 'base' })
+    if (codeCmp !== 0) return codeCmp
+    return displayPlanLineMachine(a.sortLine).localeCompare(displayPlanLineMachine(b.sortLine), 'ja')
+  })
+
+  return groups.flatMap((group) => group.members)
 }
 
 /** 中間修正は、同じ品名の当初行のすぐ下に並べる */
