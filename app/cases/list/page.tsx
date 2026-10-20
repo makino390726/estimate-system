@@ -18,11 +18,6 @@ import {
   mapDetailRowsForReport,
   type CaseDetailReportRow,
 } from '../../../lib/caseDetailReport'
-import {
-  COLLECTION_CASE_STATUSES,
-  calcCollectionDue,
-  normalizeCustomerName,
-} from '@/lib/collectionSchedule'
 
 type CaseWithDetails = {
   case_id: string
@@ -38,8 +33,6 @@ type CaseWithDetails = {
   approve_director: string | null
   approve_president: string | null
   approvalStatus: string
-  collectionMonth?: string
-  collectionAmount?: number
 }
 
 export default function CaseListPage() {
@@ -139,46 +132,6 @@ export default function CaseListPage() {
           approvalStatus,
         }
       })
-
-      const collectionTargets = formattedCases.filter((c) =>
-        (COLLECTION_CASE_STATUSES as readonly string[]).includes(c.status),
-      )
-      if (collectionTargets.length > 0) {
-        const termsByName = new Map<string, { close_day: number | null; collect_cycle: number | null; collect_day: number | null }>()
-        for (let from = 0; ; from += 1000) {
-          const { data: termRows, error: termError } = await supabase
-            .from('customers')
-            .select('name, close_day, collect_cycle, collect_day')
-            .range(from, from + 999)
-          if (termError) break
-          for (const row of termRows || []) {
-            termsByName.set(normalizeCustomerName(String(row.name || '')), {
-              close_day: row.close_day,
-              collect_cycle: row.collect_cycle,
-              collect_day: row.collect_day,
-            })
-          }
-          if ((termRows || []).length < 1000) break
-        }
-        const amountMap = new Map<string, number>()
-        const ids = collectionTargets.map((c) => c.case_id)
-        for (let i = 0; i < ids.length; i += 200) {
-          const { data: amounts } = await supabase
-            .from('cases')
-            .select('case_id, total_amount')
-            .in('case_id', ids.slice(i, i + 200))
-          for (const row of amounts || []) {
-            amountMap.set(String(row.case_id), Number(row.total_amount || 0))
-          }
-        }
-        for (const row of formattedCases) {
-          if (!(COLLECTION_CASE_STATUSES as readonly string[]).includes(row.status)) continue
-          row.collectionAmount = amountMap.get(row.case_id) || 0
-          const terms = termsByName.get(normalizeCustomerName(row.customer_name))
-          const due = terms ? calcCollectionDue(row.created_date, terms) : null
-          row.collectionMonth = due?.dueMonthLabel || ''
-        }
-      }
 
       setCases(formattedCases)
       setOriginalCases(formattedCases)
@@ -573,11 +526,6 @@ export default function CaseListPage() {
           <button onClick={handleShowAll} className="btn-3d btn-reset">
             全件表示
           </button>
-          <Link href="/cases/collections">
-            <button className="btn-3d" style={{ padding: '8px 16px', backgroundColor: '#b45309', color: '#fff' }}>
-              入金予定
-            </button>
-          </Link>
           <Link href="/selectors">
             <button className="btn-3d btn-reset" style={{ padding: '8px 16px', backgroundColor: '#16a34a', border: '1px solid #15803d', color: '#fff' }}>
               ← メニューに戻る
@@ -664,8 +612,6 @@ export default function CaseListPage() {
             <th style={thStyle}>顧客名</th>
             <th style={thStyle}>担当者</th>
             <th style={thStyle}>ステータス</th>
-            <th style={thStyle}>回収予定月</th>
-            <th style={thStyle}>回収予定額</th>
             <th style={thStyle}>承認状況</th>
             <th style={thStyle}>操作</th>
           </tr>
@@ -692,16 +638,6 @@ export default function CaseListPage() {
                   <option value="失注">失注</option>
                   <option value="完了">完了</option>
                 </select>
-              </td>
-              <td style={tdStyle}>
-                {(COLLECTION_CASE_STATUSES as readonly string[]).includes(c.status)
-                  ? c.collectionMonth || '未設定'
-                  : '—'}
-              </td>
-              <td style={{ ...tdStyle, textAlign: 'right' }}>
-                {(COLLECTION_CASE_STATUSES as readonly string[]).includes(c.status)
-                  ? `${Number(c.collectionAmount || 0).toLocaleString('ja-JP')} 円`
-                  : '—'}
               </td>
               <td style={tdStyle}>{getStatusBadge(c.approvalStatus)}</td>
               <td style={tdStyle}>

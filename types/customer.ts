@@ -16,12 +16,6 @@ export type Customer = {
   address1?: string | null      // ★ 追加（address のエイリアス）
   address2?: string | null      // ★ 追加（building のエイリアス）
   note?: string | null          // ★ 追加
-  customer_code?: string | null
-  close_day?: number | null
-  collect_cycle?: number | null
-  collect_cycle_name?: string | null
-  collect_day?: number | null
-  collect_term_name?: string | null
   created_at?: string | null
   updated_at?: string | null
 }

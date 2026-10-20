@@ -101,13 +101,10 @@ export default function MasterSelectorPage() {
               <FiArchive className="icon" />
               <h2>案件一覧</h2>
             </div>
-            <p>案件一覧、見積書の進捗（ステータス）、明細表示、成約・完了の入金予定が行えます。</p>
+            <p>案件一覧、見積書の進捗（ステータス）、明細表示が行えます。</p>
             <div className="selector-card-buttons">
               <Link href="/cases/list" className="selector-button primary">
                 案件一覧
-              </Link>
-              <Link href="/cases/collections" className="selector-button primary">
-                入金予定
               </Link>
             </div>
           </div>
@@ -259,7 +256,7 @@ export default function MasterSelectorPage() {
               <FiUsers className="icon" />
               <h2>顧客マスタ</h2>
             </div>
-            <p>顧客マスタの新規登録及び登録された顧客情報の更新作業を行う画面です。得意先マスタの回収条件（予定日1）も取り込めます。</p>
+            <p>顧客マスタの新規登録及び登録された顧客情報の更新作業を行う画面です。</p>
             <div className="selector-card-buttons">
               <Link href="/customers/select" className="selector-button primary">
                 顧客マスタ

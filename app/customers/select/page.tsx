@@ -3,9 +3,7 @@
 import { useState, useEffect, Suspense, useRef } from 'react' // ★ useRef 追加
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import * as XLSX from 'xlsx'
 import { supabase } from '../../../lib/supabaseClient'
-import { normalizeCustomerName, parseCollectionMasterRow } from '@/lib/collectionSchedule'
 
 type Customer = {
   id: string
@@ -18,12 +16,6 @@ type Customer = {
   fax?: string | null
   email?: string | null
   note?: string | null
-  customer_code?: string | null
-  close_day?: number | null
-  collect_cycle?: number | null
-  collect_cycle_name?: string | null
-  collect_day?: number | null
-  collect_term_name?: string | null
 }
 
 const emptyForm: Customer = {
@@ -37,12 +29,6 @@ const emptyForm: Customer = {
   fax: '',
   email: '',
   note: '',
-  customer_code: '',
-  close_day: null,
-  collect_cycle: null,
-  collect_cycle_name: '',
-  collect_day: null,
-  collect_term_name: '',
 }
 
 function CustomerSelectContent() {
@@ -53,9 +39,6 @@ function CustomerSelectContent() {
   const [showForm, setShowForm] = useState(false)
   const [currentPage, setCurrentPage] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
-  const [importing, setImporting] = useState(false)
-  const [importHint, setImportHint] = useState('')
-  const fileRef = useRef<HTMLInputElement | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('returnTo')
@@ -104,12 +87,6 @@ function CustomerSelectContent() {
           fax: formData.fax || null,
           email: formData.email || null,
           note: formData.note || null,
-          customer_code: formData.customer_code || null,
-          close_day: formData.close_day,
-          collect_cycle: formData.collect_cycle,
-          collect_cycle_name: formData.collect_cycle_name || null,
-          collect_day: formData.collect_day,
-          collect_term_name: formData.collect_term_name || null,
         })
         .eq('id', formData.id)
 
@@ -136,12 +113,6 @@ function CustomerSelectContent() {
           fax: formData.fax || null,
           email: formData.email || null,
           note: formData.note || null,
-          customer_code: formData.customer_code || null,
-          close_day: formData.close_day,
-          collect_cycle: formData.collect_cycle,
-          collect_cycle_name: formData.collect_cycle_name || null,
-          collect_day: formData.collect_day,
-          collect_term_name: formData.collect_term_name || null,
         }])
         .select()
         .single()
@@ -187,12 +158,6 @@ function CustomerSelectContent() {
       fax: c.fax || '',
       email: c.email || '',
       note: c.note || '',
-      customer_code: c.customer_code || '',
-      close_day: c.close_day ?? null,
-      collect_cycle: c.collect_cycle ?? null,
-      collect_cycle_name: c.collect_cycle_name || '',
-      collect_day: c.collect_day ?? null,
-      collect_term_name: c.collect_term_name || '',
     })
     setIsEdit(true)
     setShowForm(true)
@@ -223,89 +188,11 @@ function CustomerSelectContent() {
     }
   }
 
-  const handleImportCollectionMaster = async (file: File) => {
-    setImporting(true)
-    setImportHint('取込中…')
-    try {
-      const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array' })
-      const sheet =
-        wb.SheetNames.map((n) => wb.Sheets[n]).find((sh) => {
-          const header = (XLSX.utils.sheet_to_json(sh, { header: 1, defval: '' })[0] || []) as unknown[]
-          return header.some((h) => String(h).includes('締日') || String(h).includes('得意先コード'))
-        }) || wb.Sheets[wb.SheetNames[0]]
-      const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null })
-      const terms = raw.map(parseCollectionMasterRow).filter((r): r is NonNullable<typeof r> => Boolean(r))
-      if (terms.length === 0) {
-        setImportHint('締日(1)・回収サイクル(1)・回収日(1)の行が見つかりません。')
-        return
-      }
-
-      const existing: Customer[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await supabase.from('customers').select('*').range(from, from + 999)
-        if (error) throw error
-        existing.push(...((data || []) as Customer[]))
-        if ((data || []).length < 1000) break
-      }
-      const byName = new Map(existing.map((c) => [normalizeCustomerName(c.name), c]))
-
-      const matched = terms
-        .map((term) => ({ term, hit: byName.get(normalizeCustomerName(term.name)) }))
-        .filter((row): row is { term: (typeof terms)[number]; hit: Customer } => Boolean(row.hit))
-      const unmatched = terms.length - matched.length
-      let updated = 0
-      for (let i = 0; i < matched.length; i += 20) {
-        const chunk = matched.slice(i, i + 20)
-        const results = await Promise.all(
-          chunk.map(({ term, hit }) =>
-            supabase
-              .from('customers')
-              .update({
-                customer_code: term.customer_code,
-                close_day: term.close_day,
-                collect_cycle: term.collect_cycle,
-                collect_cycle_name: term.collect_cycle_name,
-                collect_day: term.collect_day,
-                collect_term_name: term.collect_term_name,
-              })
-              .eq('id', hit.id),
-          ),
-        )
-        const failed = results.find((r) => r.error)
-        if (failed?.error) throw failed.error
-        updated += chunk.length
-      }
-      setImportHint(`予定日1を反映しました。更新 ${updated} 件 / 名称不一致 ${unmatched} 件`)
-      fetchCustomers(currentPage)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      setImportHint(
-        /close_day|customer_code|schema cache|does not exist/i.test(message)
-          ? '回収条件列がありません。Supabase で add_customer_collection_terms.sql を実行してください。'
-          : `取込に失敗しました: ${message}`,
-      )
-    } finally {
-      setImporting(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
   // ページネーション
   const totalPages = Math.ceil((totalCount || 0) / pageSize)
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto', color: '#e2e8f0' }}>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".xls,.xlsx"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) void handleImportCollectionMaster(file)
-        }}
-      />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h1 style={{ marginTop: 0, color: '#fff' }}>顧客マスタ検索</h1>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -316,20 +203,6 @@ function CustomerSelectContent() {
           >
             + 新規登録 / 編集
           </button>
-          <button
-            type="button"
-            disabled={importing}
-            onClick={() => fileRef.current?.click()}
-            className="btn-3d"
-            style={{ backgroundColor: '#2563eb', color: '#fff', padding: '8px 16px', opacity: importing ? 0.6 : 1 }}
-          >
-            {importing ? '取込中…' : '得意先マスタ取込（予定日1）'}
-          </button>
-          <Link href="/cases/collections">
-            <button className="btn-3d" style={{ padding: '8px 16px', backgroundColor: '#b45309', color: '#fff' }}>
-              入金予定
-            </button>
-          </Link>
           <Link href={returnTo || "/selectors"}>
             <button className="btn-3d btn-reset" style={{ padding: '8px 16px', color: '#fff', backgroundColor: '#16a34a', border: '1px solid #15803d' }}>
               ← {returnTo ? '戻る' : 'メニューに戻る'}
@@ -337,7 +210,6 @@ function CustomerSelectContent() {
           </Link>
         </div>
       </div>
-      {importHint && <p style={{ color: '#93c5fd', marginTop: 0 }}>{importHint}</p>}
 
       {/* フォーム（新規/編集兼用） */}
       {showForm && (
@@ -419,54 +291,6 @@ function CustomerSelectContent() {
                 rows={2}
               />
             </label>
-            <label style={{ color: '#cbd5e1' }}>得意先コード
-              <input
-                type="text"
-                value={formData.customer_code || ''}
-                onChange={(e) => setFormData({ ...formData, customer_code: e.target.value })}
-                className="input-inset"
-              />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>回収条件
-              <input
-                type="text"
-                value={formData.collect_term_name || ''}
-                onChange={(e) => setFormData({ ...formData, collect_term_name: e.target.value })}
-                className="input-inset"
-              />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>締日(1)（99=月末）
-              <input
-                type="number"
-                value={formData.close_day ?? ''}
-                onChange={(e) => setFormData({ ...formData, close_day: e.target.value === '' ? null : Number(e.target.value) })}
-                className="input-inset"
-              />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>回収サイクル(1)（0当月 1翌月）
-              <input
-                type="number"
-                value={formData.collect_cycle ?? ''}
-                onChange={(e) => setFormData({ ...formData, collect_cycle: e.target.value === '' ? null : Number(e.target.value) })}
-                className="input-inset"
-              />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>回収日(1)（99=月末）
-              <input
-                type="number"
-                value={formData.collect_day ?? ''}
-                onChange={(e) => setFormData({ ...formData, collect_day: e.target.value === '' ? null : Number(e.target.value) })}
-                className="input-inset"
-              />
-            </label>
-            <label style={{ color: '#cbd5e1' }}>回収サイクル名
-              <input
-                type="text"
-                value={formData.collect_cycle_name || ''}
-                onChange={(e) => setFormData({ ...formData, collect_cycle_name: e.target.value })}
-                className="input-inset"
-              />
-            </label>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button
@@ -505,9 +329,6 @@ function CustomerSelectContent() {
           <tr>
             <th style={thStyle}>ID</th>
             <th style={thStyle}>顧客名</th>
-            <th style={thStyle}>締日</th>
-            <th style={thStyle}>サイクル</th>
-            <th style={thStyle}>回収日</th>
             <th style={thStyle}>操作</th>
           </tr>
         </thead>
@@ -516,9 +337,6 @@ function CustomerSelectContent() {
             <tr key={c.id}>
               <td style={tdStyle}>{c.id}</td>
               <td style={tdStyle}>{c.name}</td>
-              <td style={tdStyle}>{c.close_day == null ? '—' : c.close_day === 99 ? '月末' : c.close_day}</td>
-              <td style={tdStyle}>{c.collect_cycle_name || (c.collect_cycle == null ? '—' : `${c.collect_cycle}ヶ月`)}</td>
-              <td style={tdStyle}>{c.collect_day == null ? '—' : c.collect_day === 99 ? '月末' : c.collect_day}</td>
               <td style={tdStyle}>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
