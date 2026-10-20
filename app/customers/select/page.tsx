@@ -42,12 +42,25 @@ function CustomerSelectContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const returnTo = searchParams.get('returnTo')
+  const openNew = searchParams.get('openNew')
   const formRef = useRef<HTMLDivElement | null>(null) // ★ 追加
   const pageSize = 1000
+  const backHref = returnTo
+    ? `${returnTo}${returnTo.includes('?') ? '&' : '?'}resume=1`
+    : '/selectors'
 
   useEffect(() => {
     fetchCustomers()
   }, [])
+
+  useEffect(() => {
+    if (openNew === '1') {
+      setFormData(emptyForm)
+      setIsEdit(false)
+      setShowForm(true)
+      setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 0)
+    }
+  }, [openNew])
 
   const fetchCustomers = async (page: number = 0) => {
     const start = page * pageSize
@@ -203,7 +216,7 @@ function CustomerSelectContent() {
           >
             + 新規登録 / 編集
           </button>
-          <Link href={returnTo || "/selectors"}>
+          <Link href={backHref}>
             <button className="btn-3d btn-reset" style={{ padding: '8px 16px', color: '#fff', backgroundColor: '#16a34a', border: '1px solid #15803d' }}>
               ← {returnTo ? '戻る' : 'メニューに戻る'}
             </button>

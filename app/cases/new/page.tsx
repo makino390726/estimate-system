@@ -4,7 +4,13 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../../../lib/supabaseClient'
 import { useReactToPrint } from 'react-to-print'
-import PrintEstimate from './PrintEstimate'
+import PrintEstimate, {
+  emptyFooterNotes,
+  packFooterNotes,
+  parseEstimateLayout,
+  serializeEstimateLayout,
+  unpackFooterNotes,
+} from './PrintEstimate'
 
 function generateCaseId(): string {
   const timestamp = Date.now().toString(16)
@@ -43,6 +49,59 @@ type Row = {
   display_order?: number
 }
 
+const ESTIMATE_DRAFT_KEY = 'estimate-system:cases-new-draft'
+const ESTIMATE_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+type EstimateDraft = {
+  savedAt: number
+  customerId: string
+  customerName: string
+  honorific: string
+  staffId: number | null
+  staffName: string
+  subject: string
+  discount: number
+  taxRate: number
+  rows: Row[]
+  estimateNo: string
+  estimateDate: string
+  deliveryPlace: string
+  deliveryDeadline: string
+  deliveryTerms: string
+  validityText: string
+  paymentTerms: string
+  layoutType: 'vertical' | 'horizontal'
+  unitPriceEstimate: boolean
+  insertNotes: boolean
+  footerNotes: string[]
+  sections: Section[]
+  isUpdateMode: boolean
+  loadedCaseId: string | null
+}
+
+function clearEstimateDraft() {
+  try {
+    sessionStorage.removeItem(ESTIMATE_DRAFT_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+function loadEstimateDraft(): EstimateDraft | null {
+  try {
+    const raw = sessionStorage.getItem(ESTIMATE_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as EstimateDraft
+    if (!parsed || Date.now() - (parsed.savedAt || 0) > ESTIMATE_DRAFT_MAX_AGE_MS) {
+      sessionStorage.removeItem(ESTIMATE_DRAFT_KEY)
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export default function CaseNewPage() {
   const router = useRouter()
   const printRef = useRef<HTMLDivElement>(null)
@@ -70,6 +129,9 @@ export default function CaseNewPage() {
   const [layoutType, setLayoutType] = useState<'vertical' | 'horizontal'>(
     'vertical'
   )
+  const [unitPriceEstimate, setUnitPriceEstimate] = useState(false)
+  const [insertNotes, setInsertNotes] = useState(false)
+  const [footerNotes, setFooterNotes] = useState<string[]>(() => emptyFooterNotes())
   const [sections, setSections] = useState<Section[]>([])
   const [showSectionModal, setShowSectionModal] = useState(false)
   const [newSectionName, setNewSectionName] = useState('')
@@ -95,9 +157,11 @@ export default function CaseNewPage() {
   const [pastCases, setPastCases] = useState<any[]>([])
 
   const [customerSearchName, setCustomerSearchName] = useState('')
+  const [productSearchCode, setProductSearchCode] = useState('')
   const [productSearchName, setProductSearchName] = useState('')
   const [productSearchSpec, setProductSearchSpec] = useState('')
   const [pastCaseSearchSubject, setPastCaseSearchSubject] = useState('')
+  const [pastCaseSearchStaffId, setPastCaseSearchStaffId] = useState<number | ''>('')
   const [printReady, setPrintReady] = useState(false)
 
   // ★ 直接入力用state
@@ -207,6 +271,102 @@ export default function CaseNewPage() {
     fetchProducts(0)  // ★ 初回は0ページ目を取得
   }, [])
 
+  const persistEstimateDraft = () => {
+    try {
+      const draft: EstimateDraft = {
+        savedAt: Date.now(),
+        customerId,
+        customerName,
+        honorific,
+        staffId,
+        staffName,
+        subject,
+        discount,
+        taxRate,
+        rows,
+        estimateNo,
+        estimateDate,
+        deliveryPlace,
+        deliveryDeadline,
+        deliveryTerms,
+        validityText,
+        paymentTerms,
+        layoutType,
+        unitPriceEstimate,
+        insertNotes,
+        footerNotes,
+        sections,
+        isUpdateMode,
+        loadedCaseId,
+      }
+      sessionStorage.setItem(ESTIMATE_DRAFT_KEY, JSON.stringify(draft))
+    } catch (e) {
+      console.warn('見積下書きの保存に失敗:', e)
+    }
+  }
+
+  const goToCustomerRegister = () => {
+    persistEstimateDraft()
+    setShowCustomerModal(false)
+    router.push('/customers/select?returnTo=' + encodeURIComponent('/cases/new') + '&openNew=1')
+  }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const params = new URLSearchParams(window.location.search)
+    const qCustomerName = (params.get('customerName') || '').trim()
+    const fromCustomerFlow = !!(
+      qCustomerName ||
+      params.get('customerId') ||
+      params.get('resume') === '1'
+    )
+    const draft = loadEstimateDraft()
+
+    const applyDraft = (d: EstimateDraft) => {
+      setCustomerId(d.customerId || '')
+      setCustomerName(d.customerName || '')
+      setHonorific(d.honorific || '様')
+      setStaffId(d.staffId ?? null)
+      setStaffName(d.staffName || '')
+      setSubject(d.subject || '')
+      setDiscount(d.discount || 0)
+      setTaxRate(typeof d.taxRate === 'number' ? d.taxRate : 0.1)
+      setRows(Array.isArray(d.rows) ? d.rows : [])
+      setEstimateNo(d.estimateNo || '')
+      setEstimateDate(d.estimateDate || new Date().toISOString().split('T')[0])
+      setDeliveryPlace(d.deliveryPlace || 'お打合せの通り')
+      setDeliveryDeadline(d.deliveryDeadline || 'お打合せの通り')
+      setDeliveryTerms(d.deliveryTerms || 'お打合せの通り')
+      setValidityText(d.validityText || 'お打合せの通り')
+      setPaymentTerms(d.paymentTerms || 'お打合せの通り')
+      setLayoutType(d.layoutType === 'horizontal' ? 'horizontal' : 'vertical')
+      setUnitPriceEstimate(!!d.unitPriceEstimate)
+      setInsertNotes(!!d.insertNotes)
+      setFooterNotes(
+        Array.isArray(d.footerNotes) && d.footerNotes.length
+          ? d.footerNotes
+          : emptyFooterNotes()
+      )
+      setSections(Array.isArray(d.sections) ? d.sections : [])
+      setIsUpdateMode(!!d.isUpdateMode)
+      setLoadedCaseId(d.loadedCaseId || null)
+    }
+
+    if (draft) {
+      applyDraft(draft)
+    }
+
+    if (qCustomerName) {
+      setCustomerId(qCustomerName)
+      setCustomerName(qCustomerName)
+    }
+
+    if (fromCustomerFlow) {
+      window.history.replaceState({}, '', '/cases/new')
+    }
+  }, [])
+
   const fetchCustomers = async () => {
     const { data, error } = await supabase
       .from('customers')
@@ -266,11 +426,17 @@ export default function CaseNewPage() {
         .range(start, end)
 
       // 検索条件を追加
-      if (productSearchName) {
-        query = query.ilike('name', `%${productSearchName}%`)
+      const code = productSearchCode.trim()
+      const name = productSearchName.trim()
+      const spec = productSearchSpec.trim()
+      if (code) {
+        query = query.ilike('id', `%${code}%`)
       }
-      if (productSearchSpec) {
-        query = query.ilike('spec', `%${productSearchSpec}%`)
+      if (name) {
+        query = query.ilike('name', `%${name}%`)
+      }
+      if (spec) {
+        query = query.ilike('spec', `%${spec}%`)
       }
 
       const { data, error, count } = await query
@@ -296,7 +462,7 @@ export default function CaseNewPage() {
     }
   }
 
-  const fetchPastCases = async () => {
+  const fetchPastCases = async (staffIdFilter: number | '' = pastCaseSearchStaffId) => {
     let query = supabase
       .from('cases')
       .select('*')
@@ -305,75 +471,27 @@ export default function CaseNewPage() {
     if (pastCaseSearchSubject) {
       query = query.ilike('subject', `%${pastCaseSearchSubject}%`)
     }
+    if (staffIdFilter !== '') {
+      query = query.eq('staff_id', staffIdFilter)
+    }
 
     const { data, error } = await query
 
-    if (!error && data) {
-      const staffIds = [
-        ...new Set(
-          data
-            .map((c) => c.staff_id)
-            .filter(Boolean)
-        ),
-      ]
-      const customerIds = [
-        ...new Set(
-          data
-            .map((c) => c.customer_id)
-            .filter(Boolean)
-        ),
-      ]
-
-      console.log('【過去案件読込】担当者ID:', staffIds)
-      console.log('【過去案件読込】顧客ID:', customerIds)
-
-      let staffsData: any[] = []
-      let customersData: any[] = []
-
-      if (staffIds.length > 0) {
-        const result = await supabase
-          .from('staffs')
-          .select('id, name')
-          .in('id', staffIds)
-        console.log('【過去案件読込】担当者データ取得結果:', result)
-        console.log('【過去案件読込】担当者エラー:', result.error)
-        if (result.error) {
-          console.error('【過去案件読込】担当者データ取得エラー詳細:', result.error.message)
-        }
-        staffsData = result.data || []
-      }
-
-      if (customerIds.length > 0) {
-        console.log('【過去案件読込】顧客クエリ開始: カラムサイズ=', customerIds.length)
-        const result = await supabase
-          .from('customers')
-          .select('id, name')
-          .in('id', customerIds)
-        console.log('【過去案件読込】顧客データ取得結果:', result)
-        console.log('【過去案件読込】顧客エラー:', result.error)
-        if (result.error) {
-          console.error('【過去案件読込】顧客データ取得エラー詳細:', result.error.message)
-        }
-        customersData = result.data || []
-      }
-
-      console.log('【過去案件読込】最終staffsData:', staffsData)
-      console.log('【過去案件読込】最終customersData:', customersData)
-
-      const staffMap = new Map(staffsData.map((s) => [String(s.id), s.name]))
-      const customerMap = new Map(customersData.map((c) => [String(c.id), c.name]))
-
-      console.log('【過去案件読込】staffMap:', Array.from(staffMap.entries()))
-      console.log('【過去案件読込】customerMap:', Array.from(customerMap.entries()))
-
-      const enrichedCases = data.map((c) => ({
-        ...c,
-        customer_name: customerMap.get(String(c.customer_id)) || c.customer_id || '-',
-        staff_name: staffMap.get(String(c.staff_id)) || c.staff_id || '-',
-      }))
-
-      setPastCases(enrichedCases)
+    if (error) {
+      console.error('【過去案件読込】案件取得エラー:', error)
+      alert('過去案件の取得に失敗しました')
+      return
     }
+
+    const staffMap = new Map(staffs.map((s) => [String(s.id), s.name]))
+    const enrichedCases = (data || []).map((c) => ({
+      ...c,
+      // cases.customer_id には得意先名を保存する仕様のため、マスタID検索はしない
+      customer_name: c.customer_id || '-',
+      staff_name: staffMap.get(String(c.staff_id)) || c.staff_id || '-',
+    }))
+
+    setPastCases(enrichedCases)
   }
 
   const handleCustomerSearch = async () => {
@@ -496,19 +614,19 @@ export default function CaseNewPage() {
       }
     }
 
-    // ★ 顧客情報取得
-    let customerName = ''
-    if (caseData.customer_id) {
+    // ★ 顧客情報取得（customer_id は得意先名保存が基本。UUIDのときだけマスタ参照）
+    let customerName = caseData.customer_id || ''
+    const customerKey = String(caseData.customer_id || '').trim()
+    const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customerKey)
+    if (looksLikeUuid) {
       const { data: customerData, error: customerError } = await supabase
         .from('customers')
         .select('name')
-        .eq('id', caseData.customer_id)
-        .single()
+        .eq('id', customerKey)
+        .maybeSingle()
 
-      if (!customerError && customerData) {
+      if (!customerError && customerData?.name) {
         customerName = customerData.name
-      } else {
-        customerName = caseData.customer_id
       }
     }
 
@@ -582,7 +700,11 @@ export default function CaseNewPage() {
     setSubject(caseData.subject || '')
     setDiscount(caseData.special_discount || 0)
     setTaxRate(0.1)
-    setLayoutType(caseData.layout_type || 'vertical')
+    const loadedLayout = parseEstimateLayout(caseData.layout_type)
+    setLayoutType(loadedLayout.layoutType)
+    setUnitPriceEstimate(loadedLayout.unitPriceEstimate)
+    setInsertNotes(loadedLayout.insertNotes)
+    setFooterNotes(unpackFooterNotes(caseData.coreplus_no))
 
     setEstimateNo(caseData.case_no || '')
     setEstimateDate(
@@ -595,7 +717,7 @@ export default function CaseNewPage() {
     setPaymentTerms(caseData.payment_terms || 'お打合せの通り')
 
     // セクション
-    if (caseData.layout_type === 'horizontal') {
+    if (loadedLayout.layoutType === 'horizontal') {
       const { data: sectionsData, error: sectionsError } = await supabase
         .from('case_sections')
         .select('*')
@@ -912,6 +1034,9 @@ export default function CaseNewPage() {
     setTaxRate(0.1)
     setRows([])
     setLayoutType('vertical')
+    setUnitPriceEstimate(false)
+    setInsertNotes(false)
+    setFooterNotes(emptyFooterNotes())
     setSections([])
     setEstimateNo('')
     setEstimateDate(new Date().toISOString().split('T')[0])
@@ -920,6 +1045,7 @@ export default function CaseNewPage() {
     setDeliveryTerms('お打合せの通り')
     setValidityText('お打合せの通り')
     setPaymentTerms('お打合せの通り')
+    clearEstimateDraft()
 
     alert('入力内容をクリアしました')
   }
@@ -982,10 +1108,10 @@ export default function CaseNewPage() {
             // ★ customer_idには得意先名を保存する仕様
             customer_id: customerId,
             staff_id: staffId,
-            coreplus_no: null,
+            coreplus_no: packFooterNotes(insertNotes, footerNotes),
             special_discount: discount,
             total_amount: totalAmount,
-            layout_type: layoutType,
+            layout_type: serializeEstimateLayout(layoutType, unitPriceEstimate, insertNotes),
             delivery_place: deliveryPlace,
             delivery_deadline: deliveryDeadline,
             delivery_terms: deliveryTerms,
@@ -1018,11 +1144,11 @@ export default function CaseNewPage() {
           // ★ customer_idには得意先名を保存する仕様
           customer_id: customerId,
           staff_id: staffId,
-          coreplus_no: null,
+          coreplus_no: packFooterNotes(insertNotes, footerNotes),
           status: '商談中',
           special_discount: discount,
           total_amount: totalAmount,
-          layout_type: layoutType,
+          layout_type: serializeEstimateLayout(layoutType, unitPriceEstimate, insertNotes),
           delivery_place: deliveryPlace,
           delivery_deadline: deliveryDeadline,
           delivery_terms: deliveryTerms,
@@ -1096,6 +1222,7 @@ export default function CaseNewPage() {
       }
 
       const actionText = mode === 'update' ? '更新' : '保存'
+      clearEstimateDraft()
       alert(`見積書を${actionText}しました`)
 
       // 更新モードをリセット
@@ -1120,6 +1247,10 @@ export default function CaseNewPage() {
     documentTitle: `見積書_${customerName || '無題'}_${new Date()
       .toISOString()
       .split('T')[0]}`,
+    pageStyle: `
+      @page { size: A4 portrait; margin: 0; }
+      html, body { margin: 0; padding: 0; }
+    `,
   })
 
   const handlePrintPreview = () => {
@@ -1288,6 +1419,50 @@ export default function CaseNewPage() {
               </span>
             </label>
 
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                padding: '10px 16px',
+                backgroundColor: unitPriceEstimate ? '#0f766e' : 'transparent',
+                borderRadius: 6,
+                border: unitPriceEstimate ? '2px solid #14b8a6' : '2px solid #334155',
+                color: unitPriceEstimate ? '#fff' : '#cbd5e1',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={unitPriceEstimate}
+                onChange={(e) => setUnitPriceEstimate(e.target.checked)}
+              />
+              <span style={{ fontSize: 18, fontWeight: 'bold' }}>単価見積</span>
+            </label>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                padding: '10px 16px',
+                backgroundColor: insertNotes ? '#7c3aed' : 'transparent',
+                borderRadius: 6,
+                border: insertNotes ? '2px solid #a78bfa' : '2px solid #334155',
+                color: insertNotes ? '#fff' : '#cbd5e1',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={insertNotes}
+                onChange={(e) => setInsertNotes(e.target.checked)}
+              />
+              <span style={{ fontSize: 18, fontWeight: 'bold' }}>備考挿入</span>
+            </label>
+
             {layoutType === 'horizontal' && (
               <button
                 onClick={() => setShowSectionModal(true)}
@@ -1297,6 +1472,26 @@ export default function CaseNewPage() {
               </button>
             )}
           </div>
+
+          {insertNotes && (
+            <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+              {footerNotes.map((line, index) => (
+                <input
+                  key={index}
+                  type="text"
+                  value={line}
+                  placeholder={`備考 ${index + 1}`}
+                  onChange={(e) => {
+                    const next = [...footerNotes]
+                    next[index] = e.target.value
+                    setFooterNotes(next)
+                  }}
+                  className="input-inset"
+                  style={{ width: '100%', fontSize: 15 }}
+                />
+              ))}
+            </div>
+          )}
 
           {layoutType === 'horizontal' && sections.length > 0 && (
             <div
@@ -1794,10 +1989,12 @@ export default function CaseNewPage() {
             border: '1px solid #334155',
           }}
         >
+          {!unitPriceEstimate && (
           <div style={sumRowStyle}>
             <span>小計</span>
             <span>{subtotal.toLocaleString()} 円</span>
           </div>
+          )}
           <div style={sumRowStyle}>
             <span>総原価額</span>
             <span>{totalCostAmount.toLocaleString()} 円</span>
@@ -1819,10 +2016,14 @@ export default function CaseNewPage() {
               style={{ ...inputStyle, width: 140, textAlign: 'right' }}
             />
           </div>
+          {!unitPriceEstimate && (
           <div style={sumRowStyle}>
             <span>値引後小計</span>
             <span>{subtotalAfterDiscount.toLocaleString()} 円</span>
           </div>
+          )}
+          {!unitPriceEstimate && (
+          <>
           <div style={{ ...sumRowStyle, padding: '10px' }}>
             <span>消費税率</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1858,6 +2059,8 @@ export default function CaseNewPage() {
               {totalAmount.toLocaleString()} 円
             </span>
           </div>
+          </>
+          )}
         </div>
 
         {/* 保存・印刷ボタン */}
@@ -1999,10 +2202,7 @@ export default function CaseNewPage() {
                   検索
                 </button>
                 <button
-                  onClick={() => {
-                    setShowCustomerModal(false)
-                    router.push('/customers/select')
-                  }}
+                  onClick={goToCustomerRegister}
                   className="btn-3d"
                   style={{ backgroundColor: '#28a745', color: '#fff' }}
                 >
@@ -2025,10 +2225,7 @@ export default function CaseNewPage() {
                           該当する顧客が見つかりません
                           <br />
                           <button
-                            onClick={() => {
-                              setShowCustomerModal(false)
-                              router.push('/customers/select')
-                            }}
+                            onClick={goToCustomerRegister}
                             className="btn-3d"
                             style={{ backgroundColor: '#28a745', color: '#fff', marginTop: 8 }}
                           >
@@ -2160,7 +2357,16 @@ export default function CaseNewPage() {
               {/* ★ マスタから選択タブ */}
               {productModalTab === 'search' && (
                 <>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      placeholder="商品コードで検索"
+                      value={productSearchCode}
+                      onChange={(e) => setProductSearchCode(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
+                      className="input-inset"
+                      style={{ flex: '1 1 140px', fontSize: 16 }}
+                    />
                     <input
                       type="text"
                       placeholder="商品名で検索"
@@ -2168,7 +2374,7 @@ export default function CaseNewPage() {
                       onChange={(e) => setProductSearchName(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
                       className="input-inset"
-                      style={{ flex: 1, fontSize: 16 }}
+                      style={{ flex: '1 1 180px', fontSize: 16 }}
                     />
                     <input
                       type="text"
@@ -2177,7 +2383,7 @@ export default function CaseNewPage() {
                       onChange={(e) => setProductSearchSpec(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleProductSearch()}
                       className="input-inset"
-                      style={{ flex: 1, fontSize: 16 }}
+                      style={{ flex: '1 1 160px', fontSize: 16 }}
                     />
                     <button
                       onClick={handleProductSearch}
@@ -2273,6 +2479,7 @@ export default function CaseNewPage() {
                   <div style={{ marginTop: 16, textAlign: 'right' }}>
                     <button
                       onClick={() => {
+                        setProductSearchCode('')
                         setProductSearchName('')
                         setProductSearchSpec('')
                         setProducts([])
@@ -2638,7 +2845,24 @@ export default function CaseNewPage() {
             >
               <h2>過去案件から読込</h2>
 
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+                <select
+                  value={pastCaseSearchStaffId === '' ? '' : String(pastCaseSearchStaffId)}
+                  onChange={(e) => {
+                    const next = e.target.value === '' ? '' : Number(e.target.value)
+                    setPastCaseSearchStaffId(Number.isFinite(next) ? next : '')
+                    fetchPastCases(Number.isFinite(next) ? next : '')
+                  }}
+                  className="input-inset"
+                  style={{ minWidth: 180, fontSize: 16 }}
+                >
+                  <option value="">担当者（すべて）</option>
+                  {staffs.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.name}
+                    </option>
+                  ))}
+                </select>
                 <input
                   type="text"
                   placeholder="件名で検索"
@@ -2653,7 +2877,7 @@ export default function CaseNewPage() {
                   style={{ flex: 1, fontSize: 18 }}
                 />
                 <button
-                  onClick={fetchPastCases}
+                  onClick={() => fetchPastCases()}
                   className="btn-3d btn-search"
                   style={{ backgroundColor: '#2563eb', color: '#fff' }}
                 >
@@ -2983,6 +3207,9 @@ export default function CaseNewPage() {
           taxAmount={taxAmount}
           totalAmount={totalAmount}
           layoutType={layoutType}
+          hideTotals={unitPriceEstimate}
+          insertNotes={insertNotes}
+          footerNotes={footerNotes}
           MAX_ROWS_PER_PAGE={20}
           approvalStamps={approvalStamps}
           stampUrls={{

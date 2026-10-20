@@ -38,6 +38,9 @@ export type PrintEstimateProps = {
   taxAmount: number
   totalAmount: number
   layoutType: 'vertical' | 'horizontal'
+  hideTotals?: boolean
+  insertNotes?: boolean
+  footerNotes?: string[]
   rows: PrintRow[]
   sections: PrintSection[]
   MAX_ROWS_PER_PAGE: number
@@ -55,9 +58,56 @@ export type PrintEstimateProps = {
   }
 }
 
+export const FOOTER_NOTE_COUNT = 5
+const FOOTER_NOTE_PREFIX = 'EST_FOOTER:'
+
+export function parseEstimateLayout(raw: string | null | undefined): {
+  layoutType: 'vertical' | 'horizontal'
+  unitPriceEstimate: boolean
+  insertNotes: boolean
+} {
+  const value = String(raw || 'vertical')
+  return {
+    layoutType: value.startsWith('horizontal') ? 'horizontal' : 'vertical',
+    unitPriceEstimate: value.includes('unit'),
+    insertNotes: value.includes('notes'),
+  }
+}
+
+export function serializeEstimateLayout(
+  layoutType: 'vertical' | 'horizontal',
+  unitPriceEstimate: boolean,
+  insertNotes = false,
+): string {
+  let value = layoutType
+  if (unitPriceEstimate) value += '_unit'
+  if (insertNotes) value += '_notes'
+  return value
+}
+
+export function emptyFooterNotes(): string[] {
+  return Array.from({ length: FOOTER_NOTE_COUNT }, () => '')
+}
+
+export function packFooterNotes(insertNotes: boolean, notes: string[]): string | null {
+  if (!insertNotes) return null
+  const lines = emptyFooterNotes().map((_, i) => String(notes[i] ?? ''))
+  return FOOTER_NOTE_PREFIX + lines.join('\u001f')
+}
+
+export function unpackFooterNotes(raw: string | null | undefined): string[] {
+  const empty = emptyFooterNotes()
+  if (!raw || !String(raw).startsWith(FOOTER_NOTE_PREFIX)) return empty
+  const parts = String(raw).slice(FOOTER_NOTE_PREFIX.length).split('\u001f')
+  return empty.map((_, i) => parts[i] || '')
+}
+
 const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref) => {
   const {
     layoutType,
+    hideTotals = false,
+    insertNotes = false,
+    footerNotes = [],
     estimateNo,
     estimateDate,
     customerName,
@@ -112,8 +162,30 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
     return <>{name}　{honorific}</>
   }
 
+  const formatNameSpec = (row: PrintRow) => {
+    const name = String(row.item_name || '').trim()
+    const spec = String(row.spec || '').trim()
+    if (name && spec) return `${name}　${spec}`
+    return name || spec
+  }
+
+  const nameSpecInnerStyle: React.CSSProperties = {
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    wordBreak: 'break-all',
+    overflowWrap: 'anywhere',
+    lineHeight: 1.15,
+    maxHeight: '5.8mm',
+  }
+
   // ★ 印刷用スタイルを返す
   const printStyleSheet = `
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
     @media print {
       * {
         color: #000 !important;
@@ -123,6 +195,11 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
       }
       tr {
         page-break-inside: avoid;
+      }
+      td > div {
+        -webkit-line-clamp: 2;
+        max-height: 5.8mm;
+        overflow: hidden;
       }
       body, div, p, span, td, th, table, tr {
         color: #000 !important;
@@ -310,6 +387,8 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               </tr>
             ))}
 
+            {!hideTotals && (
+            <>
             {/* 小計〜合計 */}
             <tr>
               <td
@@ -319,7 +398,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                 }}
               >
                 小　　計
@@ -330,7 +409,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                 }}
               >
                 {subtotal.toLocaleString()} 円
@@ -346,7 +425,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                 }}
               >
                 出精値引き
@@ -357,7 +436,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                   color: discount > 0 ? 'red' : 'inherit',
                 }}
               >
@@ -374,7 +453,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                 }}
               >
                 値引後小計
@@ -385,7 +464,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                 }}
               >
                 {subtotalAfterDiscount.toLocaleString()} 円
@@ -401,7 +480,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                 }}
               >
                 消費税（{(taxRate * 100).toFixed(0)}%）
@@ -412,7 +491,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '6px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 11,
+                  fontSize: 14,
                 }}
               >
                 {taxAmount.toLocaleString()} 円
@@ -428,7 +507,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '8px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 12,
+                  fontSize: 16,
                   backgroundColor: '#f0f0f0',
                 }}
               >
@@ -440,7 +519,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   padding: '8px',
                   textAlign: 'right',
                   fontWeight: 'bold',
-                  fontSize: 12,
+                  fontSize: 16,
                   backgroundColor: '#f0f0f0',
                 }}
               >
@@ -457,6 +536,8 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                 &nbsp;
               </td>
             </tr>
+            </>
+            )}
           </tbody>
         </table>
       </div>,
@@ -489,12 +570,12 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
           <table style={{ width: '100%', border: '1px solid #000', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ backgroundColor: '#c8e6c8' }}>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 180, fontSize: 11 }}>商品名・規格</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 11 }}>数量</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 11 }}>単位</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 11 }}>単　　価</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>金　　額</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>備　　考</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 180, fontSize: 12 }}>商品名・規格</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 12 }}>数量</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 12 }}>単位</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 12 }}>単　　価</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 12 }}>金　　額</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 12 }}>備　　考</th>
               </tr>
             </thead>
             <tbody>
@@ -518,22 +599,22 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               {group.rows.map((row, idx) => (
                 <React.Fragment key={idx}>
                   <tr>
-                    <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>
-                      {row.spec ? `${row.item_name}・${row.spec}` : row.item_name}
+                    <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 13, height: '8mm', overflow: 'hidden', verticalAlign: 'middle' }}>
+                      <div style={nameSpecInnerStyle}>{formatNameSpec(row)}</div>
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: 11 }}>
+                    <td style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'center', fontSize: 13, height: '8mm' }}>
                       {row.quantity ? row.quantity.toLocaleString() : ''}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: 11 }}>
+                    <td style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'center', fontSize: 13, height: '8mm' }}>
                       {row.unit}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontSize: 11 }}>
+                    <td style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'right', fontSize: 13, height: '8mm' }}>
                       {row.unit_price ? row.unit_price.toLocaleString() : ''}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontSize: 11 }}>
+                    <td style={{ border: '1px solid #000', padding: '3px 4px', textAlign: 'right', fontSize: 13, height: '8mm' }}>
                       {row.amount ? row.amount.toLocaleString() : ''}
                     </td>
-                    <td style={{ border: '1px solid #000', padding: '4px', fontSize: 10 }}>
+                    <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 11, height: '8mm' }}>
                       {(row.remarks || '').replace(/円$/g, '')}
                     </td>
                   </tr>
@@ -552,16 +633,16 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               {/* 埋め行 */}
               {Array.from({ length: emptyRowsCount }).map((_, idx) => (
                 <tr key={`empty-${idx}`}>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 13, height: '8mm' }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 13, height: '8mm' }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 13, height: '8mm' }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 13, height: '8mm' }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 13, height: '8mm' }}>&nbsp;</td>
+                  <td style={{ border: '1px solid #000', padding: '3px 4px', fontSize: 11, height: '8mm' }}>&nbsp;</td>
                 </tr>
               ))}
 
-              {/* セクション合計 */}
+              {!hideTotals && (
               <tr>
                 <td
                   colSpan={4}
@@ -574,6 +655,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                 </td>
                 <td style={{ border: '1px solid #000', padding: '4px', fontSize: 11 }}>&nbsp;</td>
               </tr>
+              )}
             </tbody>
           </table>
         </div>,
@@ -666,32 +748,34 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
               {/* 右：社名・代表者 */}
               <div style={{ width: '48%', textAlign: 'right', position: 'relative' }}>
-                {/* 社印（背景） */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -10,
-                    right: 5,
-                    opacity: 0.6,
-                    zIndex: 0,
-                    pointerEvents: 'none',
-                  }}
-                >
-                  <img
-                    src="/company-seal.png"
-                    alt="社印"
-                    style={{
-                      width: 100,
-                      height: 100,
-                      objectFit: 'contain',
-                    }}
-                  />
+                <div style={{ fontSize: 26, fontWeight: 'bold', lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
+                  三州産業株式会社
                 </div>
-
-                {/* 社名・代表者 */}
-                <div style={{ position: 'relative', zIndex: 1, lineHeight: 1.4 }}>
-                  <div style={{ fontSize: 22, fontWeight: 'bold', marginTop: '2mm' }}>三州産業株式会社</div> {/* 3mm → 2mm に変更（-1mm） */}
-                  <div style={{ fontSize: 16, fontWeight: 'bold', marginTop: '0.5mm' }}>代表取締役社長　竹之内　浩樹</div> {/* 1mm → 0.5mm に変更（-0.5mm） */}
+                <div style={{ position: 'relative', marginTop: '2.5mm' }}>
+                  {/* 社印（社長名に重ねる） */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: -18,
+                      right: 5,
+                      opacity: 0.6,
+                      zIndex: 0,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <img
+                      src="/company-seal.png"
+                      alt="社印"
+                      style={{
+                        width: 100,
+                        height: 100,
+                        objectFit: 'contain',
+                      }}
+                    />
+                  </div>
+                  <div style={{ position: 'relative', zIndex: 1, fontSize: 16, fontWeight: 'bold', lineHeight: 1.4 }}>
+                    代表取締役社長　竹之内　浩樹
+                  </div>
                 </div>
               </div>
             </div>
@@ -707,7 +791,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', marginTop: '1mm', gap: '5mm' }}> {/* justifyContent: 'space-between' → 'center' に変更、gap: '5mm' のまま */}
               {/* 左側：総金額・注記文・付帯事項 */}
               <div style={{ width: '50%' }}> {/* 60% → 50% に変更 */}
-                {/* 総金額 */}
+                {!hideTotals && (
                 <div style={{ display: 'inline-block', borderBottom: '2px solid #000', paddingBottom: 0 }}>
                   <table style={{ borderCollapse: 'collapse' }}>
                     <tbody>
@@ -723,6 +807,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                     </tbody>
                   </table>
                 </div>
+                )}
 
                 {/* 注記文 */}
                 <div style={{ fontSize: 12, marginTop: '1mm', lineHeight: 1.2 }}>
@@ -850,7 +935,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
         </div>
 
         {/* セクション合計ページ */}
-        {sectionPages}
+        {!hideTotals && sectionPages}
 
         {/* 明細ページ */}
         {detailPages}
@@ -861,15 +946,31 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   // =========================
   // 縦様式
   // =========================
-  const DATA_ROWS_PER_PAGE = MAX_ROWS_PER_PAGE || 20
+  const NOTE_SLOTS = insertNotes ? FOOTER_NOTE_COUNT : 0
+  const DATA_ROWS_PER_PAGE = hideTotals ? 23 : (MAX_ROWS_PER_PAGE || 20)
   const BODY_SLOTS = DATA_ROWS_PER_PAGE
+  const productSlots = Math.max(1, BODY_SLOTS - NOTE_SLOTS)
   const slotCost = (row: PrintRow) => 1 + (row.comment ? 1 : 0)
   const totalSlots = visibleRows.reduce((sum, row) => sum + slotCost(row), 0)
-  const isMultiPage = totalSlots > BODY_SLOTS
-  const nonLastDataSlots = BODY_SLOTS - 1
+  const isMultiPage = !insertNotes && totalSlots > BODY_SLOTS
+  const nonLastDataSlots = hideTotals ? BODY_SLOTS : BODY_SLOTS - 1
+
+  const capRowsToSlots = (source: PrintRow[], slots: number) => {
+    const capped: PrintRow[] = []
+    let used = 0
+    for (const row of source) {
+      const cost = slotCost(row)
+      if (used + cost > slots) break
+      capped.push(row)
+      used += cost
+    }
+    return capped
+  }
 
   const pages: PrintRow[][] = []
-  if (!isMultiPage) {
+  if (insertNotes) {
+    pages.push(capRowsToSlots(visibleRows, productSlots))
+  } else if (!isMultiPage) {
     pages.push(visibleRows)
   } else {
     let currentPage: PrintRow[] = []
@@ -900,9 +1001,12 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
         const isLast = pageIndex === pages.length - 1
         const filledRows = pageRows.reduce((sum, row) => sum + slotCost(row), 0)
         const pageSubtotal = pageRows.reduce((sum, row) => sum + (row.amount || 0), 0)
-        const showPageTotalOnly = isMultiPage && !isLast
-        const dataSlots = showPageTotalOnly ? nonLastDataSlots : BODY_SLOTS
+        const showPageTotalOnly = isMultiPage && !isLast && !hideTotals
+        const dataSlots = showPageTotalOnly ? nonLastDataSlots : (insertNotes ? productSlots : BODY_SLOTS)
         const emptyCount = Math.max(0, dataSlots - filledRows)
+        const noteLines = insertNotes
+          ? emptyFooterNotes().map((_, i) => String(footerNotes[i] ?? ''))
+          : []
         const summaryLabel = isMultiPage ? 'ページ合計' : '小　　　計'
 
         return (
@@ -910,7 +1014,8 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             key={pageIndex}
             style={{
               width: '210mm',
-              minHeight: '297mm',
+              height: '297mm',
+              overflow: 'hidden',
               padding: '8mm 15mm',
               boxSizing: 'border-box',
               fontFamily: 'MS Gothic, "Hiragino Sans", "Yu Gothic", sans-serif',
@@ -918,6 +1023,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               backgroundColor: '#fff',
               position: 'relative',
               pageBreakAfter: isLast ? 'auto' : 'always',
+              pageBreakInside: 'avoid',
             }}
           >
             {/* タイトル */}
@@ -966,32 +1072,34 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
               {/* 右：社名・代表者 */}
               <div style={{ width: '48%', textAlign: 'right', position: 'relative' }}>
-                {/* 社印（背景） */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -8,
-                    right: 5,
-                    opacity: 0.6,
-                    zIndex: 0,
-                    pointerEvents: 'none',
-                  }}
-                >
-                  <img
-                    src="/company-seal.png"
-                    alt="社印"
-                    style={{
-                      width: 100,
-                      height: 100,
-                      objectFit: 'contain',
-                    }}
-                  />
+                <div style={{ fontSize: 24, fontWeight: 'bold', lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
+                  三州産業株式会社
                 </div>
-
-                {/* 社名・代表者 */}
-                <div style={{ position: 'relative', zIndex: 1, lineHeight: 1.3 }}>
-                  <div style={{ fontSize: 18, fontWeight: 'bold', marginTop: '1mm' }}>三州産業株式会社</div>
-                  <div style={{ fontSize: 14, fontWeight: 'bold', marginTop: '0.5mm' }}>代表取締役社長　竹之内　浩樹</div>
+                <div style={{ position: 'relative', marginTop: '2.5mm' }}>
+                  {/* 社印（社長名に重ねる） */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: -16,
+                      right: 5,
+                      opacity: 0.6,
+                      zIndex: 0,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <img
+                      src="/company-seal.png"
+                      alt="社印"
+                      style={{
+                        width: 100,
+                        height: 100,
+                        objectFit: 'contain',
+                      }}
+                    />
+                  </div>
+                  <div style={{ position: 'relative', zIndex: 1, fontSize: 14, fontWeight: 'bold', lineHeight: 1.3 }}>
+                    代表取締役社長　竹之内　浩樹
+                  </div>
                 </div>
               </div>
             </div>
@@ -1007,7 +1115,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', marginTop: '1mm', gap: '5mm' }}>
               {/* 左側：総金額・注記文・付帯事項 */}
               <div style={{ width: '50%' }}>
-                {/* 総金額 */}
+                {!hideTotals && (
                 <div style={{ display: 'inline-block', borderBottom: '2px solid #000', paddingBottom: 0 }}>
                   <table style={{ borderCollapse: 'collapse' }}>
                     <tbody>
@@ -1023,6 +1131,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                     </tbody>
                   </table>
                 </div>
+                )}
 
                 {/* 注記文 */}
                 <div style={{ fontSize: 12, marginTop: '1mm', lineHeight: 1.2 }}>
@@ -1142,52 +1251,46 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               </div>
             </div>
 
-            {/* 明細テーブル（20行固定） */}
+            {/* 明細テーブル（1ページ固定。品名・規格は同一行内で最大2行） */}
             <table
               style={{
                 width: '100%',
                 border: '1px solid #000',
                 borderCollapse: 'collapse',
-                fontSize: 10,
-                marginTop: '3mm',
-                marginBottom: '2mm',
+                fontSize: 11,
+                marginTop: '2mm',
+                marginBottom: 0,
                 tableLayout: 'fixed',
               }}
             >
               <thead>
                 <tr style={{ backgroundColor: '#c8e6c8' }}>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 230, height: '6mm' }}>品　　　名　・　規　　　格</th>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 45, height: '6mm' }}>数 量</th>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 35, height: '6mm' }}>単位</th>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 70, height: '6mm' }}>単　　価</th>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 80, height: '6mm' }}>金　　額</th>
-                  <th style={{ border: '1px solid #000', padding: '2px', width: 70, height: '6mm' }}>備　　考</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 230, height: '6mm', fontSize: 11 }}>品　　　名　・　規　　　格</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 45, height: '6mm', fontSize: 11 }}>数 量</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 35, height: '6mm', fontSize: 11 }}>単位</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 70, height: '6mm', fontSize: 11 }}>単　　価</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 80, height: '6mm', fontSize: 11 }}>金　　額</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 70, height: '6mm', fontSize: 11 }}>備　　考</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((row, idx) => (
                   <React.Fragment key={idx}>
                     <tr>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        {row.item_name}
-                        {row.spec && (
-                          <>
-                            <span style={{ display: 'inline-block', width: '5mm' }} />
-                            {row.spec}
-                          </>
-                        )}
+                      <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 11, height: '6mm', overflow: 'hidden', verticalAlign: 'middle' }}>
+                        <div style={nameSpecInnerStyle}>{formatNameSpec(row)}</div>
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 3px', textAlign: 'right', fontSize: 11, height: '6mm' }}>
                         {row.quantity ? row.quantity.toLocaleString() : ''}
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'center', fontSize: 10, height: '6mm' }}>{row.unit}</td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 3px', textAlign: 'center', fontSize: 11, height: '6mm' }}>{row.unit}</td>
+                      <td style={{ border: '1px solid #000', padding: '0 3px', textAlign: 'right', fontSize: 11, height: '6mm' }}>
                         {row.unit_price ? row.unit_price.toLocaleString() : ''}
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', textAlign: 'right', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 3px', textAlign: 'right', fontSize: 11, height: '6mm' }}>
                         {row.amount ? row.amount.toLocaleString() : ''}
                       </td>
-                      <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 10, height: '6mm' }}>
                         {(row.remarks || '').replace(/円$/g, '')}
                       </td>
                     </tr>
@@ -1205,51 +1308,53 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
                 {Array.from({ length: emptyCount }).map((_, idx) => (
                   <tr key={`empty-${idx}`}>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                    <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 9, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 11, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 11, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 11, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 11, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 11, height: '6mm' }}>&nbsp;</td>
+                    <td style={{ border: '1px solid #000', padding: '0 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   </tr>
                 ))}
 
+                {!hideTotals && (
                 <tr>
-                  <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                  <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                     {summaryLabel}
                   </td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                  <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                     {pageSubtotal.toLocaleString()}
                   </td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
                 </tr>
+                )}
 
-                {!showPageTotalOnly && discount > 0 && (
+                {!hideTotals && !showPageTotalOnly && discount > 0 && (
                   <>
                     <tr>
-                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                         出精値引き
                       </td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                         {discount.toLocaleString()}
                       </td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
                     </tr>
 
                     <tr>
-                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                         値引後小計
                       </td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                      <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                      <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                         {subtotalAfterDiscount.toLocaleString()}
                       </td>
                       <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
@@ -1257,35 +1362,62 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
                   </>
                 )}
 
-                {!showPageTotalOnly && (
+                {!hideTotals && !showPageTotalOnly && (
                   <>
                 <tr>
-                  <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                  <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                     消 費 税（{(taxRate * 100).toFixed(0)}%）
                   </td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                  <td style={{ border: '1px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 10, height: '6mm' }}>
+                  <td style={{ border: '1px solid #000', padding: '0 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 13, height: '6mm' }}>
                     {taxAmount.toLocaleString()}
                   </td>
                   <td style={{ border: '1px solid #000', padding: '2px 3px', height: '6mm' }}>&nbsp;</td>
                 </tr>
 
                 <tr>
-                  <td style={{ border: '2px solid #000', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 11, height: '6mm' }}>
+                  <td style={{ border: '2px solid #000', padding: '0 8px', textAlign: 'center', fontWeight: 'bold', fontSize: 14, height: '6mm' }}>
                     合　　　計
                   </td>
                   <td style={{ border: '2px solid #000', padding: '2px 3px', backgroundColor: '#f0f0f0', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '2px solid #000', padding: '2px 3px', backgroundColor: '#f0f0f0', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                   <td style={{ border: '2px solid #000', padding: '2px 3px', backgroundColor: '#f0f0f0', fontSize: 10, height: '6mm' }}>&nbsp;</td>
-                  <td style={{ border: '2px solid #000', padding: '4px 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 11, backgroundColor: '#f0f0f0', height: '6mm' }}>
+                  <td style={{ border: '2px solid #000', padding: '0 8px', textAlign: 'right', fontWeight: 'bold', fontSize: 14, backgroundColor: '#f0f0f0', height: '6mm' }}>
                     {totalAmount.toLocaleString()}
                   </td>
                   <td style={{ border: '2px solid #000', padding: '2px 3px', backgroundColor: '#f0f0f0', fontSize: 10, height: '6mm' }}>&nbsp;</td>
                 </tr>
                   </>
                 )}
+
+                {noteLines.map((line, idx) => {
+                  const isFirst = idx === 0
+                  const isLast = idx === noteLines.length - 1
+                  return (
+                    <tr key={`note-${idx}`}>
+                      <td
+                        colSpan={6}
+                        style={{
+                          borderTop: isFirst ? '2px solid #000' : '1px solid #000',
+                          borderBottom: isLast ? '2px solid #000' : '1px solid #000',
+                          borderLeft: '2px solid #000',
+                          borderRight: '2px solid #000',
+                          padding: '0 4px',
+                          fontSize: 11,
+                          height: '6mm',
+                          verticalAlign: 'middle',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          fontWeight: isFirst && !line ? 'bold' : 'normal',
+                        }}
+                      >
+                        {isFirst && !line ? '備考' : (line || '\u00a0')}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

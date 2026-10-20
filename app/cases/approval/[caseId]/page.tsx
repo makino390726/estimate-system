@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '../../../../lib/supabaseClient'
 import { useReactToPrint } from 'react-to-print'
 import { resolveStaffName } from '@/lib/staffNameMatch'
-import PrintEstimate from '../../new/PrintEstimate'
+import PrintEstimate, { parseEstimateLayout, unpackFooterNotes } from '../../new/PrintEstimate'
 
 type CaseDetail = {
   id: string  // bigint
@@ -108,6 +108,10 @@ export default function CaseApprovalPage() {
   // ★ react-to-print設定
   const handlePrint = useReactToPrint({
     contentRef: printRef,  // content → contentRef に変更
+    pageStyle: `
+      @page { size: A4 portrait; margin: 0; }
+      html, body { margin: 0; padding: 0; }
+    `,
   })
 
   const openPrintPreview = (level: 'staff' | 'manager' | 'director' | 'president') => {
@@ -840,7 +844,7 @@ export default function CaseApprovalPage() {
     name: s.name,
   }))
 
-  const MAX_ROWS_PER_PAGE = 20 // ★ 追加: 見積PDFの1ページあたり行数
+  const MAX_ROWS_PER_PAGE = 20 // 見積PDFは1ページに収める
 
   const getApprovalStamps = () => ({
     staff: !!caseData?.approve_staff,
@@ -953,7 +957,10 @@ export default function CaseApprovalPage() {
                 <PrintEstimate
                   ref={printRef}
                   printRef={printRef}
-                  layoutType={caseData?.layout_type || 'vertical'}
+                  layoutType={parseEstimateLayout(caseData?.layout_type).layoutType}
+                  hideTotals={parseEstimateLayout(caseData?.layout_type).unitPriceEstimate}
+                  insertNotes={parseEstimateLayout(caseData?.layout_type).insertNotes}
+                  footerNotes={unpackFooterNotes(caseData?.coreplus_no)}
                   estimateNo={caseData?.case_no || ''}
                   estimateDate={caseData?.created_date || ''}
                   customerName={customerName}
@@ -1034,7 +1041,7 @@ export default function CaseApprovalPage() {
               <div><strong>納入条件:</strong> {caseData.delivery_terms || '-'}</div>
               <div><strong>有効期限:</strong> {caseData.validity_text || '-'}</div>
               <div><strong>支払条件:</strong> {caseData.payment_terms || '-'}</div>
-              <div><strong>レイアウト:</strong> {caseData.layout_type === 'horizontal' ? '横様式' : '縦様式'}</div>
+              <div><strong>レイアウト:</strong> {parseEstimateLayout(caseData.layout_type).layoutType === 'horizontal' ? '横様式' : '縦様式'}{parseEstimateLayout(caseData.layout_type).unitPriceEstimate ? ' / 単価見積' : ''}{parseEstimateLayout(caseData.layout_type).insertNotes ? ' / 備考挿入' : ''}</div>
               <div style={{ gridColumn: '1 / span 2', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <div style={{ marginBottom: 8 }}><strong>営業所確認者:</strong></div>

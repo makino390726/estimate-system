@@ -35,6 +35,39 @@ type CaseWithDetails = {
   approvalStatus: string
 }
 
+const CASES_LIST_STAFF_FILTER_KEY = 'estimate-system:cases-list-staff-filter'
+
+function readStoredStaffFilter(): string {
+  try {
+    return sessionStorage.getItem(CASES_LIST_STAFF_FILTER_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function writeStoredStaffFilter(value: string) {
+  try {
+    if (value) sessionStorage.setItem(CASES_LIST_STAFF_FILTER_KEY, value)
+    else sessionStorage.removeItem(CASES_LIST_STAFF_FILTER_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+function filterCasesByStaff(
+  allCases: CaseWithDetails[],
+  filter: string,
+  options: { id: string; name: string }[],
+) {
+  if (!filter) return allCases
+  const selectedName = options.find((staff) => staff.id === filter)?.name
+  return allCases.filter((c) => {
+    if (c.staff_id && String(c.staff_id) === String(filter)) return true
+    if (!selectedName) return false
+    return c.staff_name === selectedName
+  })
+}
+
 export default function CaseListPage() {
   const [cases, setCases] = useState<CaseWithDetails[]>([])
   const [originalCases, setOriginalCases] = useState<CaseWithDetails[]>([])
@@ -66,9 +99,18 @@ export default function CaseListPage() {
   })
 
   useEffect(() => {
-    fetchCases()
+    const stored = readStoredStaffFilter()
+    if (stored) setStaffFilter(stored)
     fetchStaffOptions()
+    fetchCases(stored)
   }, [])
+
+  useEffect(() => {
+    if (originalCases.length === 0) return
+    const filter = staffFilter || readStoredStaffFilter()
+    if (!filter) return
+    setCases(filterCasesByStaff(originalCases, filter, staffOptions))
+  }, [staffOptions])
 
   const fetchStaffOptions = async () => {
     const { data, error } = await supabase
@@ -87,7 +129,7 @@ export default function CaseListPage() {
     })))
   }
 
-  const fetchCases = async () => {
+  const fetchCases = async (staffIdFilter?: string) => {
     setLoading(true)
     const startTime = performance.now()
 
@@ -133,8 +175,9 @@ export default function CaseListPage() {
         }
       })
 
-      setCases(formattedCases)
+      const filter = staffIdFilter !== undefined ? staffIdFilter : (staffFilter || readStoredStaffFilter())
       setOriginalCases(formattedCases)
+      setCases(filterCasesByStaff(formattedCases, filter, staffOptions))
 
       const endTime = performance.now()
       console.log(`✅ データ取得時間: ${(endTime - startTime).toFixed(2)}ms`)
@@ -268,24 +311,14 @@ export default function CaseListPage() {
   }
 
   const handleFilterByStaff = () => {
-    if (!staffFilter) {
-      setCases(originalCases)
-      return
-    }
-
-    const selectedStaff = staffOptions.find((staff) => staff.id === staffFilter)
-    const selectedName = selectedStaff?.name
-
-    setCases(originalCases.filter((c) => {
-      if (c.staff_id && c.staff_id === staffFilter) return true
-      if (!selectedName) return false
-      return c.staff_name === selectedName
-    }))
+    writeStoredStaffFilter(staffFilter)
+    setCases(filterCasesByStaff(originalCases, staffFilter, staffOptions))
   }
 
   const handleShowAll = () => {
+    writeStoredStaffFilter('')
     setStaffFilter('')
-    fetchCases()
+    fetchCases('')
   }
 
   const validateExportDateRange = () => {
