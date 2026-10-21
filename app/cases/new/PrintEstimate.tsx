@@ -135,6 +135,29 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   const taxAmount = Math.floor(subtotalAfterDiscount * taxRate)
   const totalAmount = subtotalAfterDiscount + taxAmount
 
+  // あて先の下。通常は総金額、単価見積は「単価御見積」
+  const totalAmountBlock = hideTotals ? (
+    <div style={{ display: 'inline-block', borderBottom: '2px solid #000', paddingBottom: 2 }}>
+      <span style={{ fontSize: 20, fontWeight: 'bold' }}>単価御見積</span>
+    </div>
+  ) : (
+    <div style={{ display: 'inline-block', borderBottom: '2px solid #000', paddingBottom: 0 }}>
+      <table style={{ borderCollapse: 'collapse' }}>
+        <tbody>
+          <tr>
+            <td style={{ fontSize: 14, fontWeight: 'bold', padding: 0, paddingRight: 10 }}>総金額</td>
+            <td style={{ fontSize: 20, fontWeight: 'bold', textAlign: 'right', padding: 0 }}>
+              {totalAmount.toLocaleString()}
+            </td>
+            <td style={{ fontSize: 12, fontWeight: 'bold', padding: 0, paddingLeft: 5, whiteSpace: 'nowrap' }}>
+              円(消費税込み)
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+
   // 顧客名を2行に分割する関数（スペース区切り）
   const formatCustomerName = (name: string): React.ReactNode => {
     if (!name) return `${honorific}`
@@ -791,23 +814,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', marginTop: '1mm', gap: '5mm' }}> {/* justifyContent: 'space-between' → 'center' に変更、gap: '5mm' のまま */}
               {/* 左側：総金額・注記文・付帯事項 */}
               <div style={{ width: '50%' }}> {/* 60% → 50% に変更 */}
-                {!hideTotals && (
-                <div style={{ display: 'inline-block', borderBottom: '2px solid #000', paddingBottom: 0 }}>
-                  <table style={{ borderCollapse: 'collapse' }}>
-                    <tbody>
-                      <tr>
-                        <td style={{ fontSize: 14, fontWeight: 'bold', padding: 0, paddingRight: 10 }}>総金額</td>
-                        <td style={{ fontSize: 20, fontWeight: 'bold', textAlign: 'right', padding: 0 }}>
-                          {totalAmount.toLocaleString()}
-                        </td>
-                        <td style={{ fontSize: 12, fontWeight: 'bold', padding: 0, paddingLeft: 5, whiteSpace: 'nowrap' }}>
-                          円(消費税込み)
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                )}
+                {totalAmountBlock}
 
                 {/* 注記文 */}
                 <div style={{ fontSize: 12, marginTop: '1mm', lineHeight: 1.2 }}>
@@ -1115,23 +1122,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', marginTop: '1mm', gap: '5mm' }}>
               {/* 左側：総金額・注記文・付帯事項 */}
               <div style={{ width: '50%' }}>
-                {!hideTotals && (
-                <div style={{ display: 'inline-block', borderBottom: '2px solid #000', paddingBottom: 0 }}>
-                  <table style={{ borderCollapse: 'collapse' }}>
-                    <tbody>
-                      <tr>
-                        <td style={{ fontSize: 14, fontWeight: 'bold', padding: 0, paddingRight: 10 }}>総金額</td>
-                        <td style={{ fontSize: 20, fontWeight: 'bold', textAlign: 'right', padding: 0 }}>
-                          {totalAmount.toLocaleString()}
-                        </td>
-                        <td style={{ fontSize: 12, fontWeight: 'bold', padding: 0, paddingLeft: 5, whiteSpace: 'nowrap' }}>
-                          円(消費税込み)
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                )}
+                {totalAmountBlock}
 
                 {/* 注記文 */}
                 <div style={{ fontSize: 12, marginTop: '1mm', lineHeight: 1.2 }}>

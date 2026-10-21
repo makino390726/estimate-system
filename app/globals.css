@@ -514,34 +514,37 @@ html[data-theme="light"] .theme-toggle-btn {
 
 html[data-theme="light"] body {
   background: #f1f5f9 !important;
-  color: #0f172a !important;
+  color: #000 !important;
+}
+
+/* 通常モードの地の文字は黒。色面の白抜きは後続ルールで白に戻す */
+html[data-theme="light"] body * {
+  color: #000 !important;
+}
+
+html[data-theme="light"] .brand-header-en {
+  color: transparent !important;
 }
 
 html[data-theme="light"] input,
-html[data-theme="light"] select,
 html[data-theme="light"] textarea {
-  color: #0f172a !important;
+  color: #000 !important;
   background-color: #ffffff !important;
   border: 1px solid #cbd5e1 !important;
   color-scheme: light;
 }
 
-html[data-theme="light"] button {
-  color: #0f172a !important;
+html[data-theme="light"] select {
+  color: #000 !important;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1 !important;
+  color-scheme: light;
 }
 
-html[data-theme="light"] .selector-button.primary,
-html[data-theme="light"] button.btn-primary,
-html[data-theme="light"] button.btn-search,
-html[data-theme="light"] a.selector-button.primary {
-  color: #fff !important;
-}
-
-html[data-theme="light"] h1,
-html[data-theme="light"] h2,
-html[data-theme="light"] h3,
-html[data-theme="light"] h4 {
-  color: #0f172a;
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder {
+  color: #000 !important;
+  opacity: 0.55;
 }
 
 html[data-theme="light"] .selector-card {
@@ -554,21 +557,9 @@ html[data-theme="light"] .selector-card:hover {
   background: #f8fafc;
 }
 
-html[data-theme="light"] .selector-card h2 {
-  color: #0f172a;
-}
-
-html[data-theme="light"] .selector-card p {
-  color: #475569;
-}
-
-html[data-theme="light"] .selector-card-header .icon {
-  color: #2563eb;
-}
-
 html[data-theme="light"] .selector-button {
   background-color: #e2e8f0;
-  color: #0f172a;
+  color: #000 !important;
   border-color: #cbd5e1;
 }
 
@@ -580,27 +571,31 @@ html[data-theme="light"] .selector-button:hover {
 html[data-theme="light"] .selector-button.primary {
   background-color: #2563eb;
   border-color: #1d4ed8;
-  color: #fff;
+  color: #fff !important;
 }
 
-html[data-theme="light"] .brand-header-ja {
-  color: #475569;
-}
-
-html[data-theme="light"] [style^="color: rgb(226, 232, 240)"],
-html[data-theme="light"] [style*="; color: rgb(226, 232, 240)"],
-html[data-theme="light"] [style^="color: rgb(255, 255, 255)"],
-html[data-theme="light"] [style*="; color: rgb(255, 255, 255)"] {
-  color: #0f172a !important;
-}
-
-html[data-theme="light"] [style^="color: rgb(203, 213, 225)"],
-html[data-theme="light"] [style*="; color: rgb(203, 213, 225)"],
-html[data-theme="light"] [style^="color: rgb(148, 163, 184)"],
-html[data-theme="light"] [style*="; color: rgb(148, 163, 184)"],
-html[data-theme="light"] [style^="color: rgb(100, 116, 139)"],
-html[data-theme="light"] [style*="; color: rgb(100, 116, 139)"] {
-  color: #475569 !important;
+/* 色付き背景の白抜き（ボタン・バッジ・リンク） */
+html[data-theme="light"] .theme-toggle-btn,
+html[data-theme="light"] .theme-toggle-btn *,
+html[data-theme="light"] .badge-new,
+html[data-theme="light"] .badge-new *,
+html[data-theme="light"] .selector-button.primary,
+html[data-theme="light"] .selector-button.primary *,
+html[data-theme="light"] a.selector-button.primary,
+html[data-theme="light"] a.selector-button.primary *,
+html[data-theme="light"] button.btn-primary[style*="background"],
+html[data-theme="light"] button.btn-primary[style*="background"] *,
+html[data-theme="light"] button.btn-search[style*="background"],
+html[data-theme="light"] button.btn-search[style*="background"] *,
+html[data-theme="light"] button[style*="background"],
+html[data-theme="light"] button[style*="background"] *,
+html[data-theme="light"] a[style*="background"],
+html[data-theme="light"] a[style*="background"] *,
+html[data-theme="light"] span[style*="color: rgb(255, 255, 255)"][style*="background"],
+html[data-theme="light"] span[style*="color: rgb(255, 255, 255)"][style*="background"] *,
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background:"] {
+  color: #fff !important;
 }
 
 html[data-theme="light"] [style*="background-color: rgb(15, 23, 42)"],
@@ -626,15 +621,60 @@ html[data-theme="light"] [style*="border: 1px solid rgb(30, 41, 59)"] {
   border-color: #cbd5e1 !important;
 }
 
-html[data-theme="light"] button[style*="rgb(37, 99, 235)"],
-html[data-theme="light"] button[style*="rgb(22, 163, 74)"],
-html[data-theme="light"] button[style*="rgb(21, 128, 61)"],
-html[data-theme="light"] button[style*="rgb(22, 101, 52)"],
-html[data-theme="light"] button[style*="rgb(220, 53, 69)"],
-html[data-theme="light"] button[style*="rgb(40, 167, 69)"],
-html[data-theme="light"] button[style*="rgb(13, 110, 253)"],
-html[data-theme="light"] a.selector-button.primary {
-  color: #fff !important;
+html[data-theme="light"] [style*="background-color: rgb(26, 32, 44)"],
+html[data-theme="light"] [style*="background: rgb(26, 32, 44)"] {
+  background-color: #ffffff !important;
+}
+
+/* 明るい面・ライト化した面の文字は黒に戻す */
+html[data-theme="light"] input[style*="color"][style*="background"],
+html[data-theme="light"] textarea[style*="color"][style*="background"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(15, 23, 42)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background: rgb(15, 23, 42)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(11, 17, 32)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(17, 24, 39)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(30, 41, 59)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background: rgb(30, 41, 59)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(51, 65, 85)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background: rgb(51, 65, 85)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(26, 32, 44)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(255, 255, 255)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background: rgb(255, 255, 255)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: white"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background: white"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(248, 250, 252)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(241, 245, 249)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(240, 240, 240)"],
+html[data-theme="light"] [style*="color: rgb(255, 255, 255)"][style*="background-color: rgb(226, 232, 240)"],
+html[data-theme="light"] button[style*="background-color: rgb(255, 255, 255)"],
+html[data-theme="light"] button[style*="background-color: rgb(255, 255, 255)"] *,
+html[data-theme="light"] button[style*="background: rgb(255, 255, 255)"],
+html[data-theme="light"] button[style*="background: rgb(255, 255, 255)"] *,
+html[data-theme="light"] button[style*="background-color: rgb(248, 250, 252)"],
+html[data-theme="light"] button[style*="background-color: rgb(248, 250, 252)"] *,
+html[data-theme="light"] button[style*="background-color: rgb(241, 245, 249)"],
+html[data-theme="light"] button[style*="background-color: rgb(226, 232, 240)"],
+html[data-theme="light"] button[style*="background-color: rgb(226, 232, 240)"] *,
+html[data-theme="light"] button[style*="background-color: rgb(15, 23, 42)"],
+html[data-theme="light"] button[style*="background-color: rgb(15, 23, 42)"] *,
+html[data-theme="light"] button[style*="background: rgb(15, 23, 42)"],
+html[data-theme="light"] button[style*="background-color: rgb(30, 41, 59)"],
+html[data-theme="light"] button[style*="background-color: rgb(30, 41, 59)"] *,
+html[data-theme="light"] button[style*="background: rgb(30, 41, 59)"],
+html[data-theme="light"] button[style*="background-color: rgb(51, 65, 85)"],
+html[data-theme="light"] button[style*="background-color: rgb(51, 65, 85)"] *,
+html[data-theme="light"] button[style*="background-color: rgb(26, 32, 44)"],
+html[data-theme="light"] button[style*="background: transparent"],
+html[data-theme="light"] button[style*="background-color: transparent"],
+html[data-theme="light"] button[style*="background: none"],
+html[data-theme="light"] a[style*="background-color: rgb(255, 255, 255)"],
+html[data-theme="light"] a[style*="background-color: rgb(255, 255, 255)"] *,
+html[data-theme="light"] a[style*="background: rgb(255, 255, 255)"],
+html[data-theme="light"] a[style*="background: rgb(255, 255, 255)"] *,
+html[data-theme="light"] a[style*="background: white"],
+html[data-theme="light"] a[style*="background-color: white"],
+html[data-theme="light"] a[style*="background: transparent"] {
+  color: #000 !important;
 }
 
 @media print {

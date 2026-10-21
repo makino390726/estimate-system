@@ -511,3 +511,61 @@
     color: #38bdf8;
     white-space: nowrap;
 }
+
+/* 通常モード: 地の文字は黒。色面の白抜きだけ白 */
+html[data-theme="light"] .repair-mobile-root {
+    background: #f1f5f9;
+    color: #000;
+}
+
+html[data-theme="light"] .repair-mobile-header,
+html[data-theme="light"] .repair-mobile-card,
+html[data-theme="light"] .repair-mobile-section,
+html[data-theme="light"] .repair-mobile-bar,
+html[data-theme="light"] .repair-mobile-sheet,
+html[data-theme="light"] .repair-mobile-suggest-list,
+html[data-theme="light"] .repair-mobile-tab,
+html[data-theme="light"] .repair-mobile-status-btn,
+html[data-theme="light"] .repair-mobile-candidate,
+html[data-theme="light"] .repair-mobile-btn-secondary,
+html[data-theme="light"] .repair-mobile-btn-add-part,
+html[data-theme="light"] .repair-mobile-btn-outline,
+html[data-theme="light"] .repair-mobile-input,
+html[data-theme="light"] .repair-mobile-textarea,
+html[data-theme="light"] .repair-mobile-select {
+    background: #ffffff;
+    color: #000 !important;
+    border-color: #cbd5e1;
+}
+
+html[data-theme="light"] .repair-mobile-card:active,
+html[data-theme="light"] .repair-mobile-suggest-item:active,
+html[data-theme="light"] .repair-mobile-candidate:active {
+    background: #e2e8f0;
+}
+
+html[data-theme="light"] .repair-mobile-header h1,
+html[data-theme="light"] .repair-mobile-section h2,
+html[data-theme="light"] .repair-mobile-sheet h3,
+html[data-theme="light"] .repair-mobile-label,
+html[data-theme="light"] .repair-mobile-case-label,
+html[data-theme="light"] .repair-mobile-part-cell-label,
+html[data-theme="light"] .repair-mobile-part-line,
+html[data-theme="light"] .repair-mobile-part-line-muted,
+html[data-theme="light"] .repair-mobile-suggest-code,
+html[data-theme="light"] .repair-mobile-part-qty,
+html[data-theme="light"] .repair-mobile-case-actions-hint {
+    color: #000 !important;
+}
+
+html[data-theme="light"] .repair-mobile-staff-confirm-btn,
+html[data-theme="light"] .repair-mobile-action-btn--confirm,
+html[data-theme="light"] .repair-mobile-action-btn--repairing,
+html[data-theme="light"] .repair-mobile-tel,
+html[data-theme="light"] .repair-mobile-tab.active,
+html[data-theme="light"] .repair-mobile-status-btn.selected,
+html[data-theme="light"] .repair-mobile-staff-confirmed-done,
+html[data-theme="light"] .repair-mobile-msg.ok,
+html[data-theme="light"] .repair-mobile-msg.err {
+    color: #fff !important;
+}
