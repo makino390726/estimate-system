@@ -1,14 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { formatCustomerRegisterDisplayTitle } from '@/lib/customerRegisterDisplay'
-import { parseCustomerRegisterWorkbook } from '@/lib/customerRegisterExcelImport'
+import { historyNameKey, parseCustomerRegisterWorkbook } from '@/lib/customerRegisterExcelImport'
+import { ensureCustomerChartsFromRepairs } from '@/lib/ensureCustomerChartsFromRepairs'
 import { upsertParsedCustomerRegisterRows } from '@/lib/customerRegisterExcelUpsert'
 import { SHEET_TYPE_OPTIONS, getSheetTypeLabel, type SheetTypeValue } from '@/lib/customerRegisterSheetTypes'
 import { REPAIR_STATUS_CONFIG } from '@/lib/repairConstants'
-import { BRANCHES } from '@/lib/branches'
+import { BRANCHES, officeKeyFromStaff } from '@/lib/branches'
 import type { ServiceRepairReportLite } from '@/lib/serviceRepairReportCustomerMatch'
 
 type CustomerRegisterRow = {
@@ -38,6 +39,8 @@ type CustomerRegisterRow = {
 type StaffOption = {
     id: string
     name: string
+    department: string | null
+    branch_id: string | null
 }
 
 type FormState = {
@@ -138,10 +141,45 @@ const toNullable = (value: string) => {
     return v ? v : null
 }
 
+function phoneKey(value: unknown): string {
+    const digits = String(value ?? '').replace(/\D/g, '')
+    return digits.length >= 8 ? digits : ''
+}
+
+function customerHistoryMatches(
+    chart: { customer_name?: string | null; phone?: string | null; mobile?: string | null },
+    other: {
+        customer_name?: string | null
+        phone?: string | null
+        mobile?: string | null
+        customer_phone?: string | null
+        customer_mobile?: string | null
+    },
+): boolean {
+    const left = historyNameKey(chart.customer_name)
+    const right = historyNameKey(other.customer_name)
+    if (left.length >= 2 && right.length >= 2) {
+        if (left === right) return true
+        const short = left.length <= right.length ? left : right
+        const long = left.length <= right.length ? right : left
+        if (short.length >= 4 && long.includes(short)) return true
+    }
+    const chartPhones = [phoneKey(chart.phone), phoneKey(chart.mobile)].filter(Boolean)
+    const otherPhones = [
+        phoneKey(other.phone),
+        phoneKey(other.mobile),
+        phoneKey(other.customer_phone),
+        phoneKey(other.customer_mobile),
+    ].filter(Boolean)
+    return chartPhones.some((phone) => otherPhones.includes(phone))
+}
+
 type RepairChartRow = {
     id: string
+    customer_name?: string | null
     customer_register_id: string | null
     serial_no: string | null
+    manufacturing_no?: string | null
     request_no: number
     received_at: string
     visit_completed_date: string | null
@@ -149,6 +187,8 @@ type RepairChartRow = {
     treatment_details: string | null
     root_cause: string | null
     status: string
+    customer_phone?: string | null
+    customer_mobile?: string | null
 }
 
 type RepairPartRow = {
@@ -198,8 +238,44 @@ const REPAIR_STATUS_LABEL: Record<string, string> = Object.fromEntries(
 
 const BRANCH_NAME_BY_ID: Record<string, string> = Object.fromEntries(BRANCHES.map((b) => [b.id, b.name]))
 
+const BRANCH_ADDRESS_NEEDLES: Record<string, string[]> = {
+    branch_1: ['鹿児島', '宮崎', '南九州'],
+    branch_2: ['熊本', '中九州'],
+    branch_3: ['福岡', '西九州'],
+    branch_4: ['東日本'],
+    branch_5: ['沖縄'],
+    branch_6: ['東北'],
+}
+
+function staffMatchTokens(name: string): string[] {
+    const parts = name.split(/[\s　]+/).map((part) => part.trim()).filter((part) => part.length >= 2)
+    const tokens = new Set<string>()
+    const compact = parts.join('')
+    if (compact.length >= 2) tokens.add(compact)
+    if (parts[0]) tokens.add(parts[0])
+    return [...tokens]
+}
+
+function branchMatchOr(branchId: string, staffs: StaffOption[]): string {
+    const parts: string[] = []
+    const seen = new Set<string>()
+    for (const staff of staffs) {
+        if (staff.branch_id !== branchId && officeKeyFromStaff(staff) !== branchId) continue
+        for (const token of staffMatchTokens(staff.name)) {
+            const safe = token.replace(/[,.*()]/g, '')
+            if (!safe || seen.has(safe)) continue
+            seen.add(safe)
+            parts.push(`staff_name.ilike.*${safe}*`)
+        }
+    }
+    for (const needle of BRANCH_ADDRESS_NEEDLES[branchId] || []) {
+        parts.push(`address.ilike.*${needle}*`)
+    }
+    return parts.join(',')
+}
+
 const SERVICE_REPORT_COLS =
-    'id, branch_id, work_date, customer_name, address, phone, mobile, staff_name, category, model, treatment_details, remarks'
+    'id, branch_id, work_date, customer_name, address, phone, mobile, staff_name, category, model, treatment_details, remarks, customer_register_id'
 
 function formatChartDate(iso: string | null | undefined): string {
     if (!iso) return '-'
@@ -235,6 +311,7 @@ const getModelPreview = (row: Pick<CustomerRegisterRow, 'sheet_type' | 'model' |
 export default function CustomerRegisterPage() {
     const [chartRows, setChartRows] = useState<CustomerRegisterRow[]>([])
     const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
+    const [staffsLoaded, setStaffsLoaded] = useState(false)
     const [chartLoading, setChartLoading] = useState(false)
     const [chartNonce, setChartNonce] = useState(0)
     const [saving, setSaving] = useState(false)
@@ -243,6 +320,7 @@ export default function CustomerRegisterPage() {
     const [form, setForm] = useState<FormState>(initialForm)
     const [searchKeyword, setSearchKeyword] = useState('')
     const [filterSheetType, setFilterSheetType] = useState('')
+    const [filterBranch, setFilterBranch] = useState('')
     const [excelFile, setExcelFile] = useState<File | null>(null)
     const [excelImporting, setExcelImporting] = useState(false)
     const [importSheetType, setImportSheetType] = useState<SheetTypeValue | ''>('')
@@ -258,7 +336,7 @@ export default function CustomerRegisterPage() {
 
     useEffect(() => {
         setChartPage(0)
-    }, [searchKeyword, filterSheetType, chartPageSize])
+    }, [searchKeyword, filterSheetType, filterBranch, chartPageSize])
 
     useEffect(() => {
         fetchStaffOptions()
@@ -290,14 +368,41 @@ export default function CustomerRegisterPage() {
     useEffect(() => {
         if (initialServiceLinkDone.current) return
         initialServiceLinkDone.current = true
-        void runLinkServiceReports()
+        void (async () => {
+            try {
+                const { created, removed } = await ensureCustomerChartsFromRepairs(supabase)
+                if (created > 0) {
+                    setMessage(`修理履歴のある顧客をカルテに ${created} 件登録しました`)
+                }
+                if (created > 0 || removed > 0) setChartNonce((n) => n + 1)
+            } catch (error: unknown) {
+                console.error('修理顧客のカルテ作成:', error)
+                setMessage(error instanceof Error ? `カルテ作成に失敗しました: ${error.message}` : 'カルテ作成に失敗しました')
+            }
+            void runLinkServiceReports()
+        })()
     }, [])
+
+    const branchFilterOr = useMemo(
+        () => (filterBranch ? branchMatchOr(filterBranch, staffOptions) : ''),
+        [filterBranch, staffOptions],
+    )
 
     useEffect(() => {
         const kw = searchKeyword.trim()
-        if (!kw && !filterSheetType) {
+        if (!kw && !filterSheetType && !filterBranch) {
             setChartRows([])
             setChartTotalCount(null)
+            setChartLoading(false)
+            return
+        }
+        if (filterBranch && !staffsLoaded) {
+            setChartLoading(true)
+            return
+        }
+        if (filterBranch && staffsLoaded && !branchFilterOr) {
+            setChartRows([])
+            setChartTotalCount(0)
             setChartLoading(false)
             return
         }
@@ -317,6 +422,10 @@ export default function CustomerRegisterPage() {
                 if (filterSheetType) {
                     countQ = countQ.eq('sheet_type', filterSheetType)
                     dataQ = dataQ.eq('sheet_type', filterSheetType)
+                }
+                if (branchFilterOr) {
+                    countQ = countQ.or(branchFilterOr)
+                    dataQ = dataQ.or(branchFilterOr)
                 }
                 const from = chartPage * chartPageSize
                 const to = from + chartPageSize - 1
@@ -346,7 +455,7 @@ export default function CustomerRegisterPage() {
             cancelled = true
             clearTimeout(t)
         }
-    }, [searchKeyword, filterSheetType, chartPage, chartPageSize, chartNonce])
+    }, [searchKeyword, filterSheetType, filterBranch, branchFilterOr, staffsLoaded, chartPage, chartPageSize, chartNonce])
 
     useEffect(() => {
         if (chartTotalCount === null) return
@@ -369,7 +478,12 @@ export default function CustomerRegisterPage() {
                 const serials = [...new Set(rows.map((r) => r.serial_no?.trim()).filter(Boolean))] as string[]
 
                 const repairMap = new Map<string, RepairChartRow>()
-                const cols = 'id, customer_register_id, serial_no, request_no, received_at, visit_completed_date, symptom, treatment_details, root_cause, status'
+                const cols = 'id, customer_name, customer_register_id, serial_no, manufacturing_no, customer_phone, customer_mobile, request_no, received_at, visit_completed_date, symptom, treatment_details, root_cause, status'
+                const customerNames = [...new Set(rows.map((row) => row.customer_name?.trim()).filter(Boolean))] as string[]
+
+                const addRepairs = (list: RepairChartRow[] | null | undefined) => {
+                    for (const repair of list || []) repairMap.set(repair.id, repair)
+                }
 
                 for (const idChunk of chunkArray(ids, 80)) {
                     const { data, error } = await supabase
@@ -377,30 +491,52 @@ export default function CustomerRegisterPage() {
                         .select(cols)
                         .in('customer_register_id', idChunk)
                     if (error) throw error
-                    for (const r of data || []) {
-                        repairMap.set((r as RepairChartRow).id, r as RepairChartRow)
-                    }
+                    addRepairs(data as RepairChartRow[])
                 }
                 for (const serChunk of chunkArray(serials, 80)) {
                     const { data, error } = await supabase.from('repair_requests').select(cols).in('serial_no', serChunk)
                     if (error) throw error
-                    for (const r of data || []) {
-                        repairMap.set((r as RepairChartRow).id, r as RepairChartRow)
+                    addRepairs(data as RepairChartRow[])
+                }
+                for (const nameChunk of chunkArray(customerNames, 40)) {
+                    const { data, error } = await supabase.from('repair_requests').select(cols).in('customer_name', nameChunk)
+                    if (error) {
+                        console.error('修理案件の氏名検索:', error)
+                        continue
+                    }
+                    addRepairs(data as RepairChartRow[])
+                }
+                {
+                    let from = 0
+                    while (from < 8000) {
+                        const { data, error } = await supabase
+                            .from('repair_requests')
+                            .select(cols)
+                            .order('received_at', { ascending: false })
+                            .range(from, from + 499)
+                        if (error) break
+                        const batch = (data || []) as RepairChartRow[]
+                        for (const repair of batch) {
+                            if (rows.some((row) => customerHistoryMatches(row, repair))) repairMap.set(repair.id, repair)
+                        }
+                        if (batch.length < 500) break
+                        from += 500
                     }
                 }
 
-                const allRepairs = Array.from(repairMap.values())
                 const byRow: Record<string, RepairChartRow[]> = {}
                 for (const row of rows) {
                     byRow[row.id] = []
                 }
+
+                const allRepairs = Array.from(repairMap.values())
                 for (const r of allRepairs) {
                     for (const row of rows) {
                         const idMatch = r.customer_register_id === row.id
-                        const s1 = row.serial_no?.trim()
-                        const s2 = r.serial_no?.trim()
-                        const serialMatch = !!(s1 && s2 && s1 === s2)
-                        if (idMatch || serialMatch) {
+                        const chartSerials = [row.serial_no?.trim(), row.manufacturing_no?.trim()].filter(Boolean)
+                        const repairSerials = [r.serial_no?.trim(), r.manufacturing_no?.trim()].filter(Boolean)
+                        const serialMatch = chartSerials.some((serial) => repairSerials.includes(serial))
+                        if (idMatch || serialMatch || customerHistoryMatches(row, r)) {
                             const list = byRow[row.id]
                             if (!list.some((x) => x.id === r.id)) list.push(r)
                         }
@@ -436,19 +572,60 @@ export default function CustomerRegisterPage() {
                 for (const row of rows) {
                     serviceByRow[row.id] = []
                 }
+                const serviceMap = new Map<string, ServiceRepairReportLite & { customer_register_id?: string | null }>()
+                try {
+                const addServices = (list: Array<ServiceRepairReportLite & { customer_register_id?: string | null }> | null | undefined) => {
+                    for (const report of list || []) serviceMap.set(report.id, report)
+                }
                 for (const idChunk of chunkArray(ids, 80)) {
                     const { data, error } = await supabase
                         .from('service_repair_reports')
                         .select(SERVICE_REPORT_COLS)
                         .in('customer_register_id', idChunk)
-                        .order('work_date', { ascending: false })
                     if (error) throw error
-                    for (const r of (data || []) as (ServiceRepairReportLite & { customer_register_id?: string })[]) {
-                        const cid = r.customer_register_id
-                        if (cid && serviceByRow[cid] && !serviceByRow[cid].some((x) => x.id === r.id)) {
-                            serviceByRow[cid].push(r)
-                        }
+                    addServices(data as Array<ServiceRepairReportLite & { customer_register_id?: string | null }>)
+                }
+                for (const nameChunk of chunkArray(customerNames, 40)) {
+                    const { data, error } = await supabase
+                        .from('service_repair_reports')
+                        .select(SERVICE_REPORT_COLS)
+                        .in('customer_name', nameChunk)
+                    if (error) {
+                        console.error('出張修理の氏名検索:', error)
+                        continue
                     }
+                    addServices(data as Array<ServiceRepairReportLite & { customer_register_id?: string | null }>)
+                }
+                {
+                    let from = 0
+                    while (from < 8000) {
+                        const { data, error } = await supabase
+                            .from('service_repair_reports')
+                            .select(SERVICE_REPORT_COLS)
+                            .order('work_date', { ascending: false })
+                            .range(from, from + 499)
+                        if (error) break
+                        const batch = (data || []) as Array<ServiceRepairReportLite & { customer_register_id?: string | null }>
+                        for (const report of batch) {
+                            if (rows.some((row) => customerHistoryMatches(row, report))) serviceMap.set(report.id, report)
+                        }
+                        if (batch.length < 500) break
+                        from += 500
+                    }
+                }
+                for (const report of serviceMap.values()) {
+                    for (const row of rows) {
+                        const linked = report.customer_register_id === row.id
+                        if (!linked && !customerHistoryMatches(row, report)) continue
+                        const list = serviceByRow[row.id]
+                        if (!list.some((item) => item.id === report.id)) list.push(report)
+                    }
+                }
+                for (const id of Object.keys(serviceByRow)) {
+                    serviceByRow[id].sort((a, b) => String(b.work_date).localeCompare(String(a.work_date)))
+                }
+                } catch (serviceError) {
+                    console.error('出張修理履歴の取得:', serviceError)
                 }
 
                 if (!cancelled) {
@@ -467,13 +644,20 @@ export default function CustomerRegisterPage() {
 
     const fetchStaffOptions = async () => {
         try {
-            const { data, error } = await supabase.from('staffs').select('id, name').order('name')
+            const { data, error } = await supabase.from('staffs').select('id, name, department, branch_id').order('name')
             if (error) throw error
-            setStaffOptions(((data || []) as Array<{ id: string | number | null; name: string | null }>)
-                .map((staff) => ({ id: String(staff.id || ''), name: String(staff.name || '').trim() }))
+            setStaffOptions(((data || []) as Array<{ id: string | number | null; name: string | null; department: string | null; branch_id: string | null }>)
+                .map((staff) => ({
+                    id: String(staff.id || ''),
+                    name: String(staff.name || '').trim(),
+                    department: staff.department,
+                    branch_id: staff.branch_id,
+                }))
                 .filter((staff) => staff.id && staff.name))
         } catch (error: any) {
             console.error('担当者マスタ取得失敗:', error?.message || error)
+        } finally {
+            setStaffsLoaded(true)
         }
     }
 
@@ -627,7 +811,7 @@ export default function CustomerRegisterPage() {
             })
 
             if (parsed.rows.length === 0) {
-                throw new Error('取込対象のデータ行がありません（本体・本体番号・製造番号が空の行はスキップされます）')
+                throw new Error('取込対象のデータ行がありません（氏名も製造番号もない行はスキップされます）')
             }
 
             const result = await upsertParsedCustomerRegisterRows(supabase, parsed, {
@@ -647,7 +831,7 @@ export default function CustomerRegisterPage() {
                 <div>
                     <h1 style={{ margin: 0, fontSize: 32, color: '#f8fafc' }}>顧客カルテ</h1>
                     <p style={{ margin: '8px 0 0 0', color: '#94a3b8' }}>
-                        顧客名のあいまい検索でカルテを表示します。出張修理管理表はお客様氏名・機種（分野）・型式が一致した行のみ表示します。
+                        顧客名のあいまい検索でカルテを表示します。修理履歴は、氏名または電話番号が一致した修理案件と出張修理を表示します。
                     </p>
                 </div>
                 <Link href="/selectors">
@@ -664,7 +848,7 @@ export default function CustomerRegisterPage() {
                 </label>
                 <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
                     暖房機・光合成促進装置・たばこ乾燥機など、機種別の顧客リスト Excel を一括登録します。
-                    製造番号（本体番号列）が既存データと一致する場合は更新、なければ新規登録します。
+                    製造番号がある行は番号で更新します。製造番号がなくても氏名があれば、顧客単位のカルテとして保存します。
                 </p>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
                     <input
@@ -835,6 +1019,40 @@ export default function CustomerRegisterPage() {
                 </section>
 
                 <section style={{ ...panelStyle, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                        <button
+                            type="button"
+                            onClick={() => setFilterBranch('')}
+                            className="btn-3d"
+                            style={{
+                                padding: '10px 14px',
+                                background: filterBranch === '' ? '#2563eb' : '#1e293b',
+                                border: `1px solid ${filterBranch === '' ? '#1d4ed8' : '#334155'}`,
+                                borderRadius: 999,
+                            }}
+                        >
+                            すべて
+                        </button>
+                        {BRANCHES.map((branch) => {
+                            const isActive = branch.id === filterBranch
+                            return (
+                                <button
+                                    key={branch.id}
+                                    type="button"
+                                    onClick={() => setFilterBranch(branch.id)}
+                                    className="btn-3d"
+                                    style={{
+                                        padding: '10px 14px',
+                                        background: isActive ? '#2563eb' : '#1e293b',
+                                        border: `1px solid ${isActive ? '#1d4ed8' : '#334155'}`,
+                                        borderRadius: 999,
+                                    }}
+                                >
+                                    {branch.name}
+                                </button>
+                            )
+                        })}
+                    </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 200px', gap: 10, flex: 1, minWidth: 0 }}>
                             <input
@@ -876,7 +1094,7 @@ export default function CustomerRegisterPage() {
                         <p style={{ margin: '0 0 8px 0', fontSize: 12, color: '#86efac' }}>{serviceLinkSummary}</p>
                     )}
                     <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8' }}>
-                        キーワードは氏名だけでなく、電話・本体番号・型式・販売店などでもヒットします。出張修理管理表は氏名・機種・型式が一致し1件に特定できた行のみ紐づけて表示します。
+                        営業所は、担当者名（「徳丸」「徳丸哲夫」などのゆれを含む）と住所で判定します。修理案件の件数とは別の一覧です。
                     </p>
 
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
@@ -940,7 +1158,9 @@ export default function CustomerRegisterPage() {
                         <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>読み込み中...</div>
                     ) : chartRows.length === 0 ? (
                         <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', border: '1px dashed #334155', borderRadius: 12 }}>
-                            キーワードを入力するか、機種だけ選択して検索してください。
+                            {filterBranch
+                                ? 'この営業所のカルテはありません。'
+                                : '営業所を選ぶか、キーワードを入力するか、機種だけ選択して検索してください。'}
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -988,9 +1208,9 @@ export default function CustomerRegisterPage() {
                                             </div>
                                         </div>
                                         <div style={{ padding: 12 }}>
-                                            <div style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>修理履歴</div>
+                                            <div style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', marginBottom: 8 }}>この顧客の修理履歴</div>
                                             {repairs.length === 0 ? (
-                                                <div style={{ fontSize: 13, color: '#64748b', padding: '8px 0' }}>紐づく修理案件はありません（製造番号・顧客登録IDで自動紐づけ）。</div>
+                                                <div style={{ fontSize: 13, color: '#64748b', padding: '8px 0' }}>この顧客の修理案件はありません。</div>
                                             ) : (
                                                 <div style={{ overflowX: 'auto' }}>
                                                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
@@ -1043,7 +1263,7 @@ export default function CustomerRegisterPage() {
                                             </div>
                                             {serviceReports.length === 0 ? (
                                                 <div style={{ fontSize: 13, color: '#64748b', padding: '8px 0' }}>
-                                                    紐づけ済みの出張修理履歴はありません。上の「管理表を照合して紐づけ」を実行するか、氏名・機種・型式がカルテと一致しているか確認してください。
+                                                    この顧客の出張修理履歴はありません。
                                                 </div>
                                             ) : (
                                                 <div style={{ overflowX: 'auto' }}>

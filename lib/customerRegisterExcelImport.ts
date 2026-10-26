@@ -23,6 +23,8 @@ export const CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES = {
 
 export type ParsedCustomerRegisterRow = {
     upsert_key: string
+    /** 製造番号がない行。顧客名で1件にまとめて保存する */
+    customer_level?: boolean
     source_row_no: number
     sheet_name: string
     sheet_type: SheetTypeValue
@@ -75,6 +77,20 @@ export function normalizeCustomerRegisterHeader(value: unknown): string {
         .replace(/[\s　]/g, '')
         .replace(/[()（）]/g, '')
         .toLowerCase()
+}
+
+/** 顧客名の照合用（空白ゆれを吸収） */
+export function normalizeCustomerRegisterName(value: unknown): string {
+    return String(value ?? '').replace(/[\s　]/g, '').trim()
+}
+
+/** 修理履歴の氏名照合。括弧・会社種別・敬称のゆれを除く */
+export function historyNameKey(value: unknown): string {
+    return String(value ?? '')
+        .replace(/[（(][^）)]*[）)]/g, '')
+        .replace(/株式会社|有限会社|合同会社|様|御中|殿/g, '')
+        .replace(/[\s　]/g, '')
+        .trim()
 }
 
 /** 製造番号・本体番号の照合用正規化 */
@@ -186,9 +202,11 @@ function buildRowPayload(
     const mfgRaw = pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.manufacturing_no)
     const serialNo = normalizeCustomerRegisterId(serialRaw)
     const manufacturingNo = normalizeCustomerRegisterId(mfgRaw) || serialNo
+    const customerName = toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.customer_name))
+    const customerLevel = !manufacturingNo
 
-    if (!manufacturingNo) {
-        return { skip: '製造番号（または本体・本体番号）が空のためスキップ' }
+    if (customerLevel && !customerName) {
+        return { skip: '氏名も製造番号もないためスキップ' }
     }
 
     const notes = toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.notes))
@@ -202,7 +220,8 @@ function buildRowPayload(
     const outletType = toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.outlet_type))
 
     return {
-        upsert_key: manufacturingNo,
+        upsert_key: customerLevel ? `name:${normalizeCustomerRegisterName(customerName)}` : manufacturingNo,
+        customer_level: customerLevel,
         source_row_no: ctx.sourceRowNo,
         sheet_name: ctx.sheetName,
         sheet_type: ctx.sheetType,
@@ -213,7 +232,7 @@ function buildRowPayload(
             shipment_date: normalizeCustomerRegisterDate(
                 pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.shipment_date),
             ),
-            customer_name: toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.customer_name)),
+            customer_name: customerName,
             address: toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.address)),
             phone: toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.phone)),
             mobile: toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.mobile)),
@@ -225,8 +244,8 @@ function buildRowPayload(
             dealer_name: toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.dealer_name)),
             model: modelText,
             model_no: ctx.sheetType === 'heating' ? null : modelText,
-            serial_no: serialNo || null,
-            manufacturing_no: manufacturingNo,
+            serial_no: customerLevel ? null : serialNo || null,
+            manufacturing_no: customerLevel ? null : manufacturingNo,
             burner_no: toNullableText(pickByNormalizedHeader(record, CUSTOMER_REGISTER_EXCEL_COLUMN_ALIASES.burner_no)),
             outlet_type: outletType,
             raw_data: rawData,

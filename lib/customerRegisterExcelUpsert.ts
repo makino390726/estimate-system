@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
     chunkArray,
     normalizeCustomerRegisterId,
+    normalizeCustomerRegisterName,
     type ParseCustomerRegisterWorkbookResult,
 } from '@/lib/customerRegisterExcelImport'
 
@@ -15,7 +16,12 @@ export type CustomerRegisterExcelUpsertResult = {
     error_count: number
 }
 
-type ExistingRow = { id: string; manufacturing_no: string | null; serial_no: string | null }
+type ExistingRow = {
+    id: string
+    customer_name: string | null
+    manufacturing_no: string | null
+    serial_no: string | null
+}
 
 function findExistingId(existing: ExistingRow[], upsertKey: string): string | null {
     const normalizedKey = normalizeCustomerRegisterId(upsertKey)
@@ -62,20 +68,49 @@ export async function upsertParsedCustomerRegisterRows(
     }
 
     const now = new Date().toISOString()
-    const existing = await loadExistingByKeys(sb, parsed.rows.map((r) => r.upsert_key))
+    const keyedRows = parsed.rows.filter((row) => !row.customer_level)
+    const customerLevelRows = parsed.rows.filter((row) => row.customer_level)
+    const existing = await loadExistingByKeys(sb, keyedRows.map((r) => r.upsert_key))
+    const customerNames = [...new Set(customerLevelRows.map((row) => String(row.payload.customer_name || '').trim()).filter(Boolean))]
+    const existingByName = new Map<string, string>()
+    for (const nameChunk of chunkArray(customerNames, 80)) {
+        const { data } = await sb.from('customer_register_rows').select('id, customer_name, manufacturing_no, serial_no').in('customer_name', nameChunk)
+        for (const row of (data || []) as ExistingRow[]) {
+            const key = normalizeCustomerRegisterName(row.customer_name)
+            if (!key || existingByName.has(key)) continue
+            if (row.manufacturing_no || row.serial_no) continue
+            existingByName.set(key, row.id)
+        }
+    }
 
     const toInsert: Record<string, unknown>[] = []
     const toUpdate: { id: string; payload: Record<string, unknown> }[] = []
     const dbErrors: { source_row_no: number; reason: string }[] = []
 
     for (const row of parsed.rows) {
-        const existingId = findExistingId(existing, row.upsert_key)
         const payload: Record<string, unknown> = {
             ...row.payload,
             updated_at: now,
         }
         if (batchId) payload.import_batch_id = batchId
 
+        if (row.customer_level) {
+            const nameKey = normalizeCustomerRegisterName(row.payload.customer_name)
+            const existingId = existingByName.get(nameKey)
+            if (existingId) {
+                const index = toUpdate.findIndex((item) => item.id === existingId)
+                if (index >= 0) toUpdate[index] = { id: existingId, payload }
+                else toUpdate.push({ id: existingId, payload })
+            } else {
+                const next = { ...payload, created_at: now, __nameKey: nameKey }
+                const index = toInsert.findIndex((item) => item.__nameKey === nameKey)
+                if (index >= 0) toInsert[index] = next
+                else toInsert.push(next)
+            }
+            continue
+        }
+
+        const existingId = findExistingId(existing, row.upsert_key)
         if (existingId) {
             toUpdate.push({ id: existingId, payload })
         } else {
@@ -86,7 +121,13 @@ export async function upsertParsedCustomerRegisterRows(
     let inserted = 0
     let updated = 0
 
-    for (const insertChunk of chunkArray(toInsert, 50)) {
+    const insertRows = toInsert.map((row) => {
+        const copy = { ...row }
+        delete copy.__nameKey
+        return copy
+    })
+
+    for (const insertChunk of chunkArray(insertRows, 50)) {
         const { error } = await sb.from('customer_register_rows').insert(insertChunk)
         if (error) {
             for (const row of insertChunk) {
