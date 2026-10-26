@@ -13,7 +13,6 @@ import {
   FiTrendingUp,
   FiShoppingCart,
   FiHome,
-  FiLink,
   FiActivity,
 } from 'react-icons/fi'
 
@@ -281,13 +280,13 @@ export default function MasterSelectorPage() {
             </div>
           </div>
 
-          {/* 年度計画 */}
-          <div className="selector-card">
+          {/* 年度計画＆売上分析 */}
+          <div className="selector-card" style={{ gridColumn: 'span 2' }}>
             <div className="selector-card-header">
               <FiTrendingUp className="icon" />
-              <h2>年度計画</h2>
+              <h2>年度計画＆売上分析</h2>
             </div>
-            <p>担当者ごとに当初計画を作成し、営業所ノルマと見積成約・売上Excelで進捗を確認できます。</p>
+            <p>当初計画・ノルマ・見積成約の進捗と、売上Excelの内訳・前年比較を開きます。</p>
             <div className="selector-card-buttons">
               <Link href="/plan/annual/sheet" className="selector-button primary">
                 年度計画シート
@@ -298,19 +297,8 @@ export default function MasterSelectorPage() {
               <Link href="/plan/annual/quota" className="selector-button primary">
                 営業所ノルマ
               </Link>
-            </div>
-          </div>
-
-          {/* 外部連携設定 */}
-          <div className="selector-card">
-            <div className="selector-card-header">
-              <FiLink className="icon" />
-              <h2>外部連携設定</h2>
-            </div>
-            <p>コード置換のマッピング設定を行います。未登録品の一括コード置換はこちらから。</p>
-            <div className="selector-card-buttons">
-              <Link href="/cases/code-mapping" className="selector-button primary">
-                コード置換設定
+              <Link href="/plan/sales-analysis" className="selector-button primary">
+                売上分析
               </Link>
             </div>
           </div>
