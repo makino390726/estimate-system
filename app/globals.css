@@ -64,17 +64,30 @@ option::selection {
   color: #ffffff;
 }
 
-/* 印刷時のスタイル：すべてのテキストを黒に設定 */
+/* 印刷時のスタイル：画面の暗色は白黒にする。見積書はプレビューの背景色を残す */
 @media print {
   * {
     color: #000 !important;
-    background-color: white !important;
     background-image: none !important;
+  }
+
+  *:not(.estimate-print):not(.estimate-print *) {
+    background-color: white !important;
   }
 
   body {
     color: #000 !important;
     background: white !important;
+  }
+
+  .estimate-print,
+  .estimate-print * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .estimate-print .detail-head th {
+    background-color: #c8e6c8 !important;
   }
 }
 

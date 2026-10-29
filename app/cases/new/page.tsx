@@ -1249,7 +1249,14 @@ export default function CaseNewPage() {
       .split('T')[0]}`,
     pageStyle: `
       @page { size: A4 portrait; margin: 0; }
-      html, body { margin: 0; padding: 0; }
+      html, body { margin: 0; padding: 0; background: #fff; }
+      .estimate-print, .estimate-print * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .estimate-print .detail-head th {
+        background-color: #c8e6c8 !important;
+      }
     `,
   })
 

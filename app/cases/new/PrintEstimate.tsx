@@ -210,11 +210,15 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
       margin: 0;
     }
     @media print {
-      * {
+      .estimate-print,
+      .estimate-print * {
         color: #000 !important;
-        background-color: transparent !important;
-        background-image: none !important;
         text-shadow: none !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .estimate-print .detail-head th {
+        background-color: #c8e6c8 !important;
       }
       tr {
         page-break-inside: avoid;
@@ -223,9 +227,6 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
         -webkit-line-clamp: 2;
         max-height: 5.8mm;
         overflow: hidden;
-      }
-      body, div, p, span, td, th, table, tr {
-        color: #000 !important;
       }
     }
   `
@@ -351,13 +352,13 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
       >
         <table style={{ width: '100%', border: '1px solid #000', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ backgroundColor: '#c8e6c8' }}>
-              <th style={{ border: '1px solid #000', padding: '4px', width: 200, fontSize: 11 }}>商品名・規格</th>
-              <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 11 }}>数量</th>
-              <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 11 }}>単位</th>
-              <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 11 }}>単　　価</th>
-              <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11 }}>金　　額</th>
-              <th style={{ border: '1px solid #000', padding: '4px', width: 80, fontSize: 11 }}>備　　考</th>
+            <tr className="detail-head" style={{ backgroundColor: '#c8e6c8' }}>
+              <th style={{ border: '1px solid #000', padding: '4px', width: 200, fontSize: 11, backgroundColor: '#c8e6c8' }}>商品名・規格</th>
+              <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 11, backgroundColor: '#c8e6c8' }}>数量</th>
+              <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 11, backgroundColor: '#c8e6c8' }}>単位</th>
+              <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 11, backgroundColor: '#c8e6c8' }}>単　　価</th>
+              <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 11, backgroundColor: '#c8e6c8' }}>金　　額</th>
+              <th style={{ border: '1px solid #000', padding: '4px', width: 80, fontSize: 11, backgroundColor: '#c8e6c8' }}>備　　考</th>
             </tr>
           </thead>
           <tbody>
@@ -592,13 +593,13 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
         >
           <table style={{ width: '100%', border: '1px solid #000', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ backgroundColor: '#c8e6c8' }}>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 180, fontSize: 12 }}>商品名・規格</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 12 }}>数量</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 12 }}>単位</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 12 }}>単　　価</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 12 }}>金　　額</th>
-                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 12 }}>備　　考</th>
+              <tr className="detail-head" style={{ backgroundColor: '#c8e6c8' }}>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 180, fontSize: 12, backgroundColor: '#c8e6c8' }}>商品名・規格</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 60, fontSize: 12, backgroundColor: '#c8e6c8' }}>数量</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 50, fontSize: 12, backgroundColor: '#c8e6c8' }}>単位</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 70, fontSize: 12, backgroundColor: '#c8e6c8' }}>単　　価</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 12, backgroundColor: '#c8e6c8' }}>金　　額</th>
+                <th style={{ border: '1px solid #000', padding: '4px', width: 100, fontSize: 12, backgroundColor: '#c8e6c8' }}>備　　考</th>
               </tr>
             </thead>
             <tbody>
@@ -687,7 +688,8 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
 
     // 横様式の戻り値：表紙＋セクション合計＋明細
     return (
-      <div ref={ref} style={{ backgroundColor: '#fff', color: '#000' }}>
+      <div ref={ref} className="estimate-print" style={{ backgroundColor: '#fff', color: '#000' }}>
+        <style>{printStyleSheet}</style>
         {/* 表紙ページ */}
         <div
           style={{
@@ -1002,7 +1004,7 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
   }
 
   return (
-    <div ref={ref} style={{ backgroundColor: '#fff', color: '#000' }}>
+    <div ref={ref} className="estimate-print" style={{ backgroundColor: '#fff', color: '#000' }}>
       <style>{printStyleSheet}</style>
       {pages.map((pageRows, pageIndex) => {
         const isLast = pageIndex === pages.length - 1
@@ -1255,13 +1257,13 @@ const PrintEstimate = forwardRef<HTMLDivElement, PrintEstimateProps>((props, ref
               }}
             >
               <thead>
-                <tr style={{ backgroundColor: '#c8e6c8' }}>
-                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 230, height: '6mm', fontSize: 11 }}>品　　　名　・　規　　　格</th>
-                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 45, height: '6mm', fontSize: 11 }}>数 量</th>
-                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 35, height: '6mm', fontSize: 11 }}>単位</th>
-                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 70, height: '6mm', fontSize: 11 }}>単　　価</th>
-                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 80, height: '6mm', fontSize: 11 }}>金　　額</th>
-                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 70, height: '6mm', fontSize: 11 }}>備　　考</th>
+                <tr className="detail-head" style={{ backgroundColor: '#c8e6c8' }}>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 230, height: '6mm', fontSize: 11, backgroundColor: '#c8e6c8' }}>品　　　名　・　規　　　格</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 45, height: '6mm', fontSize: 11, backgroundColor: '#c8e6c8' }}>数 量</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 35, height: '6mm', fontSize: 11, backgroundColor: '#c8e6c8' }}>単位</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 70, height: '6mm', fontSize: 11, backgroundColor: '#c8e6c8' }}>単　　価</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 80, height: '6mm', fontSize: 11, backgroundColor: '#c8e6c8' }}>金　　額</th>
+                  <th style={{ border: '1px solid #000', padding: '1px 2px', width: 70, height: '6mm', fontSize: 11, backgroundColor: '#c8e6c8' }}>備　　考</th>
                 </tr>
               </thead>
               <tbody>
