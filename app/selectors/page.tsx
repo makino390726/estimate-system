@@ -133,7 +133,7 @@ export default function MasterSelectorPage() {
                 出張修理管理表
               </Link>
               <Link href="/service-repair-reports/weak-points" className="selector-button primary">
-                統計・ウィークポイント
+                修理ダッシュボード
               </Link>
             </div>
           </div>

@@ -631,7 +631,7 @@ export default function ServiceRepairReportsPage() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Link href="/service-repair-reports/weak-points">
                         <button className="btn-3d" style={{ padding: '10px 16px', background: '#b45309', border: '1px solid #92400e' }}>
-                            統計・ウィークポイント
+                            修理ダッシュボード
                         </button>
                     </Link>
                     <Link href="/selectors">
