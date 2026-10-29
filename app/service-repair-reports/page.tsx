@@ -628,11 +628,18 @@ export default function ServiceRepairReportsPage() {
                         営業所ごとの作業履歴を入力し、そのまま一覧管理できます。
                     </p>
                 </div>
-                <Link href="/selectors">
-                    <button className="btn-3d btn-reset" style={{ padding: '10px 16px', background: '#16a34a', border: '1px solid #15803d' }}>
-                        ← メニューに戻る
-                    </button>
-                </Link>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Link href="/service-repair-reports/weak-points">
+                        <button className="btn-3d" style={{ padding: '10px 16px', background: '#b45309', border: '1px solid #92400e' }}>
+                            統計・ウィークポイント
+                        </button>
+                    </Link>
+                    <Link href="/selectors">
+                        <button className="btn-3d btn-reset" style={{ padding: '10px 16px', background: '#16a34a', border: '1px solid #15803d' }}>
+                            ← メニューに戻る
+                        </button>
+                    </Link>
+                </div>
             </div>
 
             <div style={{ ...panelStyle, marginBottom: 20 }}>

@@ -127,10 +127,13 @@ export default function MasterSelectorPage() {
               <FiActivity className="icon" />
               <h2>出張修理管理表</h2>
             </div>
-            <p>営業所ごとの出張修理履歴を入力し、日付・顧客・担当者単位で一覧管理します。</p>
-            <div className="selector-card-buttons">
+            <p>営業所ごとの出張修理履歴を入力し、日付・顧客・担当者単位で一覧管理します。統計と製品のウィークポイントも確認できます。</p>
+            <div className="selector-card-buttons selector-card-buttons-wrap">
               <Link href="/service-repair-reports" className="selector-button primary">
                 出張修理管理表
+              </Link>
+              <Link href="/service-repair-reports/weak-points" className="selector-button primary">
+                統計・ウィークポイント
               </Link>
             </div>
           </div>
