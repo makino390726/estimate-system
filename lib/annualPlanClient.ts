@@ -502,6 +502,49 @@ export async function fetchItemMonthProgress(fiscalYear: number, staffId: string
   return json as import('@/lib/annualPlanItemProgress').ItemMonthProgressResult & { ok?: boolean }
 }
 
+export async function fetchActualAssignmentLines(
+  fiscalYear: number,
+  staffId: string,
+  view: string,
+  month = 'all',
+) {
+  const res = await fetch(
+    `/api/plan/annual/actual-assignments?fy=${fiscalYear}&staff=${encodeURIComponent(staffId)}&view=${encodeURIComponent(view)}&month=${encodeURIComponent(month)}`,
+  )
+  const json = await res.json()
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error || '売上明細の取得に失敗しました')
+  }
+  return json as {
+    view: string
+    month: string
+    monthCounts: Record<string, number>
+    total: number
+    truncated: boolean
+    rows: import('@/lib/annualPlanItemProgress').ActualTrace[]
+    targets: import('@/lib/annualPlanItemProgress').AssignmentTarget[]
+    assignmentsReady: boolean
+    setupMessage: string | null
+  }
+}
+
+export async function saveActualAssignment(
+  fiscalYear: number,
+  staffId: string,
+  fingerprint: string,
+  targetKey: string,
+) {
+  const res = await fetch('/api/plan/annual/actual-assignments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fy: fiscalYear, staffId, fingerprint, targetKey }),
+  })
+  const json = await res.json()
+  if (!res.ok || !json.ok) {
+    throw new Error(json.error || '振り替えの保存に失敗しました')
+  }
+}
+
 export async function importSalesActualExcel(fiscalYear: number, file: File) {
   const body = new FormData()
   body.set('file', file)

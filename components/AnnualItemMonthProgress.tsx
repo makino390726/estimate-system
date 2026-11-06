@@ -60,7 +60,7 @@ export function AnnualItemMonthProgress(props: {
       <h2 style={{ fontSize: 16, color: '#f8fafc', marginBottom: 4 }}>{props.title || '品名別 月次進捗'}</h2>
       <p style={{ ...planMuted, fontSize: 12, marginTop: 0 }}>
         {props.caption ||
-          '品名ごとにExcel売上（請求日）の月次を突合します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。個人シートで商品CDを指定した行はコード、それ以外は品名で突合し、一致しない売上はその他（生産品・肥料・農薬・資材・工事）に計上します。'}
+          '品名ごとにExcel売上（請求日）の月次を突合します。中間列は中間修正があれば修正後、なければ当初のままです。残は中間計画に対する値です。個人シートで商品CDを指定した行はコード、それ以外は品名で突合し、一致しない売上はその他（生産品・肥料・農薬・資材・工事）に計上します。下の明細で振り替えた内容も、この表に反映されます。'}
       </p>
       </div>
       <div className="print-scroll" style={{ overflowX: 'auto' }}>

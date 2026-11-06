@@ -64,6 +64,7 @@ import {
 import { AnnualQuotaHint } from '@/components/AnnualQuotaHint'
 import { AnnualInitialLineTotals } from '@/components/AnnualInitialLineTotals'
 import { AnnualItemMonthProgress } from '@/components/AnnualItemMonthProgress'
+import { AnnualActualReassign } from '@/components/AnnualActualReassign'
 import { officeKeyFromStaff } from '@/lib/branches'
 import {
   allocationForStaff,
@@ -122,6 +123,7 @@ function AnnualPlanSheetContent() {
   const [remarkEdits, setRemarkEdits] = useState<Record<string, string>>({})
   const [itemProgress, setItemProgress] = useState<ItemMonthProgressResult | null>(null)
   const [itemProgressLoading, setItemProgressLoading] = useState(false)
+  const [progressNonce, setProgressNonce] = useState(0)
   const [excelByCategory, setExcelByCategory] = useState<Record<string, number>>({})
   const [interimEdits, setInterimEdits] = useState<Record<string, { qty: string; amount: string; unit?: string }>>({})
   const [localAdmin, setLocalAdmin] = useState(() => isLocalAdminHost())
@@ -277,7 +279,7 @@ function AnnualPlanSheetContent() {
     return () => {
       cancelled = true
     }
-  }, [fiscalYear, staffId, lines])
+  }, [fiscalYear, staffId, lines, progressNonce])
 
   useEffect(() => {
     let cancelled = false
@@ -1445,6 +1447,14 @@ function AnnualPlanSheetContent() {
           data={itemProgress}
           loading={itemProgressLoading}
           emptyText="計画の品名がありません。上で行を追加すると、ここに月次の残台数が出ます。"
+        />
+        <AnnualActualReassign
+          fiscalYear={fiscalYear}
+          staffId={staffId}
+          planStamp={lines
+            .map((line) => `${line.id}:${line.qty}:${line.amount}:${line.change_kind || ''}:${line.machine_code}:${line.machine_name || ''}`)
+            .join('|')}
+          onSaved={() => setProgressNonce((n) => n + 1)}
         />
       </div>
 

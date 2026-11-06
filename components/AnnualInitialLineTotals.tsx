@@ -1,6 +1,7 @@
 'use client'
 
-import { initialLineTotalsByCategory, type AnnualPlanLine } from '@/lib/annualPlanClient'
+import { currentPlanLines, initialLineTotalsByCategory, type AnnualPlanLine } from '@/lib/annualPlanClient'
+import { PROGRESS_CATEGORIES, progressCategoryFor, type PlanConfidence } from '@/lib/annualPlanCategories'
 import { planMuted, planTd, planTh } from '@/lib/annualPlanUi'
 
 function yen(n: number) {
@@ -32,6 +33,17 @@ function remainingColor(plan: number, actual: number) {
   return '#fca5a5'
 }
 
+function confidenceOf(line: AnnualPlanLine): PlanConfidence {
+  if (line.confidence === 'high' || line.confidence === 'mid') return line.confidence
+  return 'low'
+}
+
+function confidenceAmounts(lines: AnnualPlanLine[]) {
+  const sums: Record<PlanConfidence, number> = { high: 0, mid: 0, low: 0 }
+  for (const line of lines) sums[confidenceOf(line)] += Number(line.amount || 0)
+  return { ...sums, total: sums.high + sums.mid + sums.low }
+}
+
 export function AnnualInitialLineTotals(props: {
   title?: string
   lines: AnnualPlanLine[]
@@ -40,9 +52,48 @@ export function AnnualInitialLineTotals(props: {
   const { rows, grandInitial, grandCurrent } = initialLineTotalsByCategory(props.lines)
   const excelByCategory = props.excelByCategory || {}
   const excelTotal = rows.reduce((s, r) => s + Number(excelByCategory[r.cat] || 0), 0)
+  const currentLines = currentPlanLines(props.lines)
+  const confidenceRows = PROGRESS_CATEGORIES.map((cat) => ({
+    cat,
+    ...confidenceAmounts(currentLines.filter((line) => progressCategoryFor(line.category) === cat)),
+  }))
+  const confidenceGrand = confidenceAmounts(currentLines)
 
   return (
     <div className="print-keep print-scroll" style={{ overflowX: 'auto', marginTop: 12 }}>
+      <h3 style={{ margin: '0 0 8px', fontSize: 14, color: '#f8fafc' }}>確度別集計</h3>
+      <table style={{ width: '100%', maxWidth: 760, borderCollapse: 'collapse', marginBottom: 16 }}>
+        <thead>
+          <tr>
+            {['科目', '●', '▲', '□', '合計'].map((h) => (
+              <th key={h} style={{ ...planTh, textAlign: h === '科目' ? 'left' : 'right' }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {confidenceRows.map((row) => (
+            <tr key={row.cat}>
+              <td style={planTd}>{row.cat}</td>
+              <td style={{ ...planTd, textAlign: 'right' }}>{yen(row.high)}</td>
+              <td style={{ ...planTd, textAlign: 'right' }}>{yen(row.mid)}</td>
+              <td style={{ ...planTd, textAlign: 'right' }}>{yen(row.low)}</td>
+              <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(row.total)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td style={{ ...planTd, fontWeight: 700 }}>合計</td>
+            <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(confidenceGrand.high)}</td>
+            <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(confidenceGrand.mid)}</td>
+            <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(confidenceGrand.low)}</td>
+            <td style={{ ...planTd, textAlign: 'right', fontWeight: 700 }}>{yen(confidenceGrand.total)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style={{ ...planMuted, fontSize: 12, margin: '0 0 16px' }}>
+        ●高い、▲中、□低いの計画額です。中間修正がある品名は修正後、ない品名は当初の金額です。生産品は暖房機・たばこ乾燥機・食品乾燥機等の合算です。
+      </p>
       {props.title ? (
         <h3 style={{ margin: '0 0 8px', fontSize: 14, color: '#f8fafc' }}>{props.title}</h3>
       ) : null}

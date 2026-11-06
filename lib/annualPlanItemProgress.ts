@@ -34,6 +34,51 @@ export type SalesActualItemRow = {
   qty: number
   amount_ex_tax: number
   plan_category: string | null
+  staff_id?: string | null
+  slip_no?: string | null
+  customer_name?: string | null
+}
+
+export type ActualAssignmentMap = Record<string, string>
+
+export type ActualTrace = {
+  fingerprint: string
+  billedOn: string | null
+  slipNo: string | null
+  productCode: string | null
+  productName: string | null
+  customerName: string | null
+  qty: number
+  amount: number
+  coded: boolean
+  autoKey: string
+  autoLabel: string
+  targetKey: string
+  targetLabel: string
+  overridden: boolean
+}
+
+export function salesActualFingerprint(row: {
+  billed_on?: string | null
+  slip_no?: string | null
+  product_code?: string | null
+  product_name?: string | null
+  customer_name?: string | null
+  qty?: number
+  amount_ex_tax?: number
+}): string {
+  const date = String(row.billed_on || '').slice(0, 10)
+  const slip = normalizeItemText(row.slip_no || '')
+  const code = normalizeProductCode(row.product_code || '')
+  const name = normalizeItemText(row.product_name || '')
+  const customer = normalizeItemText(row.customer_name || '')
+  const qty = String(Number(row.qty || 0))
+  const amount = String(Math.round(Number(row.amount_ex_tax || 0)))
+  return [date, slip, code, name, qty, amount, customer].join('|')
+}
+
+export function assignmentMapKey(staffId: string, fingerprint: string): string {
+  return `${staffId}|${fingerprint}`
 }
 
 export type ItemMonthProgressRow = {
@@ -64,11 +109,17 @@ export type UnmatchedCategoryMonth = {
   amountTotal: number
 }
 
+export type AssignmentTarget = {
+  key: string
+  label: string
+}
+
 export type ItemMonthProgressResult = {
   months: FiscalMonthSlot[]
   rows: ItemMonthProgressRow[]
   unmatched: { qty: number[]; amount: number[]; qtyTotal: number; amountTotal: number }
   unmatchedByCategory: UnmatchedCategoryMonth[]
+  targets: AssignmentTarget[]
 }
 
 function unmatchedCategoryFor(planCategory: string | null): string {
@@ -204,6 +255,7 @@ export function buildItemMonthProgress(
   actuals: SalesActualItemRow[],
   extraCodesByMachine: Record<string, string[]> = {},
   machineRank: Record<string, number> = {},
+  options?: { assignments?: ActualAssignmentMap; traces?: ActualTrace[] },
 ): ItemMonthProgressResult {
   const months = fiscalMonthSlots(fiscalYear)
   type Group = {
@@ -301,6 +353,37 @@ export function buildItemMonthProgress(
     row.soldAmountTotal += amount
   }
 
+  const labelForGroup = (g: Group) => (g.isGenericOther ? `${g.progressCat}その他` : `${g.category} ${g.label}`.trim())
+  const labelForKey = (key: string) => {
+    if (key.startsWith('bucket:')) return `${key.slice('bucket:'.length)}その他`
+    const found = groups.find((g) => g.key === key)
+    return found ? labelForGroup(found) : key
+  }
+  const addUnmatched = (category: string, month: number, qty: number, amount: number) => {
+    unmatched.qty[month] += qty
+    unmatched.amount[month] += amount
+    unmatched.qtyTotal += qty
+    unmatched.amountTotal += amount
+    const bucket = unmatchedMap.get(category) || emptyUnmatchedBucket(category)
+    bucket.qty[month] += qty
+    bucket.amount[month] += amount
+    bucket.qtyTotal += qty
+    bucket.amountTotal += amount
+    unmatchedMap.set(category, bucket)
+  }
+  const placeOnKey = (key: string, month: number, qty: number, amount: number) => {
+    if (key.startsWith('bucket:')) {
+      addUnmatched(key.slice('bucket:'.length), month, qty, amount)
+      return
+    }
+    const idx = groups.findIndex((g) => g.key === key)
+    if (idx >= 0) {
+      addSold(rows[idx], month, qty, amount)
+      return
+    }
+    addUnmatched(unmatchedCategoryFor(null), month, qty, amount)
+  }
+
   for (const actual of actuals) {
     const month = actual.billed_on ? fiscalMonthIndex(actual.billed_on, fiscalYear) : null
     if (month == null) continue
@@ -320,29 +403,43 @@ export function buildItemMonthProgress(
       }
     }
 
-    if (bestIdx >= 0 && bestScore >= NAME_MATCH_THRESHOLD) {
-      addSold(rows[bestIdx], month, qty, amount)
-      continue
-    }
-
     const otherBucket =
       otherProgressCategoryForProductCode(actual.product_code || '') || unmatchedCategoryFor(actual.plan_category)
     const otherIdx = groups.findIndex((g) => g.isGenericOther && g.progressCat === otherBucket)
-    if (otherIdx >= 0) {
-      addSold(rows[otherIdx], month, qty, amount)
-      continue
+    const autoKey =
+      bestIdx >= 0 && bestScore >= NAME_MATCH_THRESHOLD
+        ? groups[bestIdx].key
+        : otherIdx >= 0
+          ? groups[otherIdx].key
+          : `bucket:${otherBucket}`
+    const fingerprint = salesActualFingerprint(actual)
+    const forced = options?.assignments?.[assignmentMapKey(String(actual.staff_id || ''), fingerprint)]
+    const forcedOk = Boolean(forced && (forced.startsWith('bucket:') || groups.some((g) => g.key === forced)))
+    let targetKey = forcedOk && forced ? forced : autoKey
+    if (targetKey.startsWith('bucket:')) {
+      const cat = targetKey.slice('bucket:'.length)
+      const generic = groups.find((g) => g.isGenericOther && g.progressCat === cat)
+      if (generic) targetKey = generic.key
     }
-
-    unmatched.qty[month] += qty
-    unmatched.amount[month] += amount
-    unmatched.qtyTotal += qty
-    unmatched.amountTotal += amount
-    const bucket = unmatchedMap.get(otherBucket) || emptyUnmatchedBucket(otherBucket)
-    bucket.qty[month] += qty
-    bucket.amount[month] += amount
-    bucket.qtyTotal += qty
-    bucket.amountTotal += amount
-    unmatchedMap.set(otherBucket, bucket)
+    placeOnKey(targetKey, month, qty, amount)
+    if (options?.traces) {
+      options.traces.push({
+        fingerprint,
+        billedOn: actual.billed_on,
+        slipNo: actual.slip_no || null,
+        productCode: actual.product_code,
+        productName: actual.product_name,
+        customerName: actual.customer_name || null,
+        qty,
+        amount,
+        coded: normalizeProductCode(actual.product_code || '').length >= 4,
+        autoKey,
+        autoLabel: labelForKey(autoKey),
+        targetKey,
+        targetLabel: labelForKey(targetKey),
+        overridden: forcedOk && targetKey !== autoKey,
+      })
+    }
   }
 
   for (const row of rows) {
@@ -362,5 +459,21 @@ export function buildItemMonthProgress(
     return a.category.localeCompare(b.category, 'ja')
   })
 
-  return { months, rows, unmatched, unmatchedByCategory }
+  const targets: AssignmentTarget[] = groups.map((g) => ({
+    key: g.key,
+    label: labelForGroup(g),
+  }))
+  for (const cat of PROGRESS_CATEGORIES) {
+    if (!groups.some((g) => g.isGenericOther && g.progressCat === cat)) {
+      targets.push({ key: `bucket:${cat}`, label: `${cat}その他` })
+    }
+  }
+  targets.sort((a, b) => {
+    const otherA = a.label.endsWith('その他') ? 0 : 1
+    const otherB = b.label.endsWith('その他') ? 0 : 1
+    if (otherA !== otherB) return otherA - otherB
+    return a.label.localeCompare(b.label, 'ja')
+  })
+
+  return { months, rows, unmatched, unmatchedByCategory, targets }
 }
