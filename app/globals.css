@@ -564,6 +564,22 @@ html[data-theme="light"] body * {
   color: #000 !important;
 }
 
+.deal-rank-purpose {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background-color: #111827;
+  color: #FFEB3B;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.7;
+}
+
+html[data-theme="light"] body .deal-rank-purpose {
+  background-color: #111827 !important;
+  color: #FFEB3B !important;
+}
+
 html[data-theme="light"] .brand-header-en {
   color: transparent !important;
 }

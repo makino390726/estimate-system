@@ -114,7 +114,7 @@ export default function MasterSelectorPage() {
               <FiActivity className="icon" />
               <h2>営業活動</h2>
             </div>
-            <p>担当者ごとに案件見込み（○/△/□/×）を管理し、△/□案件の営業活動コメントを記録します。</p>
+            <p>案件一覧のステータス「商談中」だけを対象に、成約に向けた活動と見込み（○/△/□/×）を記録します。</p>
             <div className="selector-card-buttons">
               <Link href="/cases/deal-rank" className="selector-button primary">
                 見込み区分・活動コメント

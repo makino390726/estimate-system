@@ -126,7 +126,7 @@ export default function DealRankPage() {
             let amountReady = true
 
             const applyCaseFilters = (query: any) => {
-                let nextQuery = query
+                let nextQuery = query.eq('status', '商談中')
 
                 if (selectedStaffId) {
                     nextQuery = nextQuery.eq('staff_id', selectedStaffId)
@@ -412,7 +412,7 @@ export default function DealRankPage() {
 
     const handlePrint = useReactToPrint({
         contentRef: printRef,
-        documentTitle: `案件見込み区分一覧_${selectedStaffName}_${startDate || '開始未指定'}_${endDate || '終了未指定'}`,
+        documentTitle: `案件見込み区分一覧_商談中_${selectedStaffName}_${startDate || '開始未指定'}_${endDate || '終了未指定'}`,
     })
 
     const updateDealRank = async (caseId: string, nextRank: string) => {
@@ -483,7 +483,7 @@ export default function DealRankPage() {
     return (
         <div style={{ padding: 24, maxWidth: 1600, margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-                <h1 style={{ margin: 0 }}>案件見込み区分（担当者別）</h1>
+                <h1 style={{ margin: 0 }}>案件見込み区分（商談中）</h1>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <select
                         value={selectedStaffId}
@@ -551,6 +551,10 @@ export default function DealRankPage() {
                     </Link>
                 </div>
             </div>
+
+            <p className="deal-rank-purpose">
+                この画面の目的：商談中の案件について、成約に向けてどのように活動するかを書き、見込みが ○・△・□ のどれになりそうかを記録します。
+            </p>
 
             <div style={{ border: '1px solid #334155', borderRadius: 12, padding: 18, marginBottom: 16, backgroundColor: '#111827', color: '#e5e7eb' }}>
                 <strong style={{ color: '#f8fafc', fontSize: 24, letterSpacing: 0.5 }}>件数集計</strong>
@@ -731,14 +735,15 @@ export default function DealRankPage() {
             )}
 
             {!loading && filteredCases.length === 0 ? (
-                <p style={{ textAlign: 'center', marginTop: 24, color: '#64748b' }}>対象案件がありません</p>
+                <p style={{ textAlign: 'center', marginTop: 24, color: '#64748b' }}>商談中の対象案件がありません</p>
             ) : null}
 
             <div style={{ position: 'absolute', left: -99999, top: 0 }}>
                 <div ref={printRef} style={{ width: 1120, padding: 24, backgroundColor: '#ffffff', color: '#000000' }}>
                     <div style={{ marginBottom: 20 }}>
-                        <h1 style={{ margin: '0 0 8px', fontSize: 24 }}>案件見込み区分一覧</h1>
+                        <h1 style={{ margin: '0 0 8px', fontSize: 24 }}>案件見込み区分一覧（商談中）</h1>
                         <div style={{ fontSize: 13, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                            <span>対象: ステータス「商談中」</span>
                             <span>担当者: {selectedStaffName}</span>
                             <span>期間: {startDate || '指定なし'} ～ {endDate || '指定なし'}</span>
                             <span>出力件数: {filteredCases.length} 件</span>
