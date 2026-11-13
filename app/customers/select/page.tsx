@@ -16,6 +16,12 @@ type Customer = {
   fax?: string | null
   email?: string | null
   note?: string | null
+  customer_code?: string | null
+  close_day?: number | null
+  collect_cycle?: number | null
+  collect_cycle_name?: string | null
+  collect_day?: number | null
+  collect_term_name?: string | null
 }
 
 const emptyForm: Customer = {
@@ -29,6 +35,35 @@ const emptyForm: Customer = {
   fax: '',
   email: '',
   note: '',
+  customer_code: '',
+  close_day: null,
+  collect_cycle: null,
+  collect_cycle_name: '',
+  collect_day: null,
+  collect_term_name: '',
+}
+
+function optionalInt(value: number | null | undefined): number | null {
+  if (value == null || (value as unknown) === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.trunc(n) : null
+}
+
+function dayText(value: number | null | undefined): string {
+  if (value == null) return '—'
+  if (value === 99 || value === 0 || value > 31) return '月末'
+  return String(value)
+}
+
+function collectionPayload(form: Customer) {
+  return {
+    customer_code: form.customer_code?.trim() || null,
+    close_day: optionalInt(form.close_day),
+    collect_cycle: optionalInt(form.collect_cycle),
+    collect_cycle_name: form.collect_cycle_name?.trim() || null,
+    collect_day: optionalInt(form.collect_day),
+    collect_term_name: form.collect_term_name?.trim() || null,
+  }
 }
 
 function CustomerSelectContent() {
@@ -100,6 +135,7 @@ function CustomerSelectContent() {
           fax: formData.fax || null,
           email: formData.email || null,
           note: formData.note || null,
+          ...collectionPayload(formData),
         })
         .eq('id', formData.id)
 
@@ -126,6 +162,7 @@ function CustomerSelectContent() {
           fax: formData.fax || null,
           email: formData.email || null,
           note: formData.note || null,
+          ...collectionPayload(formData),
         }])
         .select()
         .single()
@@ -171,6 +208,12 @@ function CustomerSelectContent() {
       fax: c.fax || '',
       email: c.email || '',
       note: c.note || '',
+      customer_code: c.customer_code || '',
+      close_day: c.close_day ?? null,
+      collect_cycle: c.collect_cycle ?? null,
+      collect_cycle_name: c.collect_cycle_name || '',
+      collect_day: c.collect_day ?? null,
+      collect_term_name: c.collect_term_name || '',
     })
     setIsEdit(true)
     setShowForm(true)
@@ -304,6 +347,54 @@ function CustomerSelectContent() {
                 rows={2}
               />
             </label>
+            <label style={{ color: '#cbd5e1' }}>得意先コード
+              <input
+                type="text"
+                value={formData.customer_code || ''}
+                onChange={(e) => setFormData({ ...formData, customer_code: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label style={{ color: '#cbd5e1' }}>回収条件
+              <input
+                type="text"
+                value={formData.collect_term_name || ''}
+                onChange={(e) => setFormData({ ...formData, collect_term_name: e.target.value })}
+                className="input-inset"
+              />
+            </label>
+            <label style={{ color: '#cbd5e1' }}>締日(1)（99=月末）
+              <input
+                type="number"
+                value={formData.close_day ?? ''}
+                onChange={(e) => setFormData({ ...formData, close_day: e.target.value === '' ? null : Number(e.target.value) })}
+                className="input-inset"
+              />
+            </label>
+            <label style={{ color: '#cbd5e1' }}>回収サイクル(1)（0当月 1翌月）
+              <input
+                type="number"
+                value={formData.collect_cycle ?? ''}
+                onChange={(e) => setFormData({ ...formData, collect_cycle: e.target.value === '' ? null : Number(e.target.value) })}
+                className="input-inset"
+              />
+            </label>
+            <label style={{ color: '#cbd5e1' }}>回収日(1)（99=月末）
+              <input
+                type="number"
+                value={formData.collect_day ?? ''}
+                onChange={(e) => setFormData({ ...formData, collect_day: e.target.value === '' ? null : Number(e.target.value) })}
+                className="input-inset"
+              />
+            </label>
+            <label style={{ color: '#cbd5e1' }}>回収サイクル名
+              <input
+                type="text"
+                value={formData.collect_cycle_name || ''}
+                onChange={(e) => setFormData({ ...formData, collect_cycle_name: e.target.value })}
+                className="input-inset"
+              />
+            </label>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button
@@ -342,6 +433,10 @@ function CustomerSelectContent() {
           <tr>
             <th style={thStyle}>ID</th>
             <th style={thStyle}>顧客名</th>
+            <th style={thStyle}>得意先コード</th>
+            <th style={thStyle}>締日</th>
+            <th style={thStyle}>サイクル</th>
+            <th style={thStyle}>回収日</th>
             <th style={thStyle}>操作</th>
           </tr>
         </thead>
@@ -350,6 +445,10 @@ function CustomerSelectContent() {
             <tr key={c.id}>
               <td style={tdStyle}>{c.id}</td>
               <td style={tdStyle}>{c.name}</td>
+              <td style={tdStyle}>{c.customer_code || '—'}</td>
+              <td style={tdStyle}>{dayText(c.close_day)}</td>
+              <td style={tdStyle}>{c.collect_cycle_name || (c.collect_cycle == null ? '—' : `${c.collect_cycle}ヶ月`)}</td>
+              <td style={tdStyle}>{dayText(c.collect_day)}</td>
               <td style={tdStyle}>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
