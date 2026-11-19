@@ -72,6 +72,22 @@ function isCollectionTarget(status: string): boolean {
   return status === '受注' || status === '完了'
 }
 
+function isoDay(value: string | null | undefined): string {
+  const day = String(value || '').slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : ''
+}
+
+function formatLocalIsoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function nextIsoDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  return formatLocalIsoDate(new Date(year, month - 1, day + 1))
+}
+
 function collectionForCase(
   row: CaseWithDetails,
   terms: Map<string, { closeDay: number | null; cycle: number | null }>,
@@ -587,10 +603,7 @@ export default function CaseListPage() {
 
   const fetchReportRows = async (): Promise<CaseDetailReportRow[]> => {
     const startDateTime = `${exportStartDate}T00:00:00`
-    const endDate = new Date(`${exportEndDate}T00:00:00`)
-    endDate.setDate(endDate.getDate() + 1)
-    const endExclusive = endDate.toISOString().split('T')[0]
-    const endDateTime = `${endExclusive}T00:00:00`
+    const endDateTime = `${nextIsoDate(exportEndDate)}T00:00:00`
 
     let query = supabase
       .from('cases_with_names')
@@ -735,10 +748,11 @@ export default function CaseListPage() {
   const handleExportContractPdf = async () => {
     if ((exportStartDate || exportEndDate) && !validateExportDateRange()) return
 
+    const hasCreatedRange = Boolean(exportStartDate && exportEndDate)
     const scoped = filterCasesByStaff(originalCases, staffFilter, staffOptions).filter((row) => {
       if (!isCollectionTarget(row.status)) return false
-      if (!exportStartDate && !exportEndDate) return true
-      const day = String(row.created_date || '').slice(0, 10)
+      if (!hasCreatedRange) return true
+      const day = isoDay(row.created_date)
       return day >= exportStartDate && day <= exportEndDate
     })
     if (scoped.length === 0) {
@@ -934,7 +948,7 @@ export default function CaseListPage() {
         <button
           type="button"
           onClick={() => {
-            const today = new Date().toISOString().split('T')[0]
+            const today = formatLocalIsoDate(new Date())
             setExportStartDate(today)
             setExportEndDate(today)
           }}
@@ -947,8 +961,8 @@ export default function CaseListPage() {
           type="button"
           onClick={() => {
             const now = new Date()
-            const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-            const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+            const start = formatLocalIsoDate(new Date(now.getFullYear(), now.getMonth(), 1))
+            const end = formatLocalIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
             setExportStartDate(start)
             setExportEndDate(end)
           }}
@@ -1121,15 +1135,25 @@ export default function CaseListPage() {
                   <div key={table.fiscalYear} style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: '11pt', fontWeight: 700, marginBottom: 3 }}>{fiscalYearLabel(table.fiscalYear)}</div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                      <colgroup>
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '10.5%' }} />
+                        <col style={{ width: '6.5%' }} />
+                        <col style={{ width: '6%' }} />
+                        {table.slots.map((slot) => (
+                          <col key={slot.key} style={{ width: '5%' }} />
+                        ))}
+                        <col style={{ width: '8%' }} />
+                      </colgroup>
                       <thead>
                         <tr>
-                          <th style={{ ...printMonthThStyle, width: '11%' }} rowSpan={2}>顧客名</th>
-                          <th style={{ ...printMonthThStyle, width: '13%' }} rowSpan={2}>件名</th>
-                          <th style={{ ...printMonthThStyle, width: '8%' }} rowSpan={2}>事業費</th>
-                          <th style={{ ...printMonthThStyle, width: '8%' }} rowSpan={2}>請求予定日</th>
+                          <th style={printMonthThStyle} rowSpan={2}>顧客名</th>
+                          <th style={printMonthThStyle} rowSpan={2}>件名</th>
+                          <th style={printMonthThStyle} rowSpan={2}>事業費</th>
+                          <th style={printMonthThStyle} rowSpan={2}>請求予定日</th>
                           <th style={{ ...printMonthThStyle, backgroundColor: '#cbd5e1' }} colSpan={4}>{table.slots[0].year}年</th>
                           <th style={{ ...printMonthThStyle, backgroundColor: '#cbd5e1' }} colSpan={8}>{table.slots[4].year}年</th>
-                          <th style={{ ...printMonthThStyle, width: '8%' }} rowSpan={2}>粗利額</th>
+                          <th style={printMonthThStyle} rowSpan={2}>粗利額</th>
                         </tr>
                         <tr>
                           {table.slots.map((slot) => (
@@ -1143,9 +1167,9 @@ export default function CaseListPage() {
                             <td style={printMonthTdStyle}>{row.customer_name}</td>
                             <td style={printMonthTdStyle}>{row.subject}</td>
                             <td style={printMonthAmountStyle}>{formatSheetAmount(row.business_total)}</td>
-                            <td style={{ ...printMonthAmountStyle, textAlign: 'center' }}>{row.billing_scheduled_on ? formatReportDate(row.billing_scheduled_on) : '—'}</td>
+                            <td style={printMonthDateStyle}>{row.billing_scheduled_on ? formatReportDate(row.billing_scheduled_on) : '—'}</td>
                             {table.slots.map((slot) => (
-                              <td key={slot.key} style={printMonthAmountStyle}>
+                              <td key={slot.key} style={printMonthFigureStyle}>
                                 {row.collection_sort === slot.key ? formatSheetAmount(row.business_total) : ''}
                               </td>
                             ))}
@@ -1158,7 +1182,7 @@ export default function CaseListPage() {
                             <td style={printMonthAmountTotalStyle}>{formatSheetAmount(businessTotal)}</td>
                             <td style={printMonthTotalStyle} />
                             {monthTotals.map((total, index) => (
-                              <td key={table.slots[index].key} style={printMonthAmountTotalStyle}>{formatSheetAmount(total)}</td>
+                              <td key={table.slots[index].key} style={printMonthFigureTotalStyle}>{formatSheetAmount(total)}</td>
                             ))}
                             <td style={printMonthAmountTotalStyle}>{formatSheetAmount(grossTotal)}</td>
                           </tr>
@@ -1296,13 +1320,28 @@ const printMonthTdStyle: React.CSSProperties = {
 
 const printMonthAmountStyle: React.CSSProperties = {
   border: '1px solid #000',
-  padding: '3px 1px',
-  fontSize: '8.5pt',
+  padding: '2px 1px',
+  fontSize: '7.5pt',
   fontWeight: 700,
   color: '#000',
   textAlign: 'right',
   whiteSpace: 'nowrap',
-  lineHeight: 1.2,
+  lineHeight: 1.15,
+  fontVariantNumeric: 'tabular-nums',
+}
+
+const printMonthDateStyle: React.CSSProperties = {
+  ...printMonthAmountStyle,
+  fontSize: '6.5pt',
+  textAlign: 'center',
+  padding: '2px 0',
+}
+
+const printMonthFigureStyle: React.CSSProperties = {
+  ...printMonthAmountStyle,
+  fontSize: '6.5pt',
+  padding: '2px 0',
+  letterSpacing: '-0.2px',
 }
 
 const printMonthTotalStyle: React.CSSProperties = {
@@ -1316,5 +1355,10 @@ const printMonthTotalStyle: React.CSSProperties = {
 
 const printMonthAmountTotalStyle: React.CSSProperties = {
   ...printMonthAmountStyle,
+  backgroundColor: '#f8fafc',
+}
+
+const printMonthFigureTotalStyle: React.CSSProperties = {
+  ...printMonthFigureStyle,
   backgroundColor: '#f8fafc',
 }
